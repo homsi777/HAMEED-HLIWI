@@ -7,5 +7,6 @@ import { HealthModule } from './health/health.module.js';
 import { PermissionsModule } from './permissions/permissions.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { WarehousesModule } from './warehouses/warehouses.module.js';
-@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, PermissionsModule, WarehousesModule, RealtimeModule, HealthModule] })
+import { InventoryModule } from './inventory/inventory.module.js';
+@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, HealthModule] })
 export class AppModule {}

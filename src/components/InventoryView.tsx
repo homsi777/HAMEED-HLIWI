@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
+import { useInventoryModule } from '../hooks/useInventoryModule';
+import { inventoryApi } from '../services/inventoryApi';
 import { 
   PackageSearch, 
   Plus, 
@@ -26,14 +28,7 @@ import { GoldKarat, ItemCategory, InventoryItem, Warehouse } from '../types';
 
 export const InventoryView: React.FC = () => {
   const { 
-    inventory, 
-    warehouses, 
     goldPrices, 
-    addInventoryItem, 
-    updateInventoryItem, 
-    deleteInventoryItem, 
-    transferInventoryItem,
-    addWarehouse,
     formatMoney,
     activeCurrency
   } = useStore();
@@ -43,7 +38,10 @@ export const InventoryView: React.FC = () => {
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('all');
   const [selectedKarat, setSelectedKarat] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [inventoryPage, setInventoryPage] = useState(1);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const inventoryModule = useInventoryModule({ search: searchQuery, warehouseId: selectedWarehouse === 'all' ? '' : selectedWarehouse, karat: selectedKarat === 'all' ? '' : selectedKarat, category: selectedCategory === 'all' ? '' : selectedCategory, page: String(inventoryPage) });
+  const { inventory, warehouses, inventoryVersions, total: inventoryTotal, loading, error, mutate } = inventoryModule;
 
   // Modals
   const [showAddItemModal, setShowAddItemModal] = useState(false);
@@ -73,7 +71,6 @@ export const InventoryView: React.FC = () => {
   // Form State for Warehouse
   const [whName, setWhName] = useState('');
   const [whLocation, setWhLocation] = useState('حلب - سوريا');
-  const [whManager, setWhManager] = useState('');
   const [whPhone, setWhPhone] = useState('');
 
   const resetItemForm = () => {
@@ -138,7 +135,7 @@ export const InventoryView: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleSaveItem = (e: React.FormEvent) => {
+  const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
     const gross = parseFloat(formGrossWeight);
     const stone = parseFloat(formStoneWeight) || 0;
@@ -149,8 +146,9 @@ export const InventoryView: React.FC = () => {
     const net = Math.max(0, gross - stone);
     const totalLabor = net * labor;
 
-    if (editingItem) {
-      updateInventoryItem(editingItem.id, {
+    let imagePath: string | undefined;
+    if (formImageUrl && !formImageUrl.startsWith('/uploads/')) { const response = await fetch(formImageUrl); const blob = await response.blob(); imagePath = (await inventoryApi.uploadImage(blob)).imagePath; }
+    const payload = {
         name: formName,
         category: formCategory,
         karat: formKarat,
@@ -162,59 +160,44 @@ export const InventoryView: React.FC = () => {
         warehouseId: formWarehouseId,
         code: formCode,
         notes: formNotes,
-        imageUrl: formImageUrl
-      });
-    } else {
-      addInventoryItem({
-        name: formName,
-        category: formCategory,
-        karat: formKarat,
-        grossWeightGrams: gross,
-        stoneWeightGrams: stone,
-        netWeightGrams: net,
-        laborFeeUSDPerGram: labor,
-        totalLaborFeeUSD: totalLabor,
-        warehouseId: formWarehouseId,
-        status: 'in_stock',
-        code: formCode,
-        notes: formNotes,
-        imageUrl: formImageUrl
-      });
-    }
+        imagePath: imagePath ?? (formImageUrl.startsWith('/uploads/') ? formImageUrl.split('/').pop() : undefined)
+      };
+    const success = await mutate(() => editingItem ? inventoryApi.update(editingItem.id, { ...payload, version: inventoryVersions[editingItem.id] }) : inventoryApi.create({ ...payload, status: 'in_stock' }));
+    if (!success) return;
 
     setShowAddItemModal(false);
     resetItemForm();
   };
 
-  const handleSaveWarehouse = (e: React.FormEvent) => {
+  const handleSaveWarehouse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!whName.trim()) return;
-    addWarehouse({
+    const success = await mutate(() => inventoryApi.createWarehouse({
       name: whName,
       location: whLocation,
-      manager: whManager,
       phone: whPhone
-    });
+    }));
+    if (!success) return;
     setWhName('');
-    setWhManager('');
     setWhPhone('');
     setShowAddWarehouseModal(false);
   };
 
-  const handleExecuteTransfer = () => {
+  const handleExecuteTransfer = async () => {
     if (showTransferModal && targetWarehouseForTransfer) {
-      transferInventoryItem(showTransferModal.id, targetWarehouseForTransfer);
+      const success = await mutate(() => inventoryApi.transfer(showTransferModal.id, { destinationWarehouseId: targetWarehouseForTransfer, version: inventoryVersions[showTransferModal.id] }));
+      if (!success) return;
       setShowTransferModal(null);
       setTargetWarehouseForTransfer('');
     }
   };
 
-  const saveStocktakeSnapshot = () => {
-    const snapshot = { id: `stk-${Date.now()}`, date: new Date().toLocaleString('ar-SY'), itemCount: filteredInventory.length, netWeight: totalFilteredGrams };
-    const stored = JSON.parse(localStorage.getItem('HAMEED_HLIWI_STOCKTAKES') || '[]');
-    localStorage.setItem('HAMEED_HLIWI_STOCKTAKES', JSON.stringify([snapshot, ...stored]));
-    setShowStocktakeModal(false);
+  const saveStocktakeSnapshot = async () => {
+    if (selectedWarehouse === 'all') return;
+    if (await mutate(() => inventoryApi.stocktake(selectedWarehouse))) setShowStocktakeModal(false);
   };
+
+  const deleteInventoryItem = async (id: string) => { await mutate(() => inventoryApi.archive(id, inventoryVersions[id])); };
 
   const toggleItemMenu = (event: React.MouseEvent<HTMLButtonElement>, item: InventoryItem) => {
     event.stopPropagation();
@@ -324,7 +307,7 @@ export const InventoryView: React.FC = () => {
                 type="text"
                 placeholder="ابحث باسم القطعة، الكود، الباركود..."
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => { setSearchQuery(e.target.value); setInventoryPage(1); }}
                 className="w-full pr-9 pl-3 py-2 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:border-amber-400 text-slate-800 font-medium"
               />
             </div>
@@ -335,7 +318,7 @@ export const InventoryView: React.FC = () => {
             <div className={showMobileFilters ? '' : 'hidden sm:block'}>
               <select
                 value={selectedWarehouse}
-                onChange={e => setSelectedWarehouse(e.target.value)}
+                onChange={e => { setSelectedWarehouse(e.target.value); setInventoryPage(1); }}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:border-amber-400 text-slate-800 font-medium"
               >
                 <option value="all">كافة المستودعات والفروع</option>
@@ -351,7 +334,7 @@ export const InventoryView: React.FC = () => {
             <div className={showMobileFilters ? '' : 'hidden sm:block'}>
               <select
                 value={selectedKarat}
-                onChange={e => setSelectedKarat(e.target.value)}
+                onChange={e => { setSelectedKarat(e.target.value); setInventoryPage(1); }}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:border-amber-400 text-slate-800 font-medium"
               >
                 <option value="all">كافة العيارات</option>
@@ -367,7 +350,7 @@ export const InventoryView: React.FC = () => {
             <div className={showMobileFilters ? '' : 'hidden sm:block'}>
               <select
                 value={selectedCategory}
-                onChange={e => setSelectedCategory(e.target.value)}
+                onChange={e => { setSelectedCategory(e.target.value); setInventoryPage(1); }}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:border-amber-400 text-slate-800 font-medium"
               >
                 <option value="all">كافة التصنيفات</option>
@@ -382,13 +365,14 @@ export const InventoryView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end"><button type="button" onClick={() => setShowStocktakeModal(true)} className="rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 flex items-center gap-1.5"><Scale className="w-4 h-4" />جرد</button></div>
+          {(loading || error) && <div className={`rounded-sm border px-3 py-2 text-xs font-bold ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{error || 'يتم تحميل بيانات المخزون من الخادم...'}</div>}
+          <div className="flex justify-end"><button type="button" onClick={() => { if (selectedWarehouse !== 'all') setShowStocktakeModal(true); }} disabled={selectedWarehouse === 'all'} className="rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50" title={selectedWarehouse === 'all' ? 'اختر مستودعاً أولاً لإجراء الجرد' : undefined}><Scale className="w-4 h-4" />جرد</button></div>
 
           {/* Filter Summary Banner */}
           <div className="hidden sm:flex bg-slate-900 border border-slate-800 text-white rounded-sm p-3 px-4 flex-wrap items-center justify-between text-xs gap-3">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-amber-400" />
-              <span>نتائج العرض: <strong className="text-amber-400 font-mono">{filteredInventory.length}</strong> قطعة بالمخزن</span>
+              <span>نتائج العرض: <strong className="text-amber-400 font-mono">{inventoryTotal}</strong> قطعة بالمخزن</span>
             </div>
             <div className="flex items-center gap-6 font-bold font-mono">
               <span className="text-slate-300 font-sans">
@@ -589,6 +573,7 @@ export const InventoryView: React.FC = () => {
               </table>
             </div>
           </div>
+          {inventoryTotal > 30 && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-700"><button type="button" disabled={inventoryPage === 1} onClick={() => setInventoryPage(page => Math.max(1, page - 1))} className="rounded-sm border border-slate-200 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-40">السابق</button><span className="font-mono">{inventoryPage} / {Math.ceil(inventoryTotal / 30)}</span><button type="button" disabled={inventoryPage >= Math.ceil(inventoryTotal / 30)} onClick={() => setInventoryPage(page => page + 1)} className="rounded-sm border border-slate-200 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-40">التالي</button></div>}
         </>
       )}
 
@@ -940,16 +925,7 @@ export const InventoryView: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">مسؤول الفرع / المستودع</label>
-                <input
-                  type="text"
-                  placeholder="اسم المسؤول"
-                  value={whManager}
-                  onChange={e => setWhManager(e.target.value)}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-sm"
-                />
-              </div>
+              <p className="rounded-sm border border-slate-200 bg-slate-50 p-2.5 text-[11px] leading-5 text-slate-600">يتم تعيين مسؤول المستودع من حساب المستخدم وصلاحياته، وليس كاسم حر.</p>
 
               <div>
                 <label className="block font-bold text-slate-700 mb-1">رقم الهاتف</label>

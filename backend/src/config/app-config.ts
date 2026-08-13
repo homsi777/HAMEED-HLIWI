@@ -30,6 +30,8 @@ export const appConfig = () => {
     cookieSecure: boolean(process.env.COOKIE_SECURE, nodeEnv === 'production'),
     trustProxy: boolean(process.env.TRUST_PROXY, nodeEnv === 'production'),
     rateLimitMax: Number(process.env.RATE_LIMIT_MAX ?? 120),
+    uploadDirectory: process.env.UPLOAD_DIRECTORY ?? 'storage/inventory-images',
+    uploadMaxBytes: Number(process.env.UPLOAD_MAX_BYTES ?? 5 * 1024 * 1024),
   };
 };
 

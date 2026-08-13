@@ -1,4 +1,5 @@
-import { index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, boolean } from 'drizzle-orm/pg-core';
+import { check, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, boolean } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 const id = () => uuid('id').defaultRandom().primaryKey();
 const timestamps = {
@@ -90,6 +91,21 @@ export const auditLogs = pgTable('audit_logs', {
   metadata: jsonb('metadata').notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, table => [index('audit_logs_created_idx').on(table.createdAt), index('audit_logs_actor_idx').on(table.actorUserId), index('audit_logs_warehouse_idx').on(table.warehouseId)]);
+
+export const inventoryStatus = pgEnum('inventory_status', ['in_stock', 'reserved', 'sold']);
+export const inventoryMovementType = pgEnum('inventory_movement_type', ['initial', 'transfer']);
+export const stocktakeStatus = pgEnum('stocktake_status', ['completed']);
+
+export const inventoryItems = pgTable('inventory_items', {
+  id: id(), code: text('code').notNull(), name: text('name').notNull(), category: text('category').notNull(), karat: text('karat').notNull(),
+  grossWeightGrams: numeric('gross_weight_grams', { precision: 14, scale: 3 }).notNull(), stoneWeightGrams: numeric('stone_weight_grams', { precision: 14, scale: 3 }).notNull().default('0'), netWeightGrams: numeric('net_weight_grams', { precision: 14, scale: 3 }).notNull(),
+  laborFeeUsdPerGram: numeric('labor_fee_usd_per_gram', { precision: 16, scale: 4 }).notNull().default('0'), totalLaborFeeUsd: numeric('total_labor_fee_usd', { precision: 16, scale: 4 }).notNull().default('0'),
+  warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'restrict' }), status: inventoryStatus('status').notNull().default('in_stock'), imagePath: text('image_path'), notes: text('notes'), version: integer('version').notNull().default(1), archivedAt: timestamp('archived_at', { withTimezone: true }), archivedByUserId: uuid('archived_by_user_id').references(() => users.id, { onDelete: 'set null' }), createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), updatedByUserId: uuid('updated_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [uniqueIndex('inventory_items_code_unique').on(table.code), index('inventory_items_warehouse_status_idx').on(table.warehouseId, table.status), index('inventory_items_karat_idx').on(table.karat), index('inventory_items_category_idx').on(table.category), check('inventory_items_karat_check', sql`${table.karat} in ('24','22','21','18','14')`), check('inventory_items_weights_check', sql`${table.grossWeightGrams} > 0 and ${table.stoneWeightGrams} >= 0 and ${table.netWeightGrams} >= 0 and ${table.grossWeightGrams} >= ${table.stoneWeightGrams}`), check('inventory_items_labor_check', sql`${table.laborFeeUsdPerGram} >= 0 and ${table.totalLaborFeeUsd} >= 0`)]);
+
+export const inventoryMovements = pgTable('inventory_movements', { id: id(), inventoryItemId: uuid('inventory_item_id').notNull().references(() => inventoryItems.id, { onDelete: 'restrict' }), type: inventoryMovementType('type').notNull(), fromWarehouseId: uuid('from_warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }), toWarehouseId: uuid('to_warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }), actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), note: text('note'), metadata: jsonb('metadata').notNull().default({}), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() }, table => [index('inventory_movements_item_created_idx').on(table.inventoryItemId, table.createdAt), index('inventory_movements_warehouse_idx').on(table.toWarehouseId)]);
+
+export const stocktakes = pgTable('stocktakes', { id: id(), warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'restrict' }), actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), status: stocktakeStatus('status').notNull().default('completed'), itemCount: integer('item_count').notNull(), netWeightGrams: numeric('net_weight_grams', { precision: 14, scale: 3 }).notNull(), snapshot: jsonb('snapshot').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() }, table => [index('stocktakes_warehouse_created_idx').on(table.warehouseId, table.createdAt)]);
 
 export type UserRow = typeof users.$inferSelect;
 export type WarehouseRow = typeof warehouses.$inferSelect;
