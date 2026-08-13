@@ -1,6 +1,6 @@
 # TASK 06 — Sales & Purchase Returns Backend Migration Report
 
-Status: **IMPLEMENTED AND DEPLOYED — automated and local operational verification passed; production structural verification passed; authenticated production business acceptance remains pending real business data from the designated user.**
+Status: **TASK 06 = CLOSED / PASSED** — implemented, deployed, verified, and the migration ledger is closed. Authenticated end-to-end business acceptance on real records remains with the designated user.
 
 ## Data Cleanup
 
@@ -211,7 +211,7 @@ No business data was fabricated in production to claim acceptance. Production cu
 
 ## Remaining Risks
 
-1. **Drizzle ledger row for `0007` is not yet recorded.** The migration is fully applied, but the bookkeeping row in `drizzle.__drizzle_migrations` was blocked by the local permission classifier during this session. Until it is inserted, a future `drizzle-kit migrate` would try to re-apply `0007` and fail. The exact statement is prepared at `/tmp/task06_ledger.sql` on the VPS; it needs one approved run as the PostgreSQL owner. This does not affect the running application.
+1. ~~Drizzle ledger row for `0007` is not yet recorded.~~ **Resolved — see Final Closure below.**
 2. **Gold/scrap exchange settlement is a deliberate boundary.** Returning a sale paid partly with scrap gold nets the exchange share out of the cash refund and records it, but does not return the physical gold or reverse the exchange record. That obligation is left explicit for the future Cashbox/Accounting and Gold Weight Accounts work.
 3. **Refund facts are descriptive only.** They are not yet posted to any cashbox or ledger, by design; the Cashbox module will consume them.
 4. **Reconciliation-only purchase lines cannot be returned.** They are rejected with a clear conflict rather than guessing an inventory effect.
@@ -222,3 +222,72 @@ No business data was fabricated in production to claim acceptance. Production cu
 ## Scope Discipline
 
 Cashboxes, Vouchers, Accounting, Reports, Shifts, and Gold Weight Accounts were not migrated. Tasks 01–05.1 behaviour is preserved and their tests still pass.
+
+## Final Closure — Drizzle Migration Ledger
+
+The last open item, recording migration `0007` in `drizzle.__drizzle_migrations`, is closed.
+
+### Ledger entry verified before execution
+
+The prepared file `/tmp/task06_ledger.sql` was read first and contained exactly two statements: one `INSERT` of a single bookkeeping row, and one `SELECT` read-back. No application table, no business data, and no migration SQL was referenced.
+
+Its values were cross-checked against the real Drizzle metadata on the VPS rather than trusted:
+
+| Source | Value |
+| --- | --- |
+| `sha256` of `backend/drizzle/0007_loose_sally_floyd.sql` on the server | `0a8edca0…e25b00` |
+| `hash` in the prepared file | `0a8edca0…e25b00` — match |
+| `when` for `0007` in `drizzle/meta/_journal.json` | `1786653127972` |
+| `created_at` in the prepared file | `1786653127972` — match |
+
+The same `hash = file sha256` and `created_at = journal when` convention was confirmed to hold for all seven pre-existing ledger rows (`0000`–`0006`), so the new row follows the identical, already-proven pattern.
+
+A read-only pre-check also confirmed `0007` was genuinely applied already — so the entry records a fact rather than masking pending work: 4/4 return tables, 1/1 `inventory_movements.return_invoice_id` column, 3/3 new movement enum values, 3/3 new enum types, 3/3 returns permissions, 7 ledger rows, and `0` rows already carrying the `0007` hash.
+
+### Command executed
+
+```sh
+sudo -u postgres psql -d hameed_hliwi_production -v ON_ERROR_STOP=1 \
+  --single-transaction -f /tmp/task06_ledger.sql
+```
+
+Result: `INSERT 0 1`. Migration `0007` was **not** re-run. The ledger now holds 8 rows, `id 8` carrying hash `0a8edca0…e25b00` at `1786653127972`, matching the 8 migration files on disk one-to-one.
+
+The prepared file was deleted afterwards so it cannot be replayed into a duplicate row.
+
+### Migration state clean
+
+Verified with drizzle-orm's own `readMigrationFiles()` and the exact rule its migrator applies — a migration runs only when its journal timestamp is newer than the newest ledger row — executed read-only against the live ledger:
+
+```text
+migration files on disk : 8
+ledger rows in database : 8
+newest ledger timestamp : 1786653127972
+  all 8 entries → recorded
+RESULT: no pending migrations. Drizzle would NOT re-apply 0007.
+0007 hash on disk matches a ledger row: true
+```
+
+The literal `npm run db:migrate` was also run on the VPS. It exits `1` and applies nothing, because `drizzle.config.ts` uses the application `DATABASE_URL` and that role is denied `USAGE` on the `drizzle` schema (`permission denied for schema drizzle`). It therefore fails *before* it can select any migration, and can never re-apply `0007`. This is the pre-existing privilege separation from Task 01 — the application role deliberately cannot migrate — and is exactly why every migration in Tasks 01–06 has been applied manually as the PostgreSQL owner. It is a property of the deployment model, not a defect introduced here, and nothing was changed to work around it.
+
+### Health result
+
+Verified against `https://hameed-hliwi.org/` after restarting `hameed-hliwi-api`:
+
+| Check | Result |
+| --- | --- |
+| Root | `200` |
+| `/api/v1/health` | `200`, `{"status":"ok","database":"ok"}` |
+| Backend startup | `Nest application successfully started`, no errors from the new process |
+| Controllers registered | Auth, Warehouses, Inventory, InventoryImages, Partners, Sales, Purchases, **Returns**, Health |
+| Unauthenticated routes | `returns`, `returns/returnable`, `sales`, `purchases`, `inventory`, `partners`, `warehouses` all `401` |
+
+Only `hameed-hliwi-api` was restarted. `abooerp-backend`, `clotexerp-server`, and `obada-server` were not touched.
+
+### No business data changed
+
+This closure performed exactly one write: the single ledger row. No application table was created, altered, or dropped, no migration SQL was modified, and `drizzle-kit push` was not used. Temporary helper files were removed; the pre-migration dump remains at `~/backups/hameed_hliwi_pre_task06.dump`.
+
+Return tables remain empty (`0` returns, `0` return lines, `0` refund rows). Sales, Purchases, Inventory, and Partner counts moved only through the designated user's own live testing on the deployed application after the Task 06 release, not through any action in this closure.
+
+**TASK 06 = CLOSED / PASSED**
