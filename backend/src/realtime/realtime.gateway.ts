@@ -21,10 +21,12 @@ export class RealtimeGateway {
       socket.data.identity = identity;
       socket.join(`user:${identity.id}`);
       identity.warehouses.forEach(warehouse => socket.join(`warehouse:${warehouse.id}`));
+      identity.permissions.forEach(permission => socket.join(`permission:${permission}`));
     } catch { socket.disconnect(true); }
   }
   handleDisconnect(socket: Socket) { this.logger.debug(`Realtime client disconnected: ${socket.id}`); }
   @SubscribeMessage('realtime.ping')
   ping(@ConnectedSocket() socket: Socket, @MessageBody() payload: unknown) { const identity = socket.data.identity as AuthIdentity | undefined; socket.emit('realtime.pong', { payload, userId: identity?.id }); }
   emitToWarehouse(warehouseId: string, event: string, payload: unknown) { this.server.to(`warehouse:${warehouseId}`).emit(event, payload); }
+  emitToPermissions(permissionCodes: string[], event: string, payload: unknown) { this.server.to(permissionCodes.map(permission => `permission:${permission}`)).emit(event, payload); }
 }

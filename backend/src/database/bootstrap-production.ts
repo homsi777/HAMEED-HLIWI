@@ -6,7 +6,7 @@ import postgres from 'postgres';
 import { appConfig } from '../config/app-config.js';
 import { permissions, rolePermissions, roles, userRoles, users } from './schema.js';
 
-const permissionCodes = ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.delete', 'inventory.transfer', 'inventory.adjust', 'sales.view', 'sales.create', 'sales.update', 'sales.cancel', 'sales.return', 'sales.discount', 'sales.approve', 'customers.view', 'customers.create', 'customers.update', 'reports.view', 'users.view', 'users.manage', 'warehouses.view', 'warehouses.manage', 'warehouses.scope.all'];
+const permissionCodes = ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.delete', 'inventory.transfer', 'inventory.adjust', 'sales.view', 'sales.create', 'sales.update', 'sales.cancel', 'sales.return', 'sales.discount', 'sales.approve', 'customers.view', 'customers.create', 'customers.update', 'customers.archive', 'suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.archive', 'reports.view', 'users.view', 'users.manage', 'warehouses.view', 'warehouses.manage', 'warehouses.scope.all'];
 
 const required = (name: string) => {
   const value = process.env[name];

@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { appConfig } from '../config/app-config.js';
 import { permissions, rolePermissions, roles, userRoles, userWarehouses, users, warehouses } from './schema.js';
 
-const permissionCodes = ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.delete', 'inventory.transfer', 'inventory.adjust', 'sales.view', 'sales.create', 'sales.update', 'sales.cancel', 'sales.return', 'sales.discount', 'sales.approve', 'customers.view', 'customers.create', 'customers.update', 'reports.view', 'users.view', 'users.manage', 'warehouses.view', 'warehouses.manage', 'warehouses.scope.all'];
+const permissionCodes = ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.delete', 'inventory.transfer', 'inventory.adjust', 'sales.view', 'sales.create', 'sales.update', 'sales.cancel', 'sales.return', 'sales.discount', 'sales.approve', 'customers.view', 'customers.create', 'customers.update', 'customers.archive', 'suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.archive', 'reports.view', 'users.view', 'users.manage', 'warehouses.view', 'warehouses.manage', 'warehouses.scope.all'];
 async function main() {
   if ((process.env.NODE_ENV ?? 'development') === 'production') throw new Error('Refusing to seed production. Use an explicit production bootstrap process.');
   const password = process.env.SEED_ADMIN_PASSWORD;
@@ -21,7 +21,7 @@ async function main() {
     const permissionId = (code: string) => allPermissions.find(permission => permission.code === code)!.id;
     const mapPermissions = async (roleId: string, codes: string[]) => { for (const code of codes) await db.insert(rolePermissions).values({ roleId, permissionId: permissionId(code) }).onConflictDoNothing(); };
     await mapPermissions(admin.id, permissionCodes);
-    await mapPermissions(manager.id, ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.transfer', 'sales.view', 'sales.create', 'sales.update', 'customers.view', 'customers.create', 'customers.update', 'reports.view', 'warehouses.view']);
+    await mapPermissions(manager.id, ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.transfer', 'sales.view', 'sales.create', 'sales.update', 'customers.view', 'customers.create', 'customers.update', 'suppliers.view', 'suppliers.create', 'suppliers.update', 'reports.view', 'warehouses.view']);
     await mapPermissions(sales.id, ['sales.view', 'sales.create', 'customers.view', 'customers.create', 'warehouses.view']);
     const hash = await bcrypt.hash(password, 12);
     const developmentUsers = [{ username: 'admin_dev', fullName: 'Development Administrator' }, { username: 'nabil_manager_dev', fullName: 'Nabil Warehouse Manager' }, { username: 'ahmad_manager_dev', fullName: 'Ahmad Warehouse Manager' }, { username: 'furqan_sales_dev', fullName: 'Furqan Sales User' }, { username: 'dana_sales_dev', fullName: 'Dana Sales User' }];

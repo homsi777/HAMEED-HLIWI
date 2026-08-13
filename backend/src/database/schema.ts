@@ -95,6 +95,7 @@ export const auditLogs = pgTable('audit_logs', {
 export const inventoryStatus = pgEnum('inventory_status', ['in_stock', 'reserved', 'sold']);
 export const inventoryMovementType = pgEnum('inventory_movement_type', ['initial', 'transfer']);
 export const stocktakeStatus = pgEnum('stocktake_status', ['completed']);
+export const partnerType = pgEnum('partner_type', ['customer', 'supplier', 'both']);
 
 export const inventoryItems = pgTable('inventory_items', {
   id: id(), code: text('code').notNull(), name: text('name').notNull(), category: text('category').notNull(), karat: text('karat').notNull(),
@@ -107,5 +108,35 @@ export const inventoryMovements = pgTable('inventory_movements', { id: id(), inv
 
 export const stocktakes = pgTable('stocktakes', { id: id(), warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'restrict' }), actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), status: stocktakeStatus('status').notNull().default('completed'), itemCount: integer('item_count').notNull(), netWeightGrams: numeric('net_weight_grams', { precision: 14, scale: 3 }).notNull(), snapshot: jsonb('snapshot').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() }, table => [index('stocktakes_warehouse_created_idx').on(table.warehouseId, table.createdAt)]);
 
+// Partners are company masters, intentionally not bound to a warehouse.  Their
+// opening balances are immutable placeholders until the accounting ledger is migrated.
+export const partners = pgTable('partners', {
+  id: id(),
+  name: text('name').notNull(),
+  normalizedName: text('normalized_name').notNull(),
+  type: partnerType('type').notNull(),
+  phone: text('phone'),
+  normalizedPhone: text('normalized_phone'),
+  address: text('address'),
+  notes: text('notes'),
+  taxNumber: text('tax_number'),
+  normalizedTaxNumber: text('normalized_tax_number'),
+  openingBalanceUsd: numeric('opening_balance_usd', { precision: 16, scale: 4 }).notNull().default('0'),
+  openingGoldBalance21kGrams: numeric('opening_gold_balance_21k_grams', { precision: 14, scale: 3 }).notNull().default('0'),
+  isActive: boolean('is_active').notNull().default(true),
+  version: integer('version').notNull().default(1),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  archivedByUserId: uuid('archived_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  updatedByUserId: uuid('updated_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  ...timestamps,
+}, table => [
+  index('partners_name_phone_type_active_idx').on(table.normalizedName, table.normalizedPhone, table.type, table.isActive),
+  index('partners_phone_active_idx').on(table.normalizedPhone, table.isActive),
+  index('partners_tax_active_idx').on(table.normalizedTaxNumber, table.isActive),
+  index('partners_created_idx').on(table.createdAt),
+]);
+
 export type UserRow = typeof users.$inferSelect;
 export type WarehouseRow = typeof warehouses.$inferSelect;
+export type PartnerRow = typeof partners.$inferSelect;
