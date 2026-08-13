@@ -1,6 +1,6 @@
 # TASK 02 — Inventory & Warehouses Backend Migration
 
-Status: implemented and locally verified; production deployment verification follows this report update.
+Status: deployed and verified for production availability; authenticated end-user acceptance remains for the designated administrator and warehouse users.
 
 ## Database changes
 
@@ -44,7 +44,15 @@ Status: implemented and locally verified; production deployment verification fol
 
 ## Browser verification
 
-The local in-app browser was unavailable in this session, so no visual browser result is claimed. Functional backend integration and frontend TypeScript/build verification completed; production API/domain verification is recorded after deployment.
+The local in-app browser was unavailable in this session, so no visual browser result is claimed. Functional backend integration and frontend TypeScript/build verification completed.
+
+## Production deployment and availability verification
+
+- Deployed commit `9853865` to `/home/ubuntu/hameed-hliwi` from a local Git bundle after GitHub returned an internal-server error twice while accepting the push.
+- Ran production dependency installs, Drizzle migration, backend build, frontend build, and restarted only `hameed-hliwi-api` and `hameed-hliwi` through PM2.
+- Created the production image storage directory and configured its location through the backend environment.
+- Added the narrowly scoped Nginx route `/uploads/inventory/` to the project API, validated Nginx configuration, and reloaded Nginx.
+- `https://hameed-hliwi.org/` returned `200`; `https://hameed-hliwi.org/api/v1/health` returned `200`; unauthenticated `GET /api/v1/inventory` returned `401` as expected. Both project PM2 processes were online and backend logs showed the Inventory API routes registered.
 
 ## Production data safety
 
@@ -54,3 +62,4 @@ Before migration, the production database contained no inventory rows and no war
 
 - The existing Cloudflare public WebSocket edge issue remains deferred from TASK 01; backend scoped event emission is implemented and locally tested.
 - The current frontend bundle remains above Vite's default chunk-size warning threshold; this migration does not change the approved UI architecture.
+- Production PostgreSQL has no existing inventory or warehouse records, and no administrator/Warehouse A/Warehouse B acceptance accounts were created merely for testing. The final authenticated production scenarios must be run by the designated real users after their warehouses and memberships are configured.
