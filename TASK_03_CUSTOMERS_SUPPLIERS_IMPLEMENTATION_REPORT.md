@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented locally and prepared for production deployment. This task migrates the shared customer/supplier master only. It does not migrate sales, purchases, returns, vouchers, accounting, reports, shifts, or gold-weight accounts.
+Implemented locally and deployed to production on 2026-08-13. This task migrates the shared customer/supplier master only. It does not migrate sales, purchases, returns, vouchers, accounting, reports, shifts, or gold-weight accounts.
 
 ## What changed
 
@@ -42,7 +42,9 @@ The integration coverage includes customer/supplier/both creation, unauthenticat
 
 ## Production safety notes
 
-Production was inspected read-only before deployment. At that point it contained one user, zero warehouses, and no inventory or partner table; no browser-local records can be inferred or copied into PostgreSQL. Deployment must apply the outstanding Drizzle migrations in order, then rebuild and restart only `hameed-hliwi` and `hameed-hliwi-api`.
+Production was inspected read-only before deployment. At that point it contained one user, zero warehouses, and no inventory or partner table; no browser-local records can be inferred or copied into PostgreSQL. The existing Drizzle ledger contained only migrations 0000 and 0001, so the owner account applied 0002 and 0003 in order, registered both hashes, and transferred ownership of the new application tables/types to `hameed_hliwi_app`.
+
+The deployed server commit is `78b20e7`. Both `hameed-hliwi` and `hameed-hliwi-api` were restarted; `/api/v1/health` returned `200` with database `ok`, the domain root returned `200`, and unauthenticated `/api/v1/partners` returned the expected `401`.
 
 ## Deferred work
 
