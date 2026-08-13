@@ -38,7 +38,7 @@ import {
 } from '../types';
 import { PrintInvoiceModal } from './PrintInvoiceModal';
 import { salesApi, type SalesInvoice } from '../services/salesApi';
-import { partnersApi } from '../services/partnersApi';
+import { partnersApi, type ApiPartner } from '../services/partnersApi';
 
 interface InvoicesViewProps {
   initialType?: 'sale' | 'purchase';
@@ -80,9 +80,15 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const [filterType, setFilterType] = useState<'all' | 'sale' | 'purchase' | 'return'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [serverSales, setServerSales] = useState<SalesInvoice[]>([]);
+  const [serverCustomers, setServerCustomers] = useState<ApiPartner[]>([]);
+  const [salesPage, setSalesPage] = useState(1);
+  const [salesTotal, setSalesTotal] = useState(0);
+  const [salesLoading, setSalesLoading] = useState(true);
   const [salesError, setSalesError] = useState('');
-  const refreshServerSales = async () => { try { setSalesError(''); const response = await salesApi.list({ page: 1, limit: 100 }); setServerSales(response.items); } catch (reason: any) { setSalesError(reason?.message || 'تعذر تحميل فواتير البيع من الخادم.'); } };
-  useEffect(() => { void refreshServerSales(); }, []);
+  const refreshServerSales = async () => { try { setSalesLoading(true); setSalesError(''); const response = await salesApi.list({ page: salesPage, limit: 30 }); setServerSales(response.items); setSalesTotal(response.meta.total); } catch (reason: any) { setSalesError(reason?.message || 'تعذر تحميل فواتير البيع من الخادم.'); } finally { setSalesLoading(false); } };
+  const refreshCustomers = async () => { try { const response = await partnersApi.list({ type: 'customer', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerCustomers(response.items); } catch { /* Quick customer creation remains available. */ } };
+  useEffect(() => { void refreshServerSales(); }, [salesPage]);
+  useEffect(() => { void refreshCustomers(); }, []);
 
   // 3-Dots Invoice Actions Menu State (Fixed Viewport Position to avoid clipping)
   const [activeMenu, setActiveMenu] = useState<{ inv: Invoice; top: number; left: number } | null>(null);
@@ -587,6 +593,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         {activeShift ? <button onClick={() => { if (window.confirm('إغلاق الوردية الحالية؟')) closeShift(); }} className="bg-rose-600 px-4 py-2 text-xs font-black text-white">إنهاء الوردية</button> : <button onClick={() => startShift()} className="bg-emerald-600 px-4 py-2 text-xs font-black text-white">بدء وردية</button>}
       </div>
 
+      {(salesLoading || salesError) && <div className={`rounded-sm border px-3 py-2 text-xs font-bold ${salesError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{salesError || 'جار تحميل فواتير البيع من الخادم...'}</div>}
+
       {/* Invoices List Table (Desktop) & Compact Rows (Mobile) */}
       <div className="bg-white rounded-sm border border-slate-200 shadow-sm overflow-hidden">
         {/* MOBILE COMPACT CARDS VIEW (Phone screens) */}
@@ -753,6 +761,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         </div>
       </div>
 
+      {salesTotal > 30 && (filterType === 'all' || filterType === 'sale') && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600"><button disabled={salesPage <= 1} onClick={() => setSalesPage(page => page - 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">السابق</button><span>صفحة {salesPage} من {Math.ceil(salesTotal / 30)}</span><button disabled={salesPage >= Math.ceil(salesTotal / 30)} onClick={() => setSalesPage(page => page + 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">التالي</button></div>}
+
       {/* CREATE INVOICE WIZARD MODAL */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
@@ -787,9 +797,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
                     type="text"
                     placeholder="اكتب اسم الزبون..."
                     value={invPartnerName}
-                    onChange={e => setInvPartnerName(e.target.value)}
+                    list={invType === 'sale' ? 'sales-customers' : undefined}
+                    onChange={e => { const name = e.target.value; setInvPartnerName(name); const customer = serverCustomers.find(partner => partner.name === name); setInvPartnerId(customer?.id || ''); if (customer) setInvCustomerPhone(customer.phone || ''); }}
                     className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold"
                   />
+                  {invType === 'sale' && <datalist id="sales-customers">{serverCustomers.map(partner => <option key={partner.id} value={partner.name}>{partner.phone}</option>)}</datalist>}
                   <button
                     type="button"
                     onClick={() => setShowQuickAddPartner(true)}
