@@ -11,5 +11,6 @@ import { InventoryModule } from './inventory/inventory.module.js';
 import { PartnersModule } from './partners/partners.module.js';
 import { SalesModule } from './sales/sales.module.js';
 import { PurchasesModule } from './purchases/purchases.module.js';
-@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, SalesModule, PurchasesModule, HealthModule] })
+import { ReturnsModule } from './returns/returns.module.js';
+@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, SalesModule, PurchasesModule, ReturnsModule, HealthModule] })
 export class AppModule {}

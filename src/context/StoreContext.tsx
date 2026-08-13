@@ -108,6 +108,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Remove only the known old UI fixtures; real backend inventory is never
         // stored here and no arbitrary local records are deleted.
         if (Array.isArray(parsed.inventory)) parsed.inventory = parsed.inventory.filter((item: InventoryItem) => !/^item-10[1-7]$/.test(item.id));
+        // Returns now live in PostgreSQL, so any locally stored return document is dropped.
+        if (Array.isArray(parsed.invoices)) parsed.invoices = parsed.invoices.filter((invoice: Invoice) => invoice.type !== 'return');
         return parsed;
       }
     } catch (e) {
@@ -316,6 +318,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const addInvoice = (invData: Omit<Invoice, 'id' | 'invoiceNumber'>): Invoice => {
+    // Returns are posted by the backend returns module; they are never written locally.
+    if (invData.type === 'return') throw new Error('Returns are created through the backend returns API.');
     const count = invoices.length + 1;
     const invNumber = `INV-${new Date().getFullYear()}-${String(count).padStart(3, '0')}`;
     const newInvoice: Invoice = {

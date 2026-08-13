@@ -40,6 +40,7 @@ import { PrintInvoiceModal } from './PrintInvoiceModal';
 import { salesApi, type SalesInvoice } from '../services/salesApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { purchasesApi, type PurchaseInvoice } from '../services/purchasesApi';
+import { returnsApi, type ReturnInvoice, type ReturnableDocument } from '../services/returnsApi';
 import { inventoryApi } from '../services/inventoryApi';
 
 interface InvoicesViewProps {
@@ -62,16 +63,13 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
 };
 
 export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
-  const { 
-    invoices, 
-    inventory: legacyInventory, 
+  const {
+    inventory: legacyInventory,
     partners,
     warehouses: legacyWarehouses,
-    goldPrices, 
-    settings, 
-    addInvoice, 
-    cancelInvoice,
-    addPartner, 
+    goldPrices,
+    settings,
+    addPartner,
     formatMoney,
     currentUser,
     activeShift,
@@ -83,6 +81,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [serverSales, setServerSales] = useState<SalesInvoice[]>([]);
   const [serverPurchases, setServerPurchases] = useState<PurchaseInvoice[]>([]);
+  const [serverReturns, setServerReturns] = useState<ReturnInvoice[]>([]);
+  const [returnsPage, setReturnsPage] = useState(1);
+  const [returnsTotal, setReturnsTotal] = useState(0);
+  const [returnsError, setReturnsError] = useState('');
   const [serverCustomers, setServerCustomers] = useState<ApiPartner[]>([]);
   const [serverSuppliers, setServerSuppliers] = useState<ApiPartner[]>([]);
   const [serverWarehouses, setServerWarehouses] = useState<typeof legacyWarehouses>([]);
@@ -101,8 +103,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const refreshCustomers = async () => { try { const response = await partnersApi.list({ type: 'customer', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerCustomers(response.items); } catch { /* Quick customer creation remains available. */ } };
   const refreshSuppliers = async () => { try { const response = await partnersApi.list({ type: 'supplier', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerSuppliers(response.items); } catch { /* Quick supplier creation remains available. */ } };
   const refreshOperationalStock = async () => { try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); } };
+  const refreshServerReturns = async () => { try { setReturnsError(''); const response = await returnsApi.list({ page: returnsPage, limit: 30 }); setServerReturns(response.items); setReturnsTotal(response.meta.total); } catch (reason: any) { setReturnsError(reason?.message || 'تعذر تحميل المرتجعات من الخادم.'); } };
   useEffect(() => { void refreshServerSales(); }, [salesPage]);
   useEffect(() => { void refreshServerPurchases(); }, [purchasesPage]);
+  useEffect(() => { void refreshServerReturns(); }, [returnsPage]);
   useEffect(() => { void refreshCustomers(); void refreshSuppliers(); void refreshOperationalStock(); }, []);
 
   // 3-Dots Invoice Actions Menu State (Fixed Viewport Position to avoid clipping)
@@ -149,22 +153,27 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     }, 300);
   };
 
-  const handleReturnInvoice = (inv: Invoice) => {
+  // The returnable lines and every amount come from the server, so the browser never
+  // decides how much of an invoice is still returnable.
+  const handleReturnInvoice = async (inv: Invoice) => {
     setActiveMenu(null);
-    setInvType('return');
-    setInvPartnerName(inv.customerOrSupplierName);
-    setInvPartnerId(inv.customerOrSupplierId || '');
-    setInvWarehouseId(inv.warehouseId || warehouses[0]?.id || '');
-    setInvPaymentMethod(inv.paymentMethod || 'cash_usd');
-    setInvNotes(`مرتجع عن الفاتورة رقم ${inv.invoiceNumber}`);
-    setInvItems(
-      inv.items.map(item => ({
-        ...item,
-        id: 'ret-item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6)
-      }))
-    );
-    setScrapItems([]);
-    setShowCreateModal(true);
+    if (inv.type === 'return') { alert('لا يمكن إنشاء مرتجع عن مرتجع. استخدم الإلغاء أو أنشئ حركة تصحيحية.'); return; }
+    if ((inv as any).status === 'cancelled') { alert('لا يمكن إنشاء مرتجع عن فاتورة ملغاة.'); return; }
+    setReturnError('');
+    setReturnReason(`مرتجع عن الفاتورة رقم ${inv.invoiceNumber}`);
+    setReturnRefundUSD('');
+    setReturnRefundSYP('');
+    setReturnNotes('');
+    setReturnQuantities({});
+    setReturnWeights({});
+    setReturnSaving(false);
+    try {
+      const document = await returnsApi.returnable(inv.type === 'sale' ? 'sales_return' : 'purchase_return', inv.id);
+      setReturnDocument(document);
+      setShowReturnModal(true);
+    } catch (error: any) {
+      alert(error?.message || 'تعذر تحميل بنود الفاتورة القابلة للإرجاع.');
+    }
   };
 
   const handleExportPdf = (inv: Invoice) => {
@@ -187,15 +196,79 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const handleCancelInvoiceAction = (inv: Invoice) => {
     setActiveMenu(null);
     if (!window.confirm(`هل أنت تأكيد من إلغاء الفاتورة رقم (${inv.invoiceNumber})؟\nسوف يتم إرجاع كافة القطع المباعة للمخزون وعكس التسويات المالية.`)) return;
-    if (inv.type === 'return') { cancelInvoice(inv.id); return; }
-    const reason = window.prompt(`سبب إلغاء فاتورة ${inv.type === 'sale' ? 'البيع' : 'الشراء'}:`);
+    const reason = window.prompt(`سبب إلغاء ${inv.type === 'sale' ? 'فاتورة البيع' : inv.type === 'purchase' ? 'فاتورة الشراء' : 'المرتجع'}:`);
     if (!reason?.trim()) return;
-    const cancel = inv.type === 'sale' ? salesApi.cancel(inv.id, reason).then(async () => { await Promise.all([refreshServerSales(), refreshOperationalStock()]); }) : purchasesApi.cancel(inv.id, reason).then(async () => { await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); });
+    const cancel = inv.type === 'return'
+      ? returnsApi.cancel(inv.id, reason).then(async () => { await Promise.all([refreshServerReturns(), refreshOperationalStock()]); })
+      : inv.type === 'sale' ? salesApi.cancel(inv.id, reason).then(async () => { await Promise.all([refreshServerSales(), refreshOperationalStock()]); }) : purchasesApi.cancel(inv.id, reason).then(async () => { await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); });
     void cancel.catch((error: any) => alert(error?.message || 'تعذر إلغاء الفاتورة.'));
   };
 
   // Printable Invoice Modal State
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<Invoice | null>(null);
+
+  // Return Wizard Modal State (PostgreSQL-backed, one original document at a time)
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnDocument, setReturnDocument] = useState<ReturnableDocument | null>(null);
+  const [returnQuantities, setReturnQuantities] = useState<Record<string, string>>({});
+  const [returnWeights, setReturnWeights] = useState<Record<string, string>>({});
+  const [returnReason, setReturnReason] = useState('');
+  const [returnNotes, setReturnNotes] = useState('');
+  const [returnRefundUSD, setReturnRefundUSD] = useState('');
+  const [returnRefundSYP, setReturnRefundSYP] = useState('');
+  const [returnError, setReturnError] = useState('');
+  const [returnSaving, setReturnSaving] = useState(false);
+
+  // Preview only: the same proportional rule the server applies, so the cashier sees the
+  // expected refund before confirming. The saved return always carries the server totals.
+  const returnSelection = (returnDocument?.lines ?? []).map(line => {
+    const quantity = parseFloat(returnQuantities[line.sourceLineId] ?? '') || 0;
+    const netWeightGrams = parseFloat(returnWeights[line.sourceLineId] ?? '') || 0;
+    const lineGrossUSD = money(netWeightGrams * line.pricePerGramUSD) + money(netWeightGrams * line.laborFeeUSDPerGram);
+    return { line, quantity, netWeightGrams, lineGrossUSD };
+  }).filter(entry => entry.quantity > 0 && entry.netWeightGrams > 0);
+  const returnGrossUSD = money(returnSelection.reduce((total, entry) => total + entry.lineGrossUSD, 0));
+  const returnShare = returnDocument && returnDocument.grossTotalUSD > 0 ? returnGrossUSD / returnDocument.grossTotalUSD : 0;
+  const returnDiscountUSD = money((returnDocument?.discountUSD ?? 0) * returnShare);
+  const returnScrapCreditUSD = money((returnDocument?.scrapTotalValueUSD ?? 0) * returnShare);
+  const returnFinalTotalUSD = money(Math.max(0, returnGrossUSD - returnDiscountUSD - returnScrapCreditUSD));
+  const returnRefundApplied = money((parseFloat(returnRefundUSD) || 0) + (parseFloat(returnRefundSYP) || 0) / (returnDocument?.exchangeRateSypPerUsd || settings.usdToSypRate));
+  const returnOutstandingUSD = money(Math.max(0, returnFinalTotalUSD - returnRefundApplied));
+
+  const handleSelectReturnLine = (line: ReturnableDocument['lines'][number], checked: boolean) => {
+    setReturnQuantities(previous => ({ ...previous, [line.sourceLineId]: checked ? line.remainingQuantity.toFixed(3) : '' }));
+    setReturnWeights(previous => ({ ...previous, [line.sourceLineId]: checked ? line.remainingNetWeightGrams.toFixed(3) : '' }));
+  };
+
+  const handleSaveReturn = async (andPrint: boolean = false) => {
+    if (!returnDocument) return;
+    if (!returnSelection.length) { setReturnError('اختر بنداً واحداً على الأقل وأدخل الكمية والوزن المرتجعين.'); return; }
+    if (!returnReason.trim()) { setReturnError('سبب الإرجاع مطلوب.'); return; }
+    setReturnSaving(true);
+    setReturnError('');
+    try {
+      const saved = await returnsApi.create({
+        type: returnDocument.type,
+        originalInvoiceId: returnDocument.invoiceId,
+        partnerId: returnDocument.partnerId,
+        reason: returnReason.trim(),
+        items: returnSelection.map(entry => ({ sourceLineId: entry.line.sourceLineId, quantity: entry.quantity, netWeightGrams: entry.netWeightGrams })),
+        refundUSD: parseFloat(returnRefundUSD) || 0,
+        refundSYP: parseFloat(returnRefundSYP) || 0,
+        exchangeRateSypPerUsd: returnDocument.exchangeRateSypPerUsd || settings.usdToSypRate,
+        notes: returnNotes || undefined,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      await Promise.all([refreshServerReturns(), refreshServerSales(), refreshServerPurchases(), refreshOperationalStock()]);
+      setShowReturnModal(false);
+      setReturnDocument(null);
+      if (andPrint) setSelectedInvoiceForPrint(saved);
+    } catch (error: any) {
+      setReturnError(error?.message || 'تعذر حفظ المرتجع.');
+    } finally {
+      setReturnSaving(false);
+    }
+  };
 
   // New Invoice Wizard Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -505,43 +578,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); setShowCreateModal(false); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setPurchasesError(error?.message || 'تعذر حفظ فاتورة الشراء.'); return; }
     }
-    const newInv = addInvoice({
-      type: invType,
-      date: new Date().toISOString().split('T')[0],
-      customerOrSupplierId: invPartnerId,
-      customerOrSupplierName: partnerName,
-      customerPhone: invCustomerPhone,
-      warehouseId: invWarehouseId,
-      items: invItems,
-      scrapGoldItems: scrapItems,
-      subtotalGoldUSD,
-      totalLaborUSD,
-      scrapTotalValueUSD,
-      discountUSD,
-      finalTotalUSD,
-      finalTotalSYP,
-      paidUSD: numPaidUSD,
-      paidSYPInUSD: numPaidSYPInUSD,
-      paidSYP: numPaidSYP,
-      remainingDebtUSD,
-      remainingDebtGold21kGrams: 0,
-      paymentMethod: invPaymentMethod,
-      notes: invNotes,
-      itemPhotoUrl: itemPhotoUrl || undefined,
-      createdBy: currentUser.fullName
-    });
-
-    notifyNewSale(newInv);
-
-    setShowCreateModal(false);
-
-    if (andPrint) {
-      setSelectedInvoiceForPrint(newInv);
-    }
+    // Returns are created from their own PostgreSQL-backed wizard, never from this form.
+    setSalesError('نوع الفاتورة غير مدعوم في هذه الشاشة.');
   };
 
   // Filtered invoices list
-  const combinedInvoices = [...serverSales, ...serverPurchases, ...invoices.filter(invoice => invoice.type === 'return')];
+  const combinedInvoices = [...serverSales, ...serverPurchases, ...serverReturns];
   const filteredInvoices = combinedInvoices.filter(inv => {
     if (filterType !== 'all' && inv.type !== filterType) return false;
     if (searchQuery.trim() !== '') {
@@ -597,7 +639,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               filterType === 'all' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            الكافة ({salesTotal + purchasesTotal + invoices.filter(i => i.type === 'return').length})
+            الكافة ({salesTotal + purchasesTotal + returnsTotal})
           </button>
           <button
             onClick={() => setFilterType('sale')}
@@ -614,6 +656,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
             }`}
           >
             الشراء ({purchasesTotal})
+          </button>
+          <button
+            onClick={() => setFilterType('return')}
+            className={`px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-sm transition whitespace-nowrap text-[11px] sm:text-xs ${
+              filterType === 'return' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            المرتجعات ({returnsTotal})
           </button>
         </div>
 
@@ -804,6 +854,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
 
       {salesTotal > 30 && (filterType === 'all' || filterType === 'sale') && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600"><button disabled={salesPage <= 1} onClick={() => setSalesPage(page => page - 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">السابق</button><span>صفحة {salesPage} من {Math.ceil(salesTotal / 30)}</span><button disabled={salesPage >= Math.ceil(salesTotal / 30)} onClick={() => setSalesPage(page => page + 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">التالي</button></div>}
       {purchasesTotal > 30 && (filterType === 'all' || filterType === 'purchase') && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600"><button disabled={purchasesPage <= 1} onClick={() => setPurchasesPage(page => page - 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">السابق</button><span>صفحة الشراء {purchasesPage} من {Math.ceil(purchasesTotal / 30)}</span><button disabled={purchasesPage >= Math.ceil(purchasesTotal / 30)} onClick={() => setPurchasesPage(page => page + 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">التالي</button></div>}
+      {returnsTotal > 30 && (filterType === 'all' || filterType === 'return') && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600"><button disabled={returnsPage <= 1} onClick={() => setReturnsPage(page => page - 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">السابق</button><span>صفحة المرتجعات {returnsPage} من {Math.ceil(returnsTotal / 30)}</span><button disabled={returnsPage >= Math.ceil(returnsTotal / 30)} onClick={() => setReturnsPage(page => page + 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">التالي</button></div>}
+      {returnsError && <div className="rounded-sm border border-rose-200 bg-rose-50 p-2 text-xs font-bold text-rose-700">{returnsError}</div>}
 
       {/* CREATE INVOICE WIZARD MODAL */}
       {showCreateModal && (
@@ -1541,6 +1593,104 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         </div>
       )}
 
+      {/* RETURN WIZARD MODAL — server-derived returnable lines and authoritative totals */}
+      {showReturnModal && returnDocument && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-sm border-2 border-amber-400 shadow-2xl max-w-4xl w-full p-3 sm:p-6 text-right space-y-3 sm:space-y-6 max-h-[96vh] sm:max-h-[92vh] overflow-y-auto my-auto sm:my-6">
+            <div className="flex items-center justify-between border-b-2 border-amber-300 pb-2 sm:pb-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-sm bg-amber-400 text-slate-900 flex items-center justify-center font-bold shadow-sm shrink-0">
+                  <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-lg font-black text-slate-900">
+                    إنشاء مرتجع {returnDocument.type === 'sales_return' ? 'مبيعات' : 'مشتريات'} — عن الفاتورة {returnDocument.invoiceNumber}
+                  </h3>
+                  <p className="hidden sm:block text-xs text-slate-500">الكميات والأوزان المتاحة للإرجاع محسوبة على الخادم من الفاتورة الأصلية</p>
+                </div>
+              </div>
+              <button onClick={() => { setShowReturnModal(false); setReturnDocument(null); }} className="text-slate-400 hover:text-slate-900 p-1 rounded-sm">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 bg-slate-50 p-2.5 sm:p-4 rounded-sm border border-slate-200 text-xs">
+              <div><span className="block font-bold text-slate-700 mb-0.5">{returnDocument.type === 'sales_return' ? 'الزبون' : 'المورد'}</span><span className="font-bold text-slate-900">{returnDocument.partnerName}</span></div>
+              <div><span className="block font-bold text-slate-700 mb-0.5">تاريخ الفاتورة الأصلية</span><span className="font-mono text-slate-900">{returnDocument.date}</span></div>
+              <div><span className="block font-bold text-slate-700 mb-0.5">إجمالي الفاتورة الأصلية</span><span className="font-mono text-slate-900">$ {returnDocument.finalTotalUSD.toFixed(2)}</span></div>
+              <div><span className="block font-bold text-slate-700 mb-0.5">سبق إرجاعه</span><span className="font-mono text-slate-900">$ {returnDocument.alreadyReturnedValueUSD.toFixed(2)}</span></div>
+            </div>
+
+            <div className="border border-slate-200 rounded-sm overflow-x-auto">
+              <table className="w-full text-[11px] sm:text-xs">
+                <thead className="bg-slate-100 text-slate-700">
+                  <tr>
+                    <th className="p-2 text-right font-bold">إرجاع</th>
+                    <th className="p-2 text-right font-bold">الصنف</th>
+                    <th className="p-2 text-right font-bold">العيار</th>
+                    <th className="p-2 text-right font-bold">المتبقي للإرجاع</th>
+                    <th className="p-2 text-right font-bold">الكمية المرتجعة</th>
+                    <th className="p-2 text-right font-bold">الوزن المرتجع (غ)</th>
+                    <th className="p-2 text-right font-bold">قيمة البند</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {returnDocument.lines.map(line => {
+                    const selected = Boolean(returnQuantities[line.sourceLineId]);
+                    const exhausted = line.remainingQuantity <= 0.0005 || line.remainingNetWeightGrams <= 0.0005;
+                    const entry = returnSelection.find(candidate => candidate.line.sourceLineId === line.sourceLineId);
+                    return (
+                      <tr key={line.sourceLineId} className={exhausted ? 'bg-slate-50 text-slate-400' : 'bg-white'}>
+                        <td className="p-2"><input type="checkbox" disabled={exhausted} checked={selected} onChange={event => handleSelectReturnLine(line, event.target.checked)} className="w-4 h-4 accent-amber-500" /></td>
+                        <td className="p-2 font-bold text-slate-900">{line.itemName}{line.inventoryMode === 'aggregate' && <span className="mr-1 text-[10px] font-bold text-amber-700">(مجمّع)</span>}{!line.inventoryRestorable && !exhausted && <span className="mr-1 text-[10px] font-bold text-rose-600">(المخزون غير متاح)</span>}</td>
+                        <td className="p-2 font-mono">{line.karat}</td>
+                        <td className="p-2 font-mono">{line.remainingQuantity.toFixed(3)} قطعة / {line.remainingNetWeightGrams.toFixed(3)} غ</td>
+                        <td className="p-2"><input type="number" min="0" step="0.001" disabled={exhausted || !selected} value={returnQuantities[line.sourceLineId] ?? ''} onChange={event => setReturnQuantities(previous => ({ ...previous, [line.sourceLineId]: event.target.value }))} className="w-24 border border-slate-200 bg-white p-1.5 font-mono text-xs rounded-sm disabled:bg-slate-100" /></td>
+                        <td className="p-2"><input type="number" min="0" step="0.001" disabled={exhausted || !selected} value={returnWeights[line.sourceLineId] ?? ''} onChange={event => setReturnWeights(previous => ({ ...previous, [line.sourceLineId]: event.target.value }))} className="w-24 border border-slate-200 bg-white p-1.5 font-mono text-xs rounded-sm disabled:bg-slate-100" /></td>
+                        <td className="p-2 font-mono font-bold text-slate-900">$ {(entry?.lineGrossUSD ?? 0).toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-xs">
+              <div className="sm:col-span-2 space-y-2">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-0.5 sm:mb-1">سبب الإرجاع *</label>
+                  <input type="text" value={returnReason} onChange={event => setReturnReason(event.target.value)} placeholder="اكتب سبب الإرجاع..." className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold" />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-0.5 sm:mb-1">ملاحظات (اختياري)</label>
+                  <textarea value={returnNotes} onChange={event => setReturnNotes(event.target.value)} rows={2} className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-sm text-slate-800" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div><label className="block font-bold text-slate-700 mb-0.5">المبلغ المعاد نقداً $</label><input type="number" min="0" step="0.01" value={returnRefundUSD} onChange={event => setReturnRefundUSD(event.target.value)} className="w-full p-1.5 bg-white border border-slate-200 rounded-sm font-mono" /></div>
+                  <div><label className="block font-bold text-slate-700 mb-0.5">المبلغ المعاد ل.س</label><input type="number" min="0" step="1" value={returnRefundSYP} onChange={event => setReturnRefundSYP(event.target.value)} className="w-full p-1.5 bg-white border border-slate-200 rounded-sm font-mono" /></div>
+                </div>
+              </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-sm p-2.5 sm:p-3 space-y-1.5 font-mono">
+                <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">قيمة البنود المرتجعة</span><span>$ {returnGrossUSD.toFixed(2)}</span></div>
+                <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">حصة الخصم الأصلي</span><span>- $ {returnDiscountUSD.toFixed(2)}</span></div>
+                {returnScrapCreditUSD > 0 && <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">حصة الذهب المستبدل</span><span>- $ {returnScrapCreditUSD.toFixed(2)}</span></div>}
+                <div className="flex items-center justify-between border-t border-slate-300 pt-1.5 text-sm font-black text-slate-900"><span className="font-sans">إجمالي المرتجع</span><span>$ {returnFinalTotalUSD.toFixed(2)}</span></div>
+                <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">{returnDocument.type === 'sales_return' ? 'يخصم من رصيد الزبون' : 'يخصم من رصيد المورد'}</span><span>$ {returnOutstandingUSD.toFixed(2)}</span></div>
+                <p className="font-sans text-[10px] text-slate-500">القيم النهائية تُحتسب على الخادم عند الحفظ.</p>
+              </div>
+            </div>
+
+            {returnError && <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-sm p-2 text-xs font-bold">{returnError}</div>}
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 border-t-2 border-amber-300 pt-3">
+              <button onClick={() => { setShowReturnModal(false); setReturnDocument(null); }} className="w-full sm:w-auto px-4 py-2 bg-slate-100 text-slate-700 rounded-sm font-bold text-xs">إلغاء</button>
+              <button disabled={returnSaving} onClick={() => void handleSaveReturn(false)} className="w-full sm:w-auto px-4 py-2 bg-slate-900 text-white rounded-sm font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-60"><Check className="w-4 h-4" />{returnSaving ? 'جارٍ الحفظ...' : 'حفظ المرتجع'}</button>
+              <button disabled={returnSaving} onClick={() => void handleSaveReturn(true)} className="w-full sm:w-auto px-4 py-2 bg-amber-400 text-slate-900 rounded-sm font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-60"><Printer className="w-4 h-4" />حفظ وطباعة</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Floating 3-Dots Invoice Actions Menu (Viewport Fixed to prevent container clipping) */}
       {activeMenu && (
         <div className="fixed inset-0 z-50">
@@ -1570,7 +1720,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               </button>
               
               <button
-                onClick={() => handleReturnInvoice(activeMenu.inv)}
+                onClick={() => void handleReturnInvoice(activeMenu.inv)}
                 className="w-full px-3 py-2 text-slate-800 hover:bg-amber-100 flex items-center gap-2 transition"
               >
                 <RotateCcw className="w-4 h-4 text-blue-600 shrink-0" />
