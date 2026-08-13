@@ -50,7 +50,7 @@ async function main() {
       const documentNumber = document.invoice_number ?? document.purchase_number ?? document.return_number;
       const partnerId = document.customer_partner_id ?? document.supplier_partner_id ?? document.partner_id;
       const rate = String(document.exchange_rate_syp_per_usd);
-      const base = new Date();
+      const base = new Date().toISOString();
       const direction = isSale ? 'debit' : isPurchase ? 'credit' : isSalesReturn ? 'credit' : 'debit';
       const entryType = isSale ? 'sale' : isPurchase ? 'purchase' : kind;
       const label = isSale ? 'فاتورة بيع' : isPurchase ? 'فاتورة شراء' : isSalesReturn ? 'مرتجع مبيعات' : 'مرتجع مشتريات';
@@ -100,7 +100,7 @@ async function main() {
             sales_invoice_id, purchase_invoice_id, return_invoice_id, voucher_id, document_number, description, warehouse_id, occurred_at, actor_user_id)
           values (${partnerId}, ${paymentDirection === 'credit' ? 'receipt' : 'payment'}, ${paymentDirection === 'debit' ? usdEquivalent : 0}, ${paymentDirection === 'credit' ? usdEquivalent : 0},
             ${currency}, ${amount}, ${rate}, ${isSale ? document.id : null}, ${isPurchase ? document.id : null}, ${isSale || isPurchase ? null : document.id},
-            ${voucherId}, ${`${prefix}-${year}-${String(sequence).padStart(3, '0')}`}, ${systemNote}, ${document.warehouse_id}, ${new Date(base.getTime() + index + 1)}, ${actor.id})`;
+            ${voucherId}, ${`${prefix}-${year}-${String(sequence).padStart(3, '0')}`}, ${systemNote}, ${document.warehouse_id}, ${new Date(new Date(base).getTime() + index + 1).toISOString()}, ${actor.id})`;
         ledgerEntries += 1;
       }
     };
