@@ -128,6 +128,36 @@ The following modules deliberately remain browser/localStorage-backed and must b
 
 ## Remaining Technical Risks
 
+## Task 01 Final Closure
+
+### Implemented session security
+
+- Added PostgreSQL-backed `auth_sessions` through Drizzle migration `0001_material_iron_man.sql`.
+- Access tokens remain short lived (15 minutes); httpOnly secure refresh cookies are renewable for 14 days and rotate on every refresh.
+- Each device/login receives an independent session record. `POST /auth/logout` revokes only the current session. `POST /auth/logout-all` revokes all of a user's sessions and invalidates all current access tokens.
+- Refresh tokens are never stored raw in PostgreSQL; only an HMAC hash using a separate production secret is persisted.
+- Production frontend never falls back to legacy localStorage when API calls fail: it displays a service-unavailable state and blocks business operations. Local development retains the temporary legacy mode until business modules are migrated.
+
+### Production deployment completed
+
+- Created dedicated `hameed_hliwi_production` PostgreSQL database and separate application/migration roles with restricted privileges. Production credentials and generated secrets reside only in protected server files; no real values are committed.
+- Applied Drizzle migration history, including the nine infrastructure tables and the session table.
+- Built frontend and backend on the VPS. PM2 runs `hameed-hliwi` on port 3005 and `hameed-hliwi-api` on internal port 3006, saves the process list, and starts after reboot through PM2 systemd integration.
+- Nginx preserves the root frontend route and proxies `/api/v1/`, `/socket.io/`, and `/realtime/` to the backend with forward headers and upgrade configuration.
+
+### Verified production behaviour
+
+- `https://hameed-hliwi.org/` returns 200.
+- REST API health, login, `/auth/me`, refresh, invalid-login rejection, protected-route rejection, secure/HttpOnly/SameSite cookies, request IDs, Helmet headers, PostgreSQL persistence after backend restart, audit records, warehouse-scope allow/deny checks, and central-administrator multi-warehouse scope were exercised on the deployed environment.
+- Local production-proxy WebSocket upgrade returns HTTP 101 and authenticated realtime ping/pong succeeds against the running backend.
+- Integration tests pass for session renewal/rotation/replay rejection, independent devices, current/all-session revocation, validation, warehouse isolation, transactions, WebSocket, and active rate limiting. Rate-limit errors are returned as HTTP 429 with the common API error shape.
+
+### Remaining external blocker: Cloudflare WebSockets
+
+The Cloudflare edge for `hameed-hliwi.org` currently responds with HTTP 400 (`code: 3, Bad request`) to a WebSocket upgrade before the request reaches Nginx. Nginx itself returns HTTP 101 for the identical upgrade and Socket.IO polling works through the domain. This is an external Cloudflare-zone setting, not a backend or Nginx defect.
+
+Required action: enable **WebSockets** for the `hameed-hliwi.org` Cloudflare zone (Network settings), then rerun the authenticated domain WebSocket check. Until that setting is enabled, the realtime requirement is not fully verified and Task 01 must not be marked CLOSED/PASSED.
+
 - Production configuration/deployment and production database migration remain outstanding; no production claim is made in this report.
 - Business modules are still local-only until later migrations route their reads/writes through scoped backend services.
 - The current frontend is still a single large SPA bundle; Vite reports the pre-existing large-chunk warning.

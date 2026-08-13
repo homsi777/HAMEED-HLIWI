@@ -57,7 +57,10 @@ async function main() {
 
     const logoutCurrent = await authenticated('/auth/logout', renewedCookie, 'POST'); assert.equal(logoutCurrent.status, 201); const currentSessionRejected = await authenticated('/auth/me', renewedCookie); assert.equal(currentSessionRejected.status, 401); const otherDeviceAfterLogout = await authenticated('/auth/me', adminB.cookie); assert.equal(otherDeviceAfterLogout.status, 200);
     const logoutAll = await authenticated('/auth/logout-all', adminB.cookie, 'POST'); assert.equal(logoutAll.status, 201); const allSessionsRejected = await authenticated('/auth/me', adminB.cookie); assert.equal(allSessionsRejected.status, 401);
-    console.log('Task 01 integration checks passed: security headers, validation, per-device sessions, renewal rotation, logout/revocation, warehouse scope, transaction rollback, and WebSocket.');
+    let rateLimited: Response | undefined;
+    for (let attempt = 0; attempt < 121; attempt += 1) rateLimited = await fetch(`${base}/health`, { headers: { 'x-forwarded-for': '198.51.100.77' } });
+    assert.equal(rateLimited?.status, 429);
+    console.log('Task 01 integration checks passed: security headers, validation, per-device sessions, renewal rotation, logout/revocation, warehouse scope, transaction rollback, WebSocket, and active rate limiting.');
   } finally { await app.close(); }
 }
 void main();
