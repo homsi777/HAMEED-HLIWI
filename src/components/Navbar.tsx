@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
+import type { InfrastructureUser } from '../services/infrastructureApi';
 import { 
   Coins, 
   RefreshCw, 
@@ -14,7 +15,7 @@ import {
 } from 'lucide-react';
 import { GoldKarat } from '../types';
 
-export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
+export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void; authenticatedUser?: InfrastructureUser | null; onLogout?: () => void }> = ({ activeTab, setActiveTab, authenticatedUser, onLogout }) => {
   const { 
     settings, 
     goldPrices, 
@@ -62,6 +63,8 @@ export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) =
   };
 
   const currentWh = warehouses.find(w => w.id === currentUser.assignedWarehouseId) || warehouses[0];
+  const canSwitchLegacyUser = currentUser.permissions.users && !authenticatedUser;
+  const displayName = authenticatedUser?.fullName || currentUser.fullName;
 
   return (
     <header className="bg-white text-slate-900 shadow-sm border-b-2 border-slate-200 sticky top-0 z-40">
@@ -158,20 +161,26 @@ export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) =
           {/* Current User Dropdown */}
           <div className="relative">
             <button
-              onClick={() => currentUser.permissions.users && setShowUserMenu(!showUserMenu)}
+              onClick={() => canSwitchLegacyUser && setShowUserMenu(!showUserMenu)}
               className="bg-slate-900 hover:bg-slate-800 text-white rounded-sm px-1 sm:px-3 py-1 text-xs flex items-center gap-1 sm:gap-2.5 transition"
             >
               <div className="w-6 h-6 rounded-sm bg-amber-400 text-slate-900 flex items-center justify-center font-bold text-xs shrink-0">
-                {currentUser.fullName.charAt(0)}
+                {displayName.charAt(0)}
               </div>
               <div className="text-right hidden md:block">
-                <p className="font-bold text-amber-400 leading-tight">{currentUser.fullName}</p>
+                <p className="font-bold text-amber-400 leading-tight">{displayName}</p>
                 <p className="text-[10px] text-slate-400">{currentUser.role === 'admin' ? 'مدير عام' : currentUser.role}</p>
               </div>
-              {currentUser.permissions.users && <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+              {canSwitchLegacyUser && <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
             </button>
 
-            {currentUser.permissions.users && showUserMenu && (
+            {authenticatedUser && onLogout && (
+              <button type="button" onClick={onLogout} className="mt-1 w-full text-[11px] font-bold text-slate-500 transition hover:text-rose-600">
+                تسجيل الخروج
+              </button>
+            )}
+
+            {canSwitchLegacyUser && showUserMenu && (
               <div className="absolute left-0 mt-2 w-56 sm:w-60 bg-slate-900 border-2 border-slate-800 rounded-sm shadow-2xl py-2 z-50 text-xs text-white">
                 <div className="px-3 py-1.5 border-b border-slate-800 text-slate-400 font-bold">
                   تبديل حساب المستخدم

@@ -13,8 +13,12 @@ import { UsersView } from './components/UsersView';
 import { ShiftsView } from './components/ShiftsView';
 import { SettingsView } from './components/SettingsView';
 import { InstallPrompt } from './components/InstallPrompt';
+import { LoginView } from './components/LoginView';
+import { ServiceUnavailableView } from './components/ServiceUnavailableView';
+import { useInfrastructureSession } from './hooks/useInfrastructureSession';
+import { infrastructureApi, type InfrastructureUser } from './services/infrastructureApi';
 
-function MainAppContent() {
+function MainAppContent({ authenticatedUser, onLogout }: { authenticatedUser?: InfrastructureUser | null; onLogout?: () => void }) {
   const { currentUser } = useStore();
   const firstAllowedTab = () => {
     const permissions = currentUser.permissions;
@@ -57,7 +61,7 @@ function MainAppContent() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-900" dir="rtl">
       {/* Top Fixed Header with Gold Ticker */}
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} authenticatedUser={authenticatedUser} onLogout={onLogout} />
 
       {/* Sticky Top Horizontal Navigation Bar (Phone & Mobile Optimized) */}
       <div className="sticky top-0 z-30 shadow-md">
@@ -113,9 +117,14 @@ function MainAppContent() {
 }
 
 export default function App() {
+  const session = useInfrastructureSession();
+  const logout = async () => { await infrastructureApi.logout(); await session.refresh(); };
+  if (session.mode === 'loading') return <ServiceUnavailableView connecting />;
+  if (session.mode === 'unavailable') return <ServiceUnavailableView />;
+  if (session.mode === 'unauthenticated') return <LoginView onLoggedIn={session.refresh} />;
   return (
     <StoreProvider>
-      <MainAppContent />
+      <MainAppContent authenticatedUser={session.user} onLogout={session.mode === 'authenticated' ? () => { void logout(); } : undefined} />
     </StoreProvider>
   );
 }
