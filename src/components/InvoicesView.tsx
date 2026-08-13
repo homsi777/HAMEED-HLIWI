@@ -140,9 +140,17 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   };
 
   // Handlers for Invoice 3-Dots Menu
-  const handlePreviewInvoice = (inv: Invoice) => {
+  // Opening an invoice also loads the financial trail it produced, so a manager can
+  // follow the money from the document into Finance without leaving the screen.
+  const handlePreviewInvoice = async (inv: Invoice) => {
     setActiveMenu(null);
     setSelectedInvoiceForPrint(inv);
+    setInvoiceFinancials(null);
+    if (inv.type === 'return') return;
+    try {
+      const detail: any = inv.type === 'sale' ? await salesApi.get(inv.id) : await purchasesApi.get(inv.id);
+      setInvoiceFinancials({ invoiceId: inv.id, vouchers: detail.vouchers ?? [], outstandingUSD: detail.customerOutstandingUSD ?? detail.supplierOutstandingUSD ?? 0 });
+    } catch { /* The printable document still stands on its own if Finance is unreachable. */ }
   };
 
   const handlePrintInvoice = (inv: Invoice) => {
@@ -206,6 +214,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
 
   // Printable Invoice Modal State
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<Invoice | null>(null);
+  const [invoiceFinancials, setInvoiceFinancials] = useState<{ invoiceId: string; vouchers: any[]; outstandingUSD: number } | null>(null);
 
   // Return Wizard Modal State (PostgreSQL-backed, one original document at a time)
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -1704,7 +1713,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
           >
             <div className="py-0.5">
               <button
-                onClick={() => handlePreviewInvoice(activeMenu.inv)}
+                onClick={() => void handlePreviewInvoice(activeMenu.inv)}
                 className="w-full px-3 py-2 text-slate-900 hover:bg-amber-100 flex items-center gap-2 transition font-bold"
               >
                 <Eye className="w-4 h-4 text-amber-700 shrink-0" />
@@ -1757,11 +1766,34 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         </div>
       )}
 
+      {/* Financial trail of the opened invoice: vouchers, cashboxes and outstanding */}
+      {selectedInvoiceForPrint && invoiceFinancials?.invoiceId === selectedInvoiceForPrint.id && (
+        <div className="no-print fixed bottom-4 left-4 z-[60] w-72 rounded-sm border-2 border-slate-900 bg-white p-3 text-right text-[11px] shadow-2xl">
+          <p className="mb-2 border-b border-slate-200 pb-1.5 font-black text-slate-900">الأثر المالي للفاتورة</p>
+          <div className="space-y-1 font-mono">
+            <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">إجمالي الفاتورة</span><span>$ {selectedInvoiceForPrint.finalTotalUSD.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">المدفوع</span><span>$ {selectedInvoiceForPrint.paidUSD.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">المتبقي على الفاتورة</span><span>$ {selectedInvoiceForPrint.remainingDebtUSD.toFixed(2)}</span></div>
+            <div className="flex justify-between border-t border-slate-200 pt-1"><span className="font-sans font-bold text-slate-600">رصيد الطرف الإجمالي</span><span>$ {invoiceFinancials.outstandingUSD.toFixed(2)}</span></div>
+          </div>
+          {invoiceFinancials.vouchers.length > 0 ? (
+            <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
+              {invoiceFinancials.vouchers.map(voucher => (
+                <div key={voucher.id} className={voucher.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800'}>
+                  <p className="font-bold">{voucher.type === 'receipt' ? 'سند قبض' : 'سند صرف'}: {voucher.voucherNumber}</p>
+                  <p className="font-mono text-[10px]">{voucher.amount.toLocaleString('en-US')} {voucher.currency} — {voucher.cashboxName}</p>
+                </div>
+              ))}
+            </div>
+          ) : <p className="mt-2 border-t border-slate-200 pt-2 text-slate-500">لا توجد حركة نقدية — الفاتورة على الحساب.</p>}
+        </div>
+      )}
+
       {/* Printable Invoice Modal */}
       {selectedInvoiceForPrint && (
         <PrintInvoiceModal
           invoice={selectedInvoiceForPrint}
-          onClose={() => setSelectedInvoiceForPrint(null)}
+          onClose={() => { setSelectedInvoiceForPrint(null); setInvoiceFinancials(null); }}
         />
       )}
     </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
   Wallet, 
@@ -28,7 +28,8 @@ import {
   FileDown,
   Share2
 } from 'lucide-react';
-import { VoucherType, Voucher, GoldKarat } from '../types';
+import { VoucherType, GoldKarat } from '../types';
+import { financeApi, type ApiCashbox, type ApiCashMovement, type ApiPartnerBalance, type ApiVoucher } from '../services/financeApi';
 
 interface FinanceViewProps {
   activeTab?: string;
@@ -36,20 +37,58 @@ interface FinanceViewProps {
 }
 
 export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-boxes', setActiveTab }) => {
-  const { 
-    cashBoxes, 
-    vouchers, 
-    partners, 
-    invoices, 
-    addVoucher, 
-    updateVoucher,
-    cancelVoucher,
-    addCashBox,
-    transferBetweenCashBoxes, 
-    formatMoney, 
-    settings, 
-    currentUser 
+  const {
+    partners,
+    formatMoney,
+    settings,
+    currentUser
   } = useStore();
+
+  // Finance now reads and writes PostgreSQL only. The rows below keep the exact shape
+  // the approved screen already renders, so no layout or styling had to change.
+  const [cashBoxes, setCashBoxes] = useState<ApiCashbox[]>([]);
+  const [vouchers, setVouchers] = useState<ApiVoucher[]>([]);
+  const [movements, setMovements] = useState<ApiCashMovement[]>([]);
+  const [partnerBalances, setPartnerBalances] = useState<ApiPartnerBalance[]>([]);
+  const [financeError, setFinanceError] = useState('');
+  const [financeBusy, setFinanceBusy] = useState(false);
+
+  const refreshFinance = async () => {
+    try {
+      setFinanceError('');
+      const [boxes, voucherPage, movementPage, balances] = await Promise.all([
+        financeApi.cashboxes(),
+        financeApi.vouchers({ page: 1, limit: 200 }),
+        financeApi.movements({ page: 1, limit: 200 }),
+        financeApi.partnerBalances({ limit: 200 }),
+      ]);
+      setCashBoxes(boxes);
+      setVouchers(voucherPage.items);
+      setMovements(movementPage.items);
+      setPartnerBalances(balances);
+    } catch (reason: any) {
+      setFinanceError(reason?.message || 'تعذر تحميل بيانات المالية من الخادم.');
+    }
+  };
+  useEffect(() => { void refreshFinance(); }, []);
+  // The cashbox pickers are seeded from the backend once, never from a hardcoded id.
+  useEffect(() => {
+    if (!cashBoxes.length) return;
+    const usdBox = cashBoxes.find(box => box.currency === 'USD') ?? cashBoxes[0];
+    const otherBox = cashBoxes.find(box => box.id !== usdBox.id) ?? usdBox;
+    setVchCashBoxId(current => (cashBoxes.some(box => box.id === current) ? current : usdBox.id));
+    setExpCashBoxId(current => (cashBoxes.some(box => box.id === current) ? current : usdBox.id));
+    setFromBoxId(current => (cashBoxes.some(box => box.id === current) ? current : usdBox.id));
+    setToBoxId(current => (cashBoxes.some(box => box.id === current) ? current : otherBox.id));
+  }, [cashBoxes]);
+
+  const runFinanceAction = async (action: () => Promise<unknown>) => {
+    setFinanceBusy(true);
+    setFinanceError('');
+    try { await action(); await refreshFinance(); return true; }
+    catch (reason: any) { setFinanceError(reason?.message || 'تعذر تنفيذ العملية المالية.'); return false; }
+    finally { setFinanceBusy(false); }
+  };
 
   // Active sub-screen: 'boxes' | 'vouchers' | 'journal' | 'expenses'
   const currentSubTab = activeTab.replace('finance-', '').replace('finance', '') || 'boxes';
@@ -67,13 +106,13 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
 
   // ------------------ MODALS & FORMS ------------------
   // 1. Voucher Modal State (Print / Detailed View)
-  const [selectedVoucherForPrint, setSelectedVoucherForPrint] = useState<Voucher | null>(null);
+  const [selectedVoucherForPrint, setSelectedVoucherForPrint] = useState<ApiVoucher | null>(null);
 
   // 2. Embedded / Modal Voucher Creation Form State
   const [showVoucherForm, setShowVoucherForm] = useState(false);
   const [voucherActionsOpen, setVoucherActionsOpen] = useState(false);
-  const [activeVoucherMenu, setActiveVoucherMenu] = useState<Voucher | null>(null);
-  const [editingVoucher, setEditingVoucher] = useState<Voucher | null>(null);
+  const [activeVoucherMenu, setActiveVoucherMenu] = useState<ApiVoucher | null>(null);
+  const [editingVoucher, setEditingVoucher] = useState<ApiVoucher | null>(null);
   const [showCashBoxForm, setShowCashBoxForm] = useState(false);
   const [showTransferForm, setShowTransferForm] = useState(false);
   const [cashBoxName, setCashBoxName] = useState('');
@@ -98,7 +137,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
 
   // 4. Quick Expense Form State
   const [expCategory, setExpCategory] = useState('مصاريف كهرباء وطاقة');
-  const [expCashBoxId] = useState('box-usd');
+  const [expCashBoxId, setExpCashBoxId] = useState('');
   const [expAmountUSD, setExpAmountUSD] = useState('');
   const [expAmountSYP, setExpAmountSYP] = useState('');
   const [expPayee, setExpPayee] = useState('');
@@ -131,7 +170,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     setShowVoucherForm(true);
   };
 
-  const handleEditVoucher = (voucher: Voucher) => {
+  const handleEditVoucher = (voucher: ApiVoucher) => {
     setEditingVoucher(voucher);
     setVchType(voucher.type);
     setVchPartnerId(voucher.partnerId || '');
@@ -140,59 +179,38 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     setVchAmountSYP(voucher.amountSYP.toString());
     setVchCategory(voucher.category || 'سند مالي');
     setVchStatement(voucher.statement);
-    setVchGoldGrams((voucher.goldWeight21kGrams || 0).toString());
+    setVchGoldGrams('0');
     setActiveVoucherMenu(null);
     setShowVoucherForm(true);
   };
 
-  const handleSaveVoucher = (e: React.FormEvent) => {
+  // A voucher records one currency. The cashbox chosen decides which amount is the
+  // real one, so the original figure the cashier typed is what reaches the backend.
+  const handleSaveVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
-    const usd = parseFloat(vchAmountUSD) || 0;
-    const syp = parseFloat(vchAmountSYP) || (usd * settings.usdToSypRate);
-    const gold = parseFloat(vchGoldGrams) || 0;
+    if (editingVoucher) { setFinanceError('السندات المرحّلة لا تُعدّل. ألغِ السند وأنشئ سنداً صحيحاً.'); return; }
+    const box = cashBoxes.find(candidate => candidate.id === vchCashBoxId);
+    if (!box) { setFinanceError('اختر صندوقاً صالحاً.'); return; }
+    const amount = box.currency === 'USD' ? parseFloat(vchAmountUSD) || 0 : parseFloat(vchAmountSYP) || 0;
+    if (!(amount > 0)) { setFinanceError(`أدخل مبلغاً أكبر من صفر بعملة الصندوق (${box.currency === 'USD' ? 'دولار' : 'ليرة'}).`); return; }
+    if (vchType !== 'expense' && !vchPartnerId) { setFinanceError('اختر العميل أو المورد للسند.'); return; }
 
-    if (usd <= 0 && syp <= 0 && gold <= 0) return;
-
-    const partner = partners.find(p => p.id === vchPartnerId);
-
-    if (editingVoucher) {
-      updateVoucher(editingVoucher.id, {
-        type: vchType,
-        partnerId: vchPartnerId,
-        partnerName: partner?.name,
-        cashBoxId: vchCashBoxId,
-        amountUSD: usd,
-        amountSYP: syp,
-        exchangeRate: settings.usdToSypRate,
-        goldWeight21kGrams: gold,
-        category: vchCategory,
-        statement: vchStatement,
-        createdBy: currentUser.fullName
-      });
-      setEditingVoucher(null);
-      setShowVoucherForm(false);
-      return;
-    }
-
-    addVoucher({
+    const saved = await runFinanceAction(() => financeApi.createVoucher({
       type: vchType,
-      date: new Date().toISOString().split('T')[0],
-      partnerId: vchPartnerId,
-      partnerName: partner?.name,
+      partnerId: vchType === 'expense' ? undefined : vchPartnerId,
+      currency: box.currency,
+      amount: amount.toFixed(4),
+      exchangeRateSypPerUsd: settings.usdToSypRate,
       cashBoxId: vchCashBoxId,
-      amountUSD: usd,
-      amountSYP: syp,
-      exchangeRate: settings.usdToSypRate,
-      goldWeight21kGrams: gold,
-      category: vchCategory,
-      statement: vchStatement || (vchType === 'receipt' ? 'قبض دفعة نقدية' : vchType === 'payment' ? 'صرف دفعة نقدية' : 'مصروف تشغيلي'),
-      createdBy: currentUser.fullName
-    });
-
-    setShowVoucherForm(false);
+      warehouseId: box.warehouseId ?? undefined,
+      category: vchType === 'expense' ? vchCategory : undefined,
+      userNote: vchStatement || undefined,
+      idempotencyKey: crypto.randomUUID(),
+    }));
+    if (saved) { setEditingVoucher(null); setShowVoucherForm(false); }
   };
 
-  const handleExecuteTransfer = (e: React.FormEvent) => {
+  const handleExecuteTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     const amtFrom = parseFloat(transferAmountFrom);
     if (isNaN(amtFrom) || amtFrom <= 0) return;
@@ -212,7 +230,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
       }
     }
 
-    transferBetweenCashBoxes(fromBoxId, toBoxId, amtFrom, amtTo, transferStatement);
+    const moved = await runFinanceAction(() => financeApi.createTransfer({ fromCashboxId: fromBoxId, toCashboxId: toBoxId, amountFrom: amtFrom.toFixed(4), amountTo: amtTo.toFixed(4), exchangeRateSypPerUsd: settings.usdToSypRate, note: transferStatement || undefined, idempotencyKey: crypto.randomUUID() }));
+    if (!moved) return;
 
     setTransferAmountFrom('');
     setTransferAmountTo('');
@@ -222,34 +241,31 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     setTimeout(() => setTransferSuccess(false), 3000);
   };
 
-  const handleAddCashBox = (event: React.FormEvent) => {
+  const handleAddCashBox = async (event: React.FormEvent) => {
     event.preventDefault();
     const openingBalance = parseFloat(cashBoxOpeningBalance);
-    if (!cashBoxName.trim() || isNaN(openingBalance) || openingBalance < 0) return;
-    addCashBox({ name: cashBoxName.trim(), currency: cashBoxCurrency, balanceAmount: openingBalance });
+    if (!cashBoxName.trim() || isNaN(openingBalance) || openingBalance < 0) { setFinanceError('أدخل اسم الصندوق ورصيداً افتتاحياً صحيحاً.'); return; }
+    const created = await runFinanceAction(() => financeApi.createCashbox({ name: cashBoxName.trim(), currency: cashBoxCurrency, warehouseId: cashBoxes.find(candidate => candidate.warehouseId)?.warehouseId ?? undefined, openingBalance: openingBalance.toFixed(4) }));
+    if (!created) return;
     setCashBoxName('');
     setCashBoxOpeningBalance('');
     setShowCashBoxForm(false);
   };
 
-  const handleSaveQuickExpense = (e: React.FormEvent) => {
+  const handleSaveQuickExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    const usd = parseFloat(expAmountUSD) || 0;
-    const syp = parseFloat(expAmountSYP) || (usd * settings.usdToSypRate);
+    const box = cashBoxes.find(candidate => candidate.id === expCashBoxId) ?? cashBoxes.find(candidate => candidate.currency === 'USD');
+    if (!box) { setFinanceError('أنشئ صندوقاً قبل تسجيل المصاريف.'); return; }
+    const amount = box.currency === 'USD' ? parseFloat(expAmountUSD) || 0 : parseFloat(expAmountSYP) || 0;
+    if (!(amount > 0)) { setFinanceError(`أدخل مبلغ المصروف بعملة الصندوق (${box.currency === 'USD' ? 'دولار' : 'ليرة'}).`); return; }
 
-    if (usd <= 0 && syp <= 0) return;
-
-    addVoucher({
-      type: 'expense',
-      date: new Date().toISOString().split('T')[0],
-      cashBoxId: expCashBoxId,
-      amountUSD: usd,
-      amountSYP: syp,
-      exchangeRate: settings.usdToSypRate,
-      category: expCategory,
-      statement: `${expCategory} - المستفيد: ${expPayee || 'عام'} - ${expStatement}`,
-      createdBy: currentUser.fullName
-    });
+    const saved = await runFinanceAction(() => financeApi.createVoucher({
+      type: 'expense', currency: box.currency, amount: amount.toFixed(4), exchangeRateSypPerUsd: settings.usdToSypRate,
+      cashBoxId: box.id, warehouseId: box.warehouseId ?? undefined, category: expCategory,
+      userNote: `المستفيد: ${expPayee || 'عام'}${expStatement ? ` - ${expStatement}` : ''}`,
+      idempotencyKey: crypto.randomUUID(),
+    }));
+    if (!saved) return;
 
     setExpAmountUSD('');
     setExpAmountSYP('');
@@ -303,53 +319,25 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     operatorName: string;
   }
 
-  const generateJournalEntries = (): JournalEntry[] => {
-    const entries: JournalEntry[] = [];
-
-    // 1. Invoices
-    invoices.forEach(inv => {
-      const isSale = inv.type === 'sale';
-      const totalGoldGrams = inv.items.reduce((sum, i) => sum + i.netWeightGrams, 0);
-
-      entries.push({
-        id: `journal-inv-${inv.id}`,
-        date: inv.date,
-        refNumber: inv.invoiceNumber,
-        type: isSale ? 'مبيعات' : 'مشتريات',
-        entityName: inv.customerOrSupplierName,
-        description: `فاتورة ${isSale ? 'بيع' : 'شراء'} ${inv.items.length} قطعة - مدفوع $${inv.paidUSD}`,
-        debitUSD: isSale ? inv.paidUSD : 0,
-        creditUSD: isSale ? 0 : inv.paidUSD,
-        goldWeightGrams: isSale ? -totalGoldGrams : totalGoldGrams,
-        cashBoxName: inv.paidUSD > 0 ? 'صندوق الدولار الرئيسي' : 'ذمم نقدية',
-        operatorName: inv.createdBy
-      });
-    });
-
-    // 2. Vouchers
-    vouchers.forEach(vch => {
-      const isReceipt = vch.type === 'receipt';
-      const isPayment = vch.type === 'payment';
-      const isExpense = vch.type === 'expense';
-
-      entries.push({
-        id: `journal-vch-${vch.id}`,
-        date: vch.date,
-        refNumber: vch.voucherNumber,
-        type: isReceipt ? 'سند قبض' : isPayment ? 'سند صرف' : 'مصروف تشغيلي',
-        entityName: vch.partnerName || vch.category || 'عام',
-        description: vch.statement,
-        debitUSD: isReceipt ? vch.amountUSD : 0,
-        creditUSD: isPayment || isExpense ? vch.amountUSD : 0,
-        goldWeightGrams: vch.goldWeight21kGrams ? (isReceipt ? vch.goldWeight21kGrams : -vch.goldWeight21kGrams) : 0,
-        cashBoxName: cashBoxes.find(b => b.id === vch.cashBoxId)?.name || 'صندوق عام',
-        operatorName: vch.createdBy
-      });
-    });
-
-    // Sort by date descending
-    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  };
+  // The journal is the immutable cash movement ledger itself: every row here exists
+  // because a voucher moved money, and each one names the document that caused it.
+  const generateJournalEntries = (): JournalEntry[] => movements.map(movement => {
+    const voucher = vouchers.find(candidate => candidate.id === movement.voucherId);
+    const partnerName = voucher?.partnerName || partners.find(partner => partner.id === movement.partnerId)?.name || '';
+    return {
+      id: `journal-mov-${movement.id}`,
+      date: movement.createdAt.slice(0, 10),
+      refNumber: movement.voucherNumber || '—',
+      type: movement.direction === 'inflow' ? 'قبض نقدي' : voucher?.type === 'expense' ? 'مصروف تشغيلي' : 'صرف نقدي',
+      entityName: partnerName || voucher?.category || 'عام',
+      description: movement.description,
+      debitUSD: movement.direction === 'inflow' ? movement.amountUSD : 0,
+      creditUSD: movement.direction === 'outflow' ? movement.amountUSD : 0,
+      goldWeightGrams: 0,
+      cashBoxName: movement.cashboxName,
+      operatorName: movement.actor,
+    };
+  }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const journalEntries = generateJournalEntries().filter(entry => {
     const todayStr = new Date().toISOString().split('T')[0];
@@ -370,6 +358,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
 
   return (
     <div className="space-y-3 sm:space-y-6 text-slate-900" dir="rtl">
+      {financeError && <div className="rounded-sm border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{financeError}</div>}
+      {financeBusy && <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">جارٍ تنفيذ العملية المالية...</div>}
       {/* ========================================================================= */}
       {/* SUB-SCREEN 1: قسم الصناديق والخزائن (CASH BOXES & VAULTS) */}
       {/* ========================================================================= */}
@@ -844,7 +834,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                     </div>
                     <div className="absolute left-3 top-1/2 flex flex-row-reverse -translate-y-1/2 items-center gap-2 text-left font-mono">
                       <button onClick={event => { event.stopPropagation(); setActiveVoucherMenu(activeVoucherMenu?.id === vch.id ? null : vch); }} className="bg-white/80 border border-slate-200 text-slate-800 p-1.5 rounded-sm"><MoreVertical className="w-4 h-4" /></button>
-                      {activeVoucherMenu?.id === vch.id && <div onClick={event => event.stopPropagation()} className="absolute left-0 top-9 z-50 w-44 rounded-sm border border-slate-300 bg-white py-1 shadow-xl text-right text-xs"><button onClick={() => { setSelectedVoucherForPrint(vch); setActiveVoucherMenu(null); }} className="w-full px-3 py-2 hover:bg-amber-50">طباعة</button><button onClick={() => { setSelectedVoucherForPrint(vch); setActiveVoucherMenu(null); setTimeout(() => window.print(), 200); }} className="w-full px-3 py-2 hover:bg-amber-50">تصدير PDF</button><button onClick={() => handleEditVoucher(vch)} className="w-full px-3 py-2 hover:bg-amber-50">تعديل</button><button onClick={() => { cancelVoucher(vch.id); setActiveVoucherMenu(null); }} className="w-full px-3 py-2 text-rose-700 hover:bg-rose-50">إلغاء وعكس السند</button></div>}
+                      {activeVoucherMenu?.id === vch.id && <div onClick={event => event.stopPropagation()} className="absolute left-0 top-9 z-50 w-44 rounded-sm border border-slate-300 bg-white py-1 shadow-xl text-right text-xs"><button onClick={() => { setSelectedVoucherForPrint(vch); setActiveVoucherMenu(null); }} className="w-full px-3 py-2 hover:bg-amber-50">طباعة</button><button onClick={() => { setSelectedVoucherForPrint(vch); setActiveVoucherMenu(null); setTimeout(() => window.print(), 200); }} className="w-full px-3 py-2 hover:bg-amber-50">تصدير PDF</button><button onClick={() => handleEditVoucher(vch)} className="w-full px-3 py-2 hover:bg-amber-50">تعديل</button><button onClick={() => { const reason = window.prompt('سبب إلغاء السند:'); if (reason?.trim()) void runFinanceAction(() => financeApi.cancelVoucher(vch.id, reason.trim())); setActiveVoucherMenu(null); }} className="w-full px-3 py-2 text-rose-700 hover:bg-rose-50">إلغاء وعكس السند</button></div>}
                       <div>
                         <div className="font-black text-slate-900 text-xs">${vch.amountUSD.toFixed(0)}</div>
                         <div className="text-[9px] text-slate-400 font-sans">{vch.date.split(' ')[0]}</div>
@@ -1409,7 +1399,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
             <button onClick={() => { setSelectedVoucherForPrint(activeVoucherMenu); setActiveVoucherMenu(null); }} className="w-full rounded-sm px-3 py-3 text-right text-xs font-bold hover:bg-white/70">معاينة وطباعة</button>
             <button onClick={() => { setSelectedVoucherForPrint(activeVoucherMenu); setActiveVoucherMenu(null); setTimeout(() => window.print(), 200); }} className="w-full rounded-sm px-3 py-3 text-right text-xs font-bold hover:bg-white/70">تصدير PDF</button>
             <button onClick={() => handleEditVoucher(activeVoucherMenu)} className="w-full rounded-sm px-3 py-3 text-right text-xs font-bold hover:bg-white/70">تعديل السند</button>
-            <button onClick={() => { cancelVoucher(activeVoucherMenu.id); setActiveVoucherMenu(null); }} className="w-full rounded-sm px-3 py-3 text-right text-xs font-black text-rose-800 hover:bg-rose-100">إلغاء وعكس السند</button>
+            <button onClick={() => { const reason = window.prompt('سبب إلغاء السند:'); if (reason?.trim()) void runFinanceAction(() => financeApi.cancelVoucher(activeVoucherMenu.id, reason.trim())); setActiveVoucherMenu(null); }} className="w-full rounded-sm px-3 py-3 text-right text-xs font-black text-rose-800 hover:bg-rose-100">إلغاء وعكس السند</button>
           </div>
         </div>
       )}

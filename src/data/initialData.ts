@@ -274,26 +274,7 @@ export const initialPartners: Partner[] = [
   }
 ];
 
-export const initialCashBoxes: CashBox[] = [
-  {
-    id: 'box-usd',
-    name: 'صندوق الدولار الرئيسي ($)',
-    currency: 'USD',
-    balanceAmount: 18500.00
-  },
-  {
-    id: 'box-syp',
-    name: 'صندوق الليرة السورية (ل.س)',
-    currency: 'SYP',
-    balanceAmount: 42500000.00 // 42.5 مليون ليرة سورية
-  },
-  {
-    id: 'box-safe',
-    name: 'الخزنة المركزية ($)',
-    currency: 'USD',
-    balanceAmount: 75000.00
-  }
-];
+export const initialCashBoxes: CashBox[] = []; // Cashboxes are PostgreSQL-backed since Task 07.
 
 export const initialUsers: User[] = [
   {
@@ -462,35 +443,7 @@ export const initialInvoices: Invoice[] = [
   }
 ];
 
-export const initialVouchers: Voucher[] = [
-  {
-    id: 'vch-501',
-    voucherNumber: 'VCH-2026-01',
-    type: 'receipt',
-    date: '2026-08-08',
-    partnerId: 'prt-1',
-    partnerName: 'المهندس محمد زاهر المرعشي',
-    cashBoxId: 'box-usd',
-    amountUSD: 500.00,
-    amountSYP: 7600000,
-    exchangeRate: 15200,
-    statement: 'دفعة حساب من فاتورة شراء طقم ذهب ملكي',
-    createdBy: 'الحاج حميد حليوي'
-  },
-  {
-    id: 'vch-502',
-    voucherNumber: 'VCH-2026-02',
-    type: 'expense',
-    date: '2026-08-09',
-    cashBoxId: 'box-syp',
-    amountUSD: 100.00,
-    amountSYP: 1520000,
-    exchangeRate: 15200,
-    category: 'مصاريف كهرباء وطاقة شمسية',
-    statement: 'سداد فاتورة اشتراك أمبيرات وطاقة لمحل التلل',
-    createdBy: 'محمود الحلبي'
-  }
-];
+export const initialVouchers: Voucher[] = []; // Vouchers are PostgreSQL-backed since Task 07.
 
 export const initialActivityLogs: ActivityLog[] = [
   {

@@ -57,6 +57,13 @@
       "when": 1786653127972,
       "tag": "0007_loose_sally_floyd",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786657224532,
+      "tag": "0008_right_lightspeed",
+      "breakpoints": true
     }
   ]
 }

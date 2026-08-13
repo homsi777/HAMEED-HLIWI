@@ -105,6 +105,12 @@ export const purchasePaymentMethod = pgEnum('purchase_payment_method', ['cash_us
 export const returnType = pgEnum('return_type', ['sales_return', 'purchase_return']);
 export const returnInvoiceStatus = pgEnum('return_invoice_status', ['posted', 'cancelled']);
 export const returnPaymentMethod = pgEnum('return_payment_method', ['cash_usd', 'cash_syp', 'credit_note']);
+export const cashCurrency = pgEnum('cash_currency', ['USD', 'SYP']);
+export const voucherType = pgEnum('voucher_type', ['receipt', 'payment', 'expense']);
+export const voucherStatus = pgEnum('voucher_status', ['posted', 'cancelled']);
+export const voucherSourceType = pgEnum('voucher_source_type', ['manual', 'sale', 'purchase', 'sales_return', 'purchase_return', 'cashbox_transfer', 'expense']);
+export const cashMovementDirection = pgEnum('cash_movement_direction', ['inflow', 'outflow']);
+export const partnerLedgerEntryType = pgEnum('partner_ledger_entry_type', ['opening', 'sale', 'purchase', 'sales_return', 'purchase_return', 'receipt', 'payment', 'reversal']);
 
 export const inventoryItems = pgTable('inventory_items', {
   id: id(), code: text('code').notNull(), name: text('name').notNull(), category: text('category').notNull(), karat: text('karat').notNull(),
@@ -186,6 +192,81 @@ export const returnInvoiceItems = pgTable('return_invoice_items', {
 }, table => [uniqueIndex('return_invoice_items_return_line_unique').on(table.returnInvoiceId, table.lineNumber), index('return_invoice_items_return_idx').on(table.returnInvoiceId), index('return_invoice_items_source_sale_line_idx').on(table.sourceSalesInvoiceItemId), index('return_invoice_items_source_purchase_line_idx').on(table.sourcePurchaseInvoiceItemId), index('return_invoice_items_inventory_idx').on(table.inventoryItemId), check('return_invoice_items_source_check', sql`(${table.sourceSalesInvoiceItemId} is not null and ${table.sourcePurchaseInvoiceItemId} is null) or (${table.sourcePurchaseInvoiceItemId} is not null and ${table.sourceSalesInvoiceItemId} is null)`), check('return_invoice_items_amounts_check', sql`${table.quantity} > 0 and ${table.netWeightGrams} > 0 and ${table.grossWeightGrams} > 0 and ${table.lineGrossUsd} >= 0 and ${table.lineTotalUsd} >= 0`)]);
 // Refund facts stay descriptive until the cashbox and ledger modules are migrated.
 export const returnPayments = pgTable('return_payments', { id: id(), returnInvoiceId: uuid('return_invoice_id').notNull().references(() => returnInvoices.id, { onDelete: 'restrict' }), method: returnPaymentMethod('method').notNull(), amountUsd: numeric('amount_usd', { precision: 18, scale: 4 }).notNull().default('0'), amountSyp: numeric('amount_syp', { precision: 20, scale: 2 }).notNull().default('0'), exchangeRateSypPerUsd: numeric('exchange_rate_syp_per_usd', { precision: 18, scale: 4 }), appliedUsd: numeric('applied_usd', { precision: 18, scale: 4 }).notNull().default('0'), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() }, table => [index('return_payments_return_idx').on(table.returnInvoiceId), check('return_payments_amounts_check', sql`${table.amountUsd} >= 0 and ${table.amountSyp} >= 0 and ${table.appliedUsd} >= 0`)]);
+
+// Finance is an operational subledger, not a general ledger. Cash balances are always
+// derived from immutable movements, and partner balances from immutable ledger entries,
+// so no stored number can silently drift away from the documents that justify it.
+export const cashboxes = pgTable('cashboxes', {
+  id: id(), name: text('name').notNull(), currency: cashCurrency('currency').notNull(), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  openingBalance: numeric('opening_balance', { precision: 20, scale: 4 }).notNull().default('0'), isDefault: boolean('is_default').notNull().default(false), isActive: boolean('is_active').notNull().default(true),
+  notes: text('notes'), version: integer('version').notNull().default(1), archivedAt: timestamp('archived_at', { withTimezone: true }), archivedByUserId: uuid('archived_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), updatedByUserId: uuid('updated_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [
+  uniqueIndex('cashboxes_warehouse_name_unique').on(table.warehouseId, table.name),
+  uniqueIndex('cashboxes_default_per_warehouse_currency').on(table.warehouseId, table.currency).where(sql`${table.isDefault} = true and ${table.archivedAt} is null`),
+  index('cashboxes_warehouse_currency_idx').on(table.warehouseId, table.currency, table.isActive),
+  check('cashboxes_opening_balance_check', sql`${table.openingBalance} >= 0`),
+]);
+
+export const voucherSequences = pgTable('voucher_sequences', { year: integer('year').notNull(), type: voucherType('type').notNull(), lastNumber: integer('last_number').notNull().default(0), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow() }, table => [primaryKey({ columns: [table.year, table.type], name: 'voucher_sequences_pk' })]);
+export const cashboxTransferSequences = pgTable('cashbox_transfer_sequences', { year: integer('year').primaryKey(), lastNumber: integer('last_number').notNull().default(0), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow() });
+
+export const cashboxTransfers = pgTable('cashbox_transfers', {
+  id: id(), transferNumber: text('transfer_number').notNull(), transferYear: integer('transfer_year').notNull(), sequenceNumber: integer('sequence_number').notNull(), status: voucherStatus('status').notNull().default('posted'),
+  fromCashboxId: uuid('from_cashbox_id').notNull().references(() => cashboxes.id, { onDelete: 'restrict' }), toCashboxId: uuid('to_cashbox_id').notNull().references(() => cashboxes.id, { onDelete: 'restrict' }),
+  amountFrom: numeric('amount_from', { precision: 20, scale: 4 }).notNull(), amountTo: numeric('amount_to', { precision: 20, scale: 4 }).notNull(), exchangeRateSypPerUsd: numeric('exchange_rate_syp_per_usd', { precision: 18, scale: 4 }),
+  note: text('note'), idempotencyKey: text('idempotency_key').notNull(), cancelledAt: timestamp('cancelled_at', { withTimezone: true }), cancelledByUserId: uuid('cancelled_by_user_id').references(() => users.id, { onDelete: 'restrict' }), cancellationReason: text('cancellation_reason'),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [uniqueIndex('cashbox_transfers_number_unique').on(table.transferNumber), uniqueIndex('cashbox_transfers_idempotency_unique').on(table.idempotencyKey), uniqueIndex('cashbox_transfers_year_sequence_unique').on(table.transferYear, table.sequenceNumber), index('cashbox_transfers_created_idx').on(table.createdAt), check('cashbox_transfers_amounts_check', sql`${table.amountFrom} > 0 and ${table.amountTo} > 0`), check('cashbox_transfers_distinct_check', sql`${table.fromCashboxId} <> ${table.toCashboxId}`)]);
+
+// A voucher is the document; the cash movement is the fact. Automatic vouchers carry the
+// payment row they were generated from so one payment can never produce two vouchers.
+export const vouchers = pgTable('vouchers', {
+  id: id(), voucherNumber: text('voucher_number').notNull(), voucherYear: integer('voucher_year').notNull(), sequenceNumber: integer('sequence_number').notNull(), type: voucherType('type').notNull(), status: voucherStatus('status').notNull().default('posted'),
+  sourceType: voucherSourceType('source_type').notNull().default('manual'), sourceDocumentNumber: text('source_document_number'), sourcePaymentId: uuid('source_payment_id'),
+  salesInvoiceId: uuid('sales_invoice_id').references(() => salesInvoices.id, { onDelete: 'restrict' }), purchaseInvoiceId: uuid('purchase_invoice_id').references(() => purchaseInvoices.id, { onDelete: 'restrict' }), returnInvoiceId: uuid('return_invoice_id').references(() => returnInvoices.id, { onDelete: 'restrict' }), cashboxTransferId: uuid('cashbox_transfer_id').references(() => cashboxTransfers.id, { onDelete: 'restrict' }),
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), partnerNameSnapshot: text('partner_name_snapshot'), cashboxId: uuid('cashbox_id').notNull().references(() => cashboxes.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  currency: cashCurrency('currency').notNull(), amount: numeric('amount', { precision: 20, scale: 4 }).notNull(), exchangeRateSypPerUsd: numeric('exchange_rate_syp_per_usd', { precision: 18, scale: 4 }).notNull(), amountUsdEquivalent: numeric('amount_usd_equivalent', { precision: 18, scale: 4 }).notNull(),
+  expenseCategory: text('expense_category'), systemNote: text('system_note'), userNote: text('user_note'),
+  reversalOfVoucherId: uuid('reversal_of_voucher_id'), idempotencyKey: text('idempotency_key').notNull(), version: integer('version').notNull().default(1),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }), cancelledByUserId: uuid('cancelled_by_user_id').references(() => users.id, { onDelete: 'restrict' }), cancellationReason: text('cancellation_reason'),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), updatedByUserId: uuid('updated_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [
+  uniqueIndex('vouchers_number_unique').on(table.voucherNumber), uniqueIndex('vouchers_idempotency_unique').on(table.idempotencyKey), uniqueIndex('vouchers_year_type_sequence_unique').on(table.voucherYear, table.type, table.sequenceNumber),
+  uniqueIndex('vouchers_source_payment_unique').on(table.sourceType, table.sourcePaymentId).where(sql`${table.sourcePaymentId} is not null`),
+  index('vouchers_cashbox_created_idx').on(table.cashboxId, table.createdAt), index('vouchers_partner_created_idx').on(table.partnerId, table.createdAt), index('vouchers_type_status_created_idx').on(table.type, table.status, table.createdAt),
+  index('vouchers_sales_invoice_idx').on(table.salesInvoiceId), index('vouchers_purchase_invoice_idx').on(table.purchaseInvoiceId), index('vouchers_return_invoice_idx').on(table.returnInvoiceId),
+  check('vouchers_amount_check', sql`${table.amount} > 0 and ${table.amountUsdEquivalent} >= 0 and ${table.exchangeRateSypPerUsd} > 0`),
+  check('vouchers_expense_partner_check', sql`${table.type} <> 'expense' or ${table.partnerId} is null`),
+]);
+
+export const cashMovements = pgTable('cash_movements', {
+  id: id(), cashboxId: uuid('cashbox_id').notNull().references(() => cashboxes.id, { onDelete: 'restrict' }), voucherId: uuid('voucher_id').references(() => vouchers.id, { onDelete: 'restrict' }), cashboxTransferId: uuid('cashbox_transfer_id').references(() => cashboxTransfers.id, { onDelete: 'restrict' }),
+  direction: cashMovementDirection('direction').notNull(), amount: numeric('amount', { precision: 20, scale: 4 }).notNull(), currency: cashCurrency('currency').notNull(), exchangeRateSypPerUsd: numeric('exchange_rate_syp_per_usd', { precision: 18, scale: 4 }).notNull(), amountUsdEquivalent: numeric('amount_usd_equivalent', { precision: 18, scale: 4 }).notNull(),
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  salesInvoiceId: uuid('sales_invoice_id').references(() => salesInvoices.id, { onDelete: 'restrict' }), purchaseInvoiceId: uuid('purchase_invoice_id').references(() => purchaseInvoices.id, { onDelete: 'restrict' }), returnInvoiceId: uuid('return_invoice_id').references(() => returnInvoices.id, { onDelete: 'restrict' }),
+  actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), description: text('description').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [index('cash_movements_cashbox_created_idx').on(table.cashboxId, table.createdAt), index('cash_movements_voucher_idx').on(table.voucherId), index('cash_movements_partner_idx').on(table.partnerId), index('cash_movements_transfer_idx').on(table.cashboxTransferId), check('cash_movements_amount_check', sql`${table.amount} > 0`)]);
+
+// The operational subledger every receivable and payable is derived from.
+export const partnerLedgerEntries = pgTable('partner_ledger_entries', {
+  id: id(), partnerId: uuid('partner_id').notNull().references(() => partners.id, { onDelete: 'restrict' }), entryType: partnerLedgerEntryType('entry_type').notNull(),
+  debitUsd: numeric('debit_usd', { precision: 18, scale: 4 }).notNull().default('0'), creditUsd: numeric('credit_usd', { precision: 18, scale: 4 }).notNull().default('0'),
+  currency: cashCurrency('currency').notNull().default('USD'), originalAmount: numeric('original_amount', { precision: 20, scale: 4 }).notNull(), exchangeRateSypPerUsd: numeric('exchange_rate_syp_per_usd', { precision: 18, scale: 4 }).notNull(),
+  salesInvoiceId: uuid('sales_invoice_id').references(() => salesInvoices.id, { onDelete: 'restrict' }), purchaseInvoiceId: uuid('purchase_invoice_id').references(() => purchaseInvoices.id, { onDelete: 'restrict' }), returnInvoiceId: uuid('return_invoice_id').references(() => returnInvoices.id, { onDelete: 'restrict' }), voucherId: uuid('voucher_id').references(() => vouchers.id, { onDelete: 'restrict' }),
+  documentNumber: text('document_number'), description: text('description').notNull(), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  reversalOfEntryId: uuid('reversal_of_entry_id'), occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(), actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [index('partner_ledger_partner_occurred_idx').on(table.partnerId, table.occurredAt), index('partner_ledger_voucher_idx').on(table.voucherId), index('partner_ledger_sales_invoice_idx').on(table.salesInvoiceId), index('partner_ledger_purchase_invoice_idx').on(table.purchaseInvoiceId), index('partner_ledger_return_invoice_idx').on(table.returnInvoiceId), check('partner_ledger_amounts_check', sql`${table.debitUsd} >= 0 and ${table.creditUsd} >= 0`)]);
+
+// Allocation of a receipt or payment against specific invoices, kept as records rather
+// than as free text so a future accounting module can consume it directly.
+export const voucherAllocations = pgTable('voucher_allocations', {
+  id: id(), voucherId: uuid('voucher_id').notNull().references(() => vouchers.id, { onDelete: 'restrict' }),
+  salesInvoiceId: uuid('sales_invoice_id').references(() => salesInvoices.id, { onDelete: 'restrict' }), purchaseInvoiceId: uuid('purchase_invoice_id').references(() => purchaseInvoices.id, { onDelete: 'restrict' }), returnInvoiceId: uuid('return_invoice_id').references(() => returnInvoices.id, { onDelete: 'restrict' }),
+  amountUsd: numeric('amount_usd', { precision: 18, scale: 4 }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [index('voucher_allocations_voucher_idx').on(table.voucherId), index('voucher_allocations_sales_invoice_idx').on(table.salesInvoiceId), index('voucher_allocations_purchase_invoice_idx').on(table.purchaseInvoiceId), check('voucher_allocations_amount_check', sql`${table.amountUsd} > 0`), check('voucher_allocations_target_check', sql`(${table.salesInvoiceId} is not null)::int + (${table.purchaseInvoiceId} is not null)::int + (${table.returnInvoiceId} is not null)::int = 1`)]);
+
+export const expenseCategories = pgTable('expense_categories', { id: id(), name: text('name').notNull(), isActive: boolean('is_active').notNull().default(true), createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps }, table => [uniqueIndex('expense_categories_name_unique').on(table.name)]);
 
 export type UserRow = typeof users.$inferSelect;
 export type WarehouseRow = typeof warehouses.$inferSelect;

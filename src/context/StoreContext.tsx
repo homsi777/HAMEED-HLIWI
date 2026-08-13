@@ -108,6 +108,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         // Remove only the known old UI fixtures; real backend inventory is never
         // stored here and no arbitrary local records are deleted.
         if (Array.isArray(parsed.inventory)) parsed.inventory = parsed.inventory.filter((item: InventoryItem) => !/^item-10[1-7]$/.test(item.id));
+        // Finance lives in PostgreSQL since Task 07, so stale local cashboxes, vouchers
+        // and expense categories are dropped rather than shown next to real balances.
+        parsed.cashBoxes = [];
+        parsed.vouchers = [];
         // Returns now live in PostgreSQL, so any locally stored return document is dropped.
         if (Array.isArray(parsed.invoices)) parsed.invoices = parsed.invoices.filter((invoice: Invoice) => invoice.type !== 'return');
         return parsed;

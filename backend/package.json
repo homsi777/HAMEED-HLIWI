@@ -14,7 +14,10 @@
     "test": "tsx --test test/*.spec.ts",
     "test:integration": "tsx test/integration.ts",
     "test:task06": "tsx test/task06-verification.ts",
-    "test:inventory-quantity": "tsx test/inventory-quantity-regression.ts"
+    "test:inventory-quantity": "tsx test/inventory-quantity-regression.ts",
+    "db:backfill:finance": "tsx src/database/backfill-finance.ts",
+    "test:finance": "tsx test/finance-cycle.spec.ts",
+    "test:task07": "tsx test/task07-verification.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
