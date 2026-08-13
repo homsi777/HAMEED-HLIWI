@@ -1,6 +1,6 @@
 # TASK 05 — Purchases Backend Migration Report
 
-Status: **IMPLEMENTED AND LOCALLY VERIFIED — production deployment and designated-user acceptance remain pending.**
+Status: **IMPLEMENTED AND DEPLOYED — automated verification passed; designated-user business acceptance remains pending real warehouse data.**
 
 ## Database Changes
 
@@ -51,10 +51,10 @@ Completed successfully:
 - backend TypeScript build;
 - integration test suite, including purchase creation, supplier/customer validation, scope/permission denial, inventory receipt, payments, debt derivation, idempotency, full and partial reconciliation, no auto-match, concurrent reconciliation conflict, safe/unsafe cancellation, audit, and restart persistence.
 
-Browser visual verification and production authenticated acceptance have not yet been claimed or performed in this Task 05 run.
+Browser visual verification has not been performed in this Task 05 run. Production route verification was completed, but authenticated business acceptance remains pending a real warehouse and business stock.
 
 ## Production Safety and Remaining Risks
 
 Production was previously observed with no inventory and no warehouses. This task does not fabricate stock or import browser-local purchases. A real warehouse must be created by the business user before purchase or sale can be posted. The two temporary production customer records created during earlier troubleshooting are not inventory data and are left untouched.
 
-Before deployment, the generated migration must be reviewed/applied as the PostgreSQL owner, then backend/frontend rebuilt and only the two Hameed Hliwi PM2 processes restarted. No other project process is in scope.
+Production deployment completed: the reviewed migration was applied manually as the PostgreSQL owner, recorded in the Drizzle migration ledger, new tables assigned to the application role, backend/frontend rebuilt, and only `hameed-hliwi-api` and `hameed-hliwi` restarted. Root returned 200, health returned `database: ok`, unauthenticated purchases returned 401, and an authenticated administrator received 200 from Purchases, Inventory, and Suppliers endpoints. No other project process was restarted.
