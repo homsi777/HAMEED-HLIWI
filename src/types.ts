@@ -49,6 +49,7 @@ export interface InventoryItem {
   notes?: string;
   dateAdded: string;
   quantity?: number;
+  inventoryMode?: 'individual' | 'aggregate';
   isManualSaleEntry?: boolean;
 }
 

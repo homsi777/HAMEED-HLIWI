@@ -72,6 +72,8 @@ export const InventoryView: React.FC = () => {
   const [formWarehouseId, setFormWarehouseId] = useState(warehouses[0]?.id || '');
   const [formCode, setFormCode] = useState('');
   const [formNotes, setFormNotes] = useState('');
+  const [formInventoryMode, setFormInventoryMode] = useState<'individual' | 'aggregate'>('individual');
+  const [formQuantity, setFormQuantity] = useState('1');
   const [formImageUrl, setFormImageUrl] = useState('');
   const [isCompressingImage, setIsCompressingImage] = useState(false);
   const [imageError, setImageError] = useState('');
@@ -91,6 +93,8 @@ export const InventoryView: React.FC = () => {
     setFormWarehouseId(warehouses[0]?.id || '');
     setFormCode(`GLD-21-${Math.floor(100 + Math.random() * 900)}`);
     setFormNotes('');
+    setFormInventoryMode('individual');
+    setFormQuantity('1');
     setFormImageUrl('');
     setEditingItem(null);
   };
@@ -106,6 +110,8 @@ export const InventoryView: React.FC = () => {
     setFormWarehouseId(item.warehouseId);
     setFormCode(item.code);
     setFormNotes(item.notes || '');
+    setFormInventoryMode(item.inventoryMode || 'individual');
+    setFormQuantity((item.quantity ?? 1).toString());
     setFormImageUrl(item.imageUrl || '');
     setShowAddItemModal(true);
   };
@@ -168,6 +174,8 @@ export const InventoryView: React.FC = () => {
         warehouseId: formWarehouseId,
         code: formCode,
         notes: formNotes,
+        inventoryMode: formInventoryMode,
+        quantity: formQuantity,
         imagePath: imagePath ?? (formImageUrl.startsWith('/uploads/') ? formImageUrl.split('/').pop() : undefined)
       };
     const success = await mutate(() => editingItem ? inventoryApi.update(editingItem.id, { ...payload, version: inventoryVersions[editingItem.id] }) : inventoryApi.create({ ...payload, status: 'in_stock' }));
@@ -716,7 +724,20 @@ export const InventoryView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">الوزن القائم بالجرام (مع الفصوص) *</label>
+                  <label className="block text-slate-700 font-bold mb-1">نوع المخزون *</label>
+                  <select value={formInventoryMode} onChange={e => { const mode = e.target.value as 'individual' | 'aggregate'; setFormInventoryMode(mode); if (mode === 'individual' && (!formQuantity || Number(formQuantity) <= 0)) setFormQuantity('1'); }} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-sm font-bold">
+                    <option value="individual">قطعة منفردة</option>
+                    <option value="aggregate">صنف مجمّع بالوزن</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">{formInventoryMode === 'aggregate' ? 'الكمية المتاحة (إن كانت معروفة)' : 'الكمية'}</label>
+                  <input type="number" min={formInventoryMode === 'aggregate' ? '0' : '1'} step="1" value={formQuantity} onChange={e => setFormQuantity(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-sm font-mono font-bold text-slate-900" />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">{formInventoryMode === 'aggregate' ? 'إجمالي الوزن المتاح بالجرام *' : 'الوزن القائم بالجرام (مع الفصوص) *'}</label>
                   <input
                     type="number"
                     step="0.01"

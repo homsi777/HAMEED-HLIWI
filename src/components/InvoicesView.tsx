@@ -216,6 +216,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const [selectedStockItemId, setSelectedStockItemId] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
   const [stockSalePricePerGram, setStockSalePricePerGram] = useState('');
+  const [aggregateSoldWeight, setAggregateSoldWeight] = useState('');
+  const [aggregateSoldQuantity, setAggregateSoldQuantity] = useState('1');
   const [customItemName, setCustomItemName] = useState('');
   const [customKarat, setCustomKarat] = useState<GoldKarat>('21');
   const [customCategory, setCustomCategory] = useState<ItemCategory>('أطقم');
@@ -302,6 +304,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     setStockSearchQuery('');
     setSelectedStockItemId('');
     setStockSalePricePerGram('');
+    setAggregateSoldWeight('');
+    setAggregateSoldQuantity('1');
     const default21KPrice = goldPrices.find(g => g.karat === '21')?.buyPriceUSDPerGram;
     setScrapPricePerGram(default21KPrice ? default21KPrice.toString() : '70');
     setCustomPricePerGram('');
@@ -327,16 +331,21 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     const p = goldPrices.find(g => g.karat === stockItem.karat);
     const goldPricePerGram = invType === 'sale' ? enteredSalePrice : (p?.buyPriceUSDPerGram ?? 75);
     const laborFeePerGram = invType === 'sale' ? (p?.laborFeeUSDPerGram ?? stockItem.laborFeeUSDPerGram) : stockItem.laborFeeUSDPerGram;
-    const { totalPriceUSD } = calculateItemPricing(stockItem.netWeightGrams, goldPricePerGram, laborFeePerGram);
+    const isAggregate = stockItem.inventoryMode === 'aggregate';
+    const soldWeight = isAggregate ? parseFloat(aggregateSoldWeight) : stockItem.netWeightGrams;
+    const soldQuantity = isAggregate ? parseFloat(aggregateSoldQuantity) : 1;
+    if (isAggregate && (!Number.isFinite(soldWeight) || soldWeight <= 0 || !Number.isFinite(soldQuantity) || soldQuantity <= 0)) { setSelectedStockItemId(stockItem.id); alert(`هذا صنف مجمّع. المتاح ${stockItem.netWeightGrams.toFixed(3)} غ؛ أدخل وزن البيع وعدد القطع أولاً.`); return; }
+    const { totalPriceUSD } = calculateItemPricing(soldWeight, goldPricePerGram, laborFeePerGram);
 
     const newItem: InvoiceItem = {
       itemId: stockItem.id,
       itemName: stockItem.name,
       category: stockItem.category,
       karat: stockItem.karat,
-      grossWeightGrams: stockItem.grossWeightGrams,
-      stoneWeightGrams: stockItem.stoneWeightGrams,
-      netWeightGrams: stockItem.netWeightGrams,
+      grossWeightGrams: soldWeight,
+      stoneWeightGrams: isAggregate ? 0 : stockItem.stoneWeightGrams,
+      netWeightGrams: soldWeight,
+      quantity: soldQuantity,
       laborFeeUSDPerGram: laborFeePerGram,
       pricePerGramUSD: goldPricePerGram,
       totalPriceUSD,
@@ -347,6 +356,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     setSelectedStockItemId('');
     setStockSearchQuery('');
     if (invType === 'sale') setStockSalePricePerGram('');
+    setAggregateSoldWeight('');
+    setAggregateSoldQuantity('1');
   };
 
   // Add custom item into invoice
@@ -482,7 +493,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
       try {
         let customerId = invPartnerId;
         if (!customerId) { const partner = await partnersApi.create({ name: partnerName, type: 'customer', phone: invCustomerPhone, address: 'حلب - سوريا' }); customerId = partner.id; setInvPartnerId(partner.id); }
-        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId, items: invItems.map(item => ({ ...item, soldWeightGrams: item.itemId ? item.netWeightGrams : undefined })), scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
         await refreshServerSales(); setShowCreateModal(false); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setSalesError(error?.message || 'تعذر حفظ فاتورة البيع.'); return; }
     }
@@ -1005,6 +1016,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
                       />
                     </div>
                   )}
+
+                  {invType === 'sale' && inventory.find(item => item.id === selectedStockItemId)?.inventoryMode === 'aggregate' && (() => { const item = inventory.find(row => row.id === selectedStockItemId)!; return <div className="grid grid-cols-2 gap-2 rounded-sm border border-amber-300 bg-amber-50 p-2"><p className="col-span-2 text-[11px] font-bold text-amber-950">صنف مجمّع — المتاح: {item.netWeightGrams.toFixed(3)} غ، الكمية: {item.quantity ?? 0}</p><input type="number" min="0.001" step="0.001" value={aggregateSoldWeight} onChange={e => setAggregateSoldWeight(e.target.value)} placeholder="وزن البيع (غ)" className="border border-amber-300 bg-white p-1.5 font-mono text-xs" /><input type="number" min="0.001" step="1" value={aggregateSoldQuantity} onChange={e => setAggregateSoldQuantity(e.target.value)} placeholder="عدد القطع" className="border border-amber-300 bg-white p-1.5 font-mono text-xs" /></div>; })()}
 
                   {/* Fallback standard select for quick browsing without typing */}
                   <div className="flex gap-1.5 pt-0.5">

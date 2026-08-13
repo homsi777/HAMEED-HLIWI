@@ -1,0 +1,7 @@
+CREATE TYPE "public"."inventory_mode" AS ENUM('individual', 'aggregate');--> statement-breakpoint
+ALTER TABLE "inventory_items" DROP CONSTRAINT "inventory_items_weights_check";--> statement-breakpoint
+ALTER TABLE "inventory_items" DROP CONSTRAINT "inventory_items_quantity_check";--> statement-breakpoint
+ALTER TABLE "inventory_items" ADD COLUMN "inventory_mode" "inventory_mode" DEFAULT 'individual' NOT NULL;--> statement-breakpoint
+ALTER TABLE "sales_invoice_items" ADD COLUMN "quantity" numeric(14, 3) DEFAULT '1' NOT NULL;--> statement-breakpoint
+ALTER TABLE "inventory_items" ADD CONSTRAINT "inventory_items_weights_check" CHECK (("inventory_items"."is_manual_sale_entry" = true and "inventory_items"."gross_weight_grams" < 0 and "inventory_items"."stone_weight_grams" <= 0 and "inventory_items"."net_weight_grams" < 0) or ("inventory_items"."is_manual_sale_entry" = false and "inventory_items"."gross_weight_grams" >= 0 and "inventory_items"."stone_weight_grams" >= 0 and "inventory_items"."net_weight_grams" >= 0 and "inventory_items"."gross_weight_grams" >= "inventory_items"."stone_weight_grams"));--> statement-breakpoint
+ALTER TABLE "inventory_items" ADD CONSTRAINT "inventory_items_quantity_check" CHECK (("inventory_items"."is_manual_sale_entry" = true and "inventory_items"."quantity" < 0) or ("inventory_items"."inventory_mode" = 'aggregate') or ("inventory_items"."quantity" > 0));
