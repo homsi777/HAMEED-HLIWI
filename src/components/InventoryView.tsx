@@ -61,7 +61,7 @@ export const InventoryView: React.FC = () => {
   const [formGrossWeight, setFormGrossWeight] = useState('');
   const [formStoneWeight, setFormStoneWeight] = useState('0');
   const [formLaborFeePerGram, setFormLaborFeePerGram] = useState('');
-  const [formWarehouseId, setFormWarehouseId] = useState(warehouses[0]?.id || 'wh-main');
+  const [formWarehouseId, setFormWarehouseId] = useState(warehouses[0]?.id || '');
   const [formCode, setFormCode] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('');
@@ -80,7 +80,7 @@ export const InventoryView: React.FC = () => {
     setFormGrossWeight('');
     setFormStoneWeight('0');
     setFormLaborFeePerGram('');
-    setFormWarehouseId(warehouses[0]?.id || 'wh-main');
+    setFormWarehouseId(warehouses[0]?.id || '');
     setFormCode(`GLD-21-${Math.floor(100 + Math.random() * 900)}`);
     setFormNotes('');
     setFormImageUrl('');

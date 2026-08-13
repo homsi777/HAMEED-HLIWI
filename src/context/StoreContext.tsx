@@ -104,7 +104,11 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        // Remove only the known old UI fixtures; real backend inventory is never
+        // stored here and no arbitrary local records are deleted.
+        if (Array.isArray(parsed.inventory)) parsed.inventory = parsed.inventory.filter((item: InventoryItem) => !/^item-10[1-7]$/.test(item.id));
+        return parsed;
       }
     } catch (e) {
       console.error('Failed to load state from localStorage', e);

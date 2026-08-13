@@ -39,6 +39,8 @@ import {
 import { PrintInvoiceModal } from './PrintInvoiceModal';
 import { salesApi, type SalesInvoice } from '../services/salesApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
+import { purchasesApi, type PurchaseInvoice } from '../services/purchasesApi';
+import { inventoryApi } from '../services/inventoryApi';
 
 interface InvoicesViewProps {
   initialType?: 'sale' | 'purchase';
@@ -62,9 +64,9 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
 export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const { 
     invoices, 
-    inventory, 
-    partners, 
-    warehouses, 
+    inventory: legacyInventory, 
+    partners,
+    warehouses: legacyWarehouses,
     goldPrices, 
     settings, 
     addInvoice, 
@@ -80,15 +82,28 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const [filterType, setFilterType] = useState<'all' | 'sale' | 'purchase' | 'return'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [serverSales, setServerSales] = useState<SalesInvoice[]>([]);
+  const [serverPurchases, setServerPurchases] = useState<PurchaseInvoice[]>([]);
   const [serverCustomers, setServerCustomers] = useState<ApiPartner[]>([]);
+  const [serverSuppliers, setServerSuppliers] = useState<ApiPartner[]>([]);
+  const [serverWarehouses, setServerWarehouses] = useState<typeof legacyWarehouses>([]);
+  const [serverInventory, setServerInventory] = useState<typeof legacyInventory>([]);
   const [salesPage, setSalesPage] = useState(1);
+  const [purchasesPage, setPurchasesPage] = useState(1);
   const [salesTotal, setSalesTotal] = useState(0);
+  const [purchasesTotal, setPurchasesTotal] = useState(0);
   const [salesLoading, setSalesLoading] = useState(true);
   const [salesError, setSalesError] = useState('');
+  const [purchasesError, setPurchasesError] = useState('');
+  const warehouses = serverWarehouses;
+  const inventory = serverInventory;
   const refreshServerSales = async () => { try { setSalesLoading(true); setSalesError(''); const response = await salesApi.list({ page: salesPage, limit: 30 }); setServerSales(response.items); setSalesTotal(response.meta.total); } catch (reason: any) { setSalesError(reason?.message || 'تعذر تحميل فواتير البيع من الخادم.'); } finally { setSalesLoading(false); } };
+  const refreshServerPurchases = async () => { try { setPurchasesError(''); const response = await purchasesApi.list({ page: purchasesPage, limit: 30 }); setServerPurchases(response.items); setPurchasesTotal(response.meta.total); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل فواتير الشراء من الخادم.'); } };
   const refreshCustomers = async () => { try { const response = await partnersApi.list({ type: 'customer', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerCustomers(response.items); } catch { /* Quick customer creation remains available. */ } };
+  const refreshSuppliers = async () => { try { const response = await partnersApi.list({ type: 'supplier', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerSuppliers(response.items); } catch { /* Quick supplier creation remains available. */ } };
+  const refreshOperationalStock = async () => { try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); } };
   useEffect(() => { void refreshServerSales(); }, [salesPage]);
-  useEffect(() => { void refreshCustomers(); }, []);
+  useEffect(() => { void refreshServerPurchases(); }, [purchasesPage]);
+  useEffect(() => { void refreshCustomers(); void refreshSuppliers(); void refreshOperationalStock(); }, []);
 
   // 3-Dots Invoice Actions Menu State (Fixed Viewport Position to avoid clipping)
   const [activeMenu, setActiveMenu] = useState<{ inv: Invoice; top: number; left: number } | null>(null);
@@ -139,7 +154,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     setInvType('return');
     setInvPartnerName(inv.customerOrSupplierName);
     setInvPartnerId(inv.customerOrSupplierId || '');
-    setInvWarehouseId(inv.warehouseId || warehouses[0]?.id || 'wh-main');
+    setInvWarehouseId(inv.warehouseId || warehouses[0]?.id || '');
     setInvPaymentMethod(inv.paymentMethod || 'cash_usd');
     setInvNotes(`مرتجع عن الفاتورة رقم ${inv.invoiceNumber}`);
     setInvItems(
@@ -172,10 +187,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const handleCancelInvoiceAction = (inv: Invoice) => {
     setActiveMenu(null);
     if (!window.confirm(`هل أنت تأكيد من إلغاء الفاتورة رقم (${inv.invoiceNumber})؟\nسوف يتم إرجاع كافة القطع المباعة للمخزون وعكس التسويات المالية.`)) return;
-    if (inv.type !== 'sale') { cancelInvoice(inv.id); return; }
-    const reason = window.prompt('سبب إلغاء فاتورة البيع:');
+    if (inv.type === 'return') { cancelInvoice(inv.id); return; }
+    const reason = window.prompt(`سبب إلغاء فاتورة ${inv.type === 'sale' ? 'البيع' : 'الشراء'}:`);
     if (!reason?.trim()) return;
-    void salesApi.cancel(inv.id, reason).then(async () => { await refreshServerSales(); }).catch((error: any) => alert(error?.message || 'تعذر إلغاء الفاتورة.'));
+    const cancel = inv.type === 'sale' ? salesApi.cancel(inv.id, reason).then(async () => { await Promise.all([refreshServerSales(), refreshOperationalStock()]); }) : purchasesApi.cancel(inv.id, reason).then(async () => { await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); });
+    void cancel.catch((error: any) => alert(error?.message || 'تعذر إلغاء الفاتورة.'));
   };
 
   // Printable Invoice Modal State
@@ -187,7 +203,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const [invPartnerId, setInvPartnerId] = useState('');
   const [invPartnerName, setInvPartnerName] = useState('');
   const [invCustomerPhone, setInvCustomerPhone] = useState('');
-  const [invWarehouseId, setInvWarehouseId] = useState(warehouses[0]?.id || 'wh-main');
+  const [invWarehouseId, setInvWarehouseId] = useState('');
+  useEffect(() => { if (!invWarehouseId && warehouses[0]) setInvWarehouseId(warehouses[0].id); }, [invWarehouseId, warehouses]);
   const [invPaymentMethod, setInvPaymentMethod] = useState<PaymentMethod>('cash_usd');
   const [invNotes, setInvNotes] = useState('');
   const [invDiscountUSD, setInvDiscountUSD] = useState('');
@@ -206,6 +223,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const [customStoneWeight, setCustomStoneWeight] = useState('0');
   const [customLaborPerGram, setCustomLaborPerGram] = useState('');
   const [customPricePerGram, setCustomPricePerGram] = useState('');
+  const [purchaseReconciliationTargetId, setPurchaseReconciliationTargetId] = useState('');
 
   // Scrap Gold Items (ذهب كسر بديل)
   const [scrapItems, setScrapItems] = useState<ScrapGoldItem[]>([]);
@@ -272,7 +290,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     setInvPartnerId('');
     setInvPartnerName('');
     setInvCustomerPhone('');
-    setInvWarehouseId(warehouses[0]?.id || 'wh-main');
+    setInvWarehouseId(warehouses[0]?.id || '');
     setInvPaymentMethod('cash_usd');
     setInvNotes('');
     setInvDiscountUSD('');
@@ -287,6 +305,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     const default21KPrice = goldPrices.find(g => g.karat === '21')?.buyPriceUSDPerGram;
     setScrapPricePerGram(default21KPrice ? default21KPrice.toString() : '70');
     setCustomPricePerGram('');
+    setPurchaseReconciliationTargetId('');
     setCustomLaborPerGram(type === 'sale' ? '' : (goldPrices.find(g => g.karat === '21')?.laborFeeUSDPerGram ?? 5).toString());
     setShowCreateModal(true);
   };
@@ -358,13 +377,15 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
       laborFeeUSDPerGram: labor,
       pricePerGramUSD: goldPricePerGram,
       totalPriceUSD,
-      warehouseId: invWarehouseId
+      warehouseId: invWarehouseId,
+      reconciliationTargetInventoryItemId: invType === 'purchase' && purchaseReconciliationTargetId ? purchaseReconciliationTargetId : undefined
     };
 
     setInvItems(prev => [...prev, newItem]);
     setCustomItemName('');
     setCustomGrossWeight('');
     setCustomStoneWeight('0');
+    setPurchaseReconciliationTargetId('');
     if (invType === 'sale') {
       setCustomPricePerGram('');
       setCustomLaborPerGram('');
@@ -424,7 +445,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   // Quick Add Partner Handle
   const handleSaveQuickPartner = async () => {
     if (!quickPartnerName.trim()) return;
-    if (invType !== 'sale') { addPartner({ name: quickPartnerName, type: 'supplier', phone: quickPartnerPhone, address: 'حلب - سوريا', balanceUSD: 0, goldBalance21kGrams: 0 }); setInvPartnerName(quickPartnerName); setInvCustomerPhone(quickPartnerPhone); setShowQuickAddPartner(false); return; }
+    if (invType !== 'sale') { try { const supplier = await partnersApi.create({ name: quickPartnerName, type: 'supplier', phone: quickPartnerPhone, address: 'حلب - سوريا' }); setInvPartnerId(supplier.id); setInvPartnerName(supplier.name); setInvCustomerPhone(supplier.phone || ''); setShowQuickAddPartner(false); await refreshSuppliers(); } catch (error: any) { setPurchasesError(error?.message || 'تعذر إنشاء المورد.'); } return; }
     try { const partner = await partnersApi.create({ name: quickPartnerName, type: 'customer', phone: quickPartnerPhone, address: 'حلب - سوريا' }); setInvPartnerId(partner.id); setInvPartnerName(partner.name); setInvCustomerPhone(partner.phone); setShowQuickAddPartner(false); } catch (error: any) { alert(error?.message || 'تعذر حفظ العميل.'); }
   };
 
@@ -455,6 +476,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     }
 
     const partnerName = invPartnerName.trim() || 'زبون نقدي عام';
+    if (!invWarehouseId) { setSalesError('أنشئ أو اختر مستودعاً حقيقياً قبل حفظ الفاتورة.'); return; }
 
     if (invType === 'sale') {
       try {
@@ -463,6 +485,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
         await refreshServerSales(); setShowCreateModal(false); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setSalesError(error?.message || 'تعذر حفظ فاتورة البيع.'); return; }
+    }
+    if (invType === 'purchase') {
+      try {
+        let supplierId = invPartnerId;
+        if (!supplierId) { const supplier = await partnersApi.create({ name: partnerName, type: 'supplier', phone: invCustomerPhone, address: 'حلب - سوريا' }); supplierId = supplier.id; setInvPartnerId(supplier.id); await refreshSuppliers(); }
+        const newInv = await purchasesApi.create({ warehouseId: invWarehouseId, supplierId, items: invItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod === 'gold_exchange' ? 'debt' : invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); setShowCreateModal(false); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
+      } catch (error: any) { setPurchasesError(error?.message || 'تعذر حفظ فاتورة الشراء.'); return; }
     }
     const newInv = addInvoice({
       type: invType,
@@ -500,7 +530,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   };
 
   // Filtered invoices list
-  const combinedInvoices = [...serverSales, ...invoices.filter(invoice => invoice.type !== 'sale')];
+  const combinedInvoices = [...serverSales, ...serverPurchases, ...invoices.filter(invoice => invoice.type === 'return')];
   const filteredInvoices = combinedInvoices.filter(inv => {
     if (filterType !== 'all' && inv.type !== filterType) return false;
     if (searchQuery.trim() !== '') {
@@ -556,7 +586,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               filterType === 'all' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            الكافة ({invoices.length})
+            الكافة ({salesTotal + purchasesTotal + invoices.filter(i => i.type === 'return').length})
           </button>
           <button
             onClick={() => setFilterType('sale')}
@@ -564,7 +594,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               filterType === 'sale' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            البيع ({invoices.filter(i => i.type === 'sale').length})
+            البيع ({salesTotal})
           </button>
           <button
             onClick={() => setFilterType('purchase')}
@@ -572,7 +602,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               filterType === 'purchase' ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            الشراء ({invoices.filter(i => i.type === 'purchase').length})
+            الشراء ({purchasesTotal})
           </button>
         </div>
 
@@ -593,7 +623,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         {activeShift ? <button onClick={() => { if (window.confirm('إغلاق الوردية الحالية؟')) closeShift(); }} className="bg-rose-600 px-4 py-2 text-xs font-black text-white">إنهاء الوردية</button> : <button onClick={() => startShift()} className="bg-emerald-600 px-4 py-2 text-xs font-black text-white">بدء وردية</button>}
       </div>
 
-      {(salesLoading || salesError) && <div className={`rounded-sm border px-3 py-2 text-xs font-bold ${salesError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{salesError || 'جار تحميل فواتير البيع من الخادم...'}</div>}
+      {(salesLoading || salesError || purchasesError) && <div className={`rounded-sm border px-3 py-2 text-xs font-bold ${(salesError || purchasesError) ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{salesError || purchasesError || 'جار تحميل فواتير البيع من الخادم...'}</div>}
 
       {/* Invoices List Table (Desktop) & Compact Rows (Mobile) */}
       <div className="bg-white rounded-sm border border-slate-200 shadow-sm overflow-hidden">
@@ -762,6 +792,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
       </div>
 
       {salesTotal > 30 && (filterType === 'all' || filterType === 'sale') && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600"><button disabled={salesPage <= 1} onClick={() => setSalesPage(page => page - 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">السابق</button><span>صفحة {salesPage} من {Math.ceil(salesTotal / 30)}</span><button disabled={salesPage >= Math.ceil(salesTotal / 30)} onClick={() => setSalesPage(page => page + 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">التالي</button></div>}
+      {purchasesTotal > 30 && (filterType === 'all' || filterType === 'purchase') && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600"><button disabled={purchasesPage <= 1} onClick={() => setPurchasesPage(page => page - 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">السابق</button><span>صفحة الشراء {purchasesPage} من {Math.ceil(purchasesTotal / 30)}</span><button disabled={purchasesPage >= Math.ceil(purchasesTotal / 30)} onClick={() => setPurchasesPage(page => page + 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">التالي</button></div>}
 
       {/* CREATE INVOICE WIZARD MODAL */}
       {showCreateModal && (
@@ -797,11 +828,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
                     type="text"
                     placeholder="اكتب اسم الزبون..."
                     value={invPartnerName}
-                    list={invType === 'sale' ? 'sales-customers' : undefined}
-                    onChange={e => { const name = e.target.value; setInvPartnerName(name); const customer = serverCustomers.find(partner => partner.name === name); setInvPartnerId(customer?.id || ''); if (customer) setInvCustomerPhone(customer.phone || ''); }}
+                    list={invType === 'sale' ? 'sales-customers' : invType === 'purchase' ? 'purchase-suppliers' : undefined}
+                    onChange={e => { const name = e.target.value; setInvPartnerName(name); const partner = (invType === 'sale' ? serverCustomers : serverSuppliers).find(candidate => candidate.name === name); setInvPartnerId(partner?.id || ''); if (partner) setInvCustomerPhone(partner.phone || ''); }}
                     className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold"
                   />
                   {invType === 'sale' && <datalist id="sales-customers">{serverCustomers.map(partner => <option key={partner.id} value={partner.name}>{partner.phone}</option>)}</datalist>}
+                  {invType === 'purchase' && <datalist id="purchase-suppliers">{serverSuppliers.map(partner => <option key={partner.id} value={partner.name}>{partner.phone}</option>)}</datalist>}
                   <button
                     type="button"
                     onClick={() => setShowQuickAddPartner(true)}
@@ -1049,6 +1081,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
                       onChange={e => setCustomLaborPerGram(e.target.value)}
                       className="p-1.5 bg-white border border-slate-200 rounded-sm font-mono text-xs"
                     />
+                    {invType === 'purchase' && <select value={purchaseReconciliationTargetId} onChange={e => setPurchaseReconciliationTargetId(e.target.value)} className="col-span-2 sm:col-span-3 p-1.5 bg-white border border-slate-200 rounded-sm text-xs"><option value="">استلام جديد دون تسوية رصيد سلبي</option>{inventory.filter(item => item.warehouseId === invWarehouseId && item.isManualSaleEntry && (item.quantity ?? 0) < 0 && item.status === 'sold').map(item => <option key={item.id} value={item.id}>تسوية صريحة: {item.name} — {item.netWeightGrams}غ / كمية {item.quantity}</option>)}</select>}
                     <button
                       type="button"
                       onClick={handleAddCustomItemToInvoice}

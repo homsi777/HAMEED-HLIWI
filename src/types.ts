@@ -61,6 +61,8 @@ export interface ScrapGoldItem {
 
 export interface InvoiceItem {
   itemId?: string;
+  reconciliationTargetInventoryItemId?: string;
+  quantity?: number;
   isManualSaleEntry?: boolean;
   itemName: string;
   category: ItemCategory;

@@ -104,7 +104,9 @@ export const initialWarehouses: Warehouse[] = [
   }
 ];
 
-export const initialInventory: InventoryItem[] = [
+// Retained only as a design fixture for development history. Runtime inventory
+// is server-authoritative and must start empty until real stock is received.
+const legacyDemoInventory: InventoryItem[] = [
   {
     id: 'item-101',
     code: 'GLD-21-001',
@@ -222,6 +224,8 @@ export const initialInventory: InventoryItem[] = [
     dateAdded: '2026-08-08'
   }
 ];
+
+export const initialInventory: InventoryItem[] = [];
 
 export const initialPartners: Partner[] = [
   {
