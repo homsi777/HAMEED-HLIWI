@@ -37,6 +37,8 @@ import {
   PaymentMethod 
 } from '../types';
 import { PrintInvoiceModal } from './PrintInvoiceModal';
+import { salesApi, type SalesInvoice } from '../services/salesApi';
+import { partnersApi } from '../services/partnersApi';
 
 interface InvoicesViewProps {
   initialType?: 'sale' | 'purchase';
@@ -77,6 +79,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
 
   const [filterType, setFilterType] = useState<'all' | 'sale' | 'purchase' | 'return'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [serverSales, setServerSales] = useState<SalesInvoice[]>([]);
+  const [salesError, setSalesError] = useState('');
+  const refreshServerSales = async () => { try { setSalesError(''); const response = await salesApi.list({ page: 1, limit: 100 }); setServerSales(response.items); } catch (reason: any) { setSalesError(reason?.message || 'تعذر تحميل فواتير البيع من الخادم.'); } };
+  useEffect(() => { void refreshServerSales(); }, []);
 
   // 3-Dots Invoice Actions Menu State (Fixed Viewport Position to avoid clipping)
   const [activeMenu, setActiveMenu] = useState<{ inv: Invoice; top: number; left: number } | null>(null);
@@ -159,9 +165,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
 
   const handleCancelInvoiceAction = (inv: Invoice) => {
     setActiveMenu(null);
-    if (window.confirm(`هل أنت تأكيد من إلغاء الفاتورة رقم (${inv.invoiceNumber})؟\nسوف يتم إرجاع كافة القطع المباعة للمخزون وعكس التسويات المالية.`)) {
-      cancelInvoice(inv.id);
-    }
+    if (!window.confirm(`هل أنت تأكيد من إلغاء الفاتورة رقم (${inv.invoiceNumber})؟\nسوف يتم إرجاع كافة القطع المباعة للمخزون وعكس التسويات المالية.`)) return;
+    if (inv.type !== 'sale') { cancelInvoice(inv.id); return; }
+    const reason = window.prompt('سبب إلغاء فاتورة البيع:');
+    if (!reason?.trim()) return;
+    void salesApi.cancel(inv.id, reason).then(async () => { await refreshServerSales(); }).catch((error: any) => alert(error?.message || 'تعذر إلغاء الفاتورة.'));
   };
 
   // Printable Invoice Modal State
@@ -408,19 +416,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const remainingDebtUSD = Math.max(0, finalTotalUSD - totalPaidInUSD);
 
   // Quick Add Partner Handle
-  const handleSaveQuickPartner = () => {
+  const handleSaveQuickPartner = async () => {
     if (!quickPartnerName.trim()) return;
-    addPartner({
-      name: quickPartnerName,
-      type: invType === 'sale' ? 'customer' : 'supplier',
-      phone: quickPartnerPhone,
-      address: 'حلب - سوريا',
-      balanceUSD: 0,
-      goldBalance21kGrams: 0
-    });
-    setInvPartnerName(quickPartnerName);
-    setInvCustomerPhone(quickPartnerPhone);
-    setShowQuickAddPartner(false);
+    if (invType !== 'sale') { addPartner({ name: quickPartnerName, type: 'supplier', phone: quickPartnerPhone, address: 'حلب - سوريا', balanceUSD: 0, goldBalance21kGrams: 0 }); setInvPartnerName(quickPartnerName); setInvCustomerPhone(quickPartnerPhone); setShowQuickAddPartner(false); return; }
+    try { const partner = await partnersApi.create({ name: quickPartnerName, type: 'customer', phone: quickPartnerPhone, address: 'حلب - سوريا' }); setInvPartnerId(partner.id); setInvPartnerName(partner.name); setInvCustomerPhone(partner.phone); setShowQuickAddPartner(false); } catch (error: any) { alert(error?.message || 'تعذر حفظ العميل.'); }
   };
 
   // Save Final Invoice
@@ -443,7 +442,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     }
   };
 
-  const handleSaveInvoice = (andPrint: boolean = false) => {
+  const handleSaveInvoice = async (andPrint: boolean = false) => {
     if (invItems.length === 0) {
       alert('يرجى إضافة قطعة ذهب واحدة على الأقل للفاتورة');
       return;
@@ -451,6 +450,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
 
     const partnerName = invPartnerName.trim() || 'زبون نقدي عام';
 
+    if (invType === 'sale') {
+      try {
+        let customerId = invPartnerId;
+        if (!customerId) { const partner = await partnersApi.create({ name: partnerName, type: 'customer', phone: invCustomerPhone, address: 'حلب - سوريا' }); customerId = partner.id; setInvPartnerId(partner.id); }
+        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        await refreshServerSales(); setShowCreateModal(false); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
+      } catch (error: any) { setSalesError(error?.message || 'تعذر حفظ فاتورة البيع.'); return; }
+    }
     const newInv = addInvoice({
       type: invType,
       date: new Date().toISOString().split('T')[0],
@@ -487,7 +494,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   };
 
   // Filtered invoices list
-  const filteredInvoices = invoices.filter(inv => {
+  const combinedInvoices = [...serverSales, ...invoices.filter(invoice => invoice.type !== 'sale')];
+  const filteredInvoices = combinedInvoices.filter(inv => {
     if (filterType !== 'all' && inv.type !== filterType) return false;
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();

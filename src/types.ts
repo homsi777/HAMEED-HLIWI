@@ -48,6 +48,8 @@ export interface InventoryItem {
   imageUrl?: string;
   notes?: string;
   dateAdded: string;
+  quantity?: number;
+  isManualSaleEntry?: boolean;
 }
 
 export interface ScrapGoldItem {
@@ -59,6 +61,7 @@ export interface ScrapGoldItem {
 
 export interface InvoiceItem {
   itemId?: string;
+  isManualSaleEntry?: boolean;
   itemName: string;
   category: ItemCategory;
   karat: GoldKarat;

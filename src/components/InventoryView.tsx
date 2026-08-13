@@ -40,7 +40,7 @@ export const InventoryView: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [inventoryPage, setInventoryPage] = useState(1);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const inventoryModule = useInventoryModule({ search: searchQuery, warehouseId: selectedWarehouse === 'all' ? '' : selectedWarehouse, karat: selectedKarat === 'all' ? '' : selectedKarat, category: selectedCategory === 'all' ? '' : selectedCategory, page: String(inventoryPage) });
+  const inventoryModule = useInventoryModule({ search: searchQuery, warehouseId: selectedWarehouse === 'all' ? '' : selectedWarehouse, karat: selectedKarat === 'all' ? '' : selectedKarat, category: selectedCategory === 'all' ? '' : selectedCategory, status: 'all', page: String(inventoryPage) });
   const { inventory, warehouses, inventoryVersions, total: inventoryTotal, loading, error, mutate } = inventoryModule;
 
   // Modals

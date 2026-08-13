@@ -9,5 +9,6 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { WarehousesModule } from './warehouses/warehouses.module.js';
 import { InventoryModule } from './inventory/inventory.module.js';
 import { PartnersModule } from './partners/partners.module.js';
-@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, HealthModule] })
+import { SalesModule } from './sales/sales.module.js';
+@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, SalesModule, HealthModule] })
 export class AppModule {}

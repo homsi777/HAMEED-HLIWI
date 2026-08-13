@@ -7,5 +7,5 @@ export interface AuditInput { actorUserId?: string; action: string; module: stri
 @Injectable()
 export class AuditService {
   constructor(@Inject(DATABASE) private readonly db: Database, @Inject(RequestContextService) private readonly context: RequestContextService) {}
-  async record(input: AuditInput) { const requestId = this.context.get()?.requestId; await this.db.insert(auditLogs).values({ ...input, requestId, metadata: input.metadata ?? {} }); }
+  async record(input: AuditInput, database: any = this.db) { const requestId = this.context.get()?.requestId; await database.insert(auditLogs).values({ ...input, requestId, metadata: input.metadata ?? {} }); }
 }
