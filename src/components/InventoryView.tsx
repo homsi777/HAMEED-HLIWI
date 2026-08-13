@@ -22,7 +22,11 @@ import {
   Camera,
   Upload,
   Image as ImageIcon,
-  MoreVertical
+  MoreVertical,
+  Eye,
+  FileText,
+  Download,
+  Share2
 } from 'lucide-react';
 import { GoldKarat, ItemCategory, InventoryItem, Warehouse } from '../types';
 
@@ -52,6 +56,10 @@ export const InventoryView: React.FC = () => {
   const [targetWarehouseForTransfer, setTargetWarehouseForTransfer] = useState('');
   
   const [showAddWarehouseModal, setShowAddWarehouseModal] = useState(false);
+  const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
+  const [previewWarehouse, setPreviewWarehouse] = useState<Warehouse | null>(null);
+  const [activeWarehouseMenu, setActiveWarehouseMenu] = useState<{ warehouse: Warehouse; top: number; left: number } | null>(null);
+  const [isSavingWarehouse, setIsSavingWarehouse] = useState(false);
   const [showStocktakeModal, setShowStocktakeModal] = useState(false);
 
   // Form State for Add/Edit Gold Item
@@ -171,17 +179,23 @@ export const InventoryView: React.FC = () => {
 
   const handleSaveWarehouse = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!whName.trim()) return;
-    const success = await mutate(() => inventoryApi.createWarehouse({
-      name: whName,
-      location: whLocation,
-      phone: whPhone
-    }));
-    if (!success) return;
-    setWhName('');
-    setWhPhone('');
-    setShowAddWarehouseModal(false);
+    if (!whName.trim() || isSavingWarehouse) return;
+    setIsSavingWarehouse(true);
+    try {
+      const payload = { name: whName, location: whLocation, phone: whPhone };
+      const success = await mutate(() => editingWarehouse ? inventoryApi.updateWarehouse(editingWarehouse.id, payload) : inventoryApi.createWarehouse(payload));
+      if (!success) return;
+      closeWarehouseForm();
+    } finally { setIsSavingWarehouse(false); }
   };
+
+  const closeWarehouseForm = () => { setWhName(''); setWhLocation('حلب - سوريا'); setWhPhone(''); setEditingWarehouse(null); setShowAddWarehouseModal(false); };
+  const openWarehouseForm = (warehouse?: Warehouse) => { setEditingWarehouse(warehouse || null); setWhName(warehouse?.name || ''); setWhLocation(warehouse?.location || 'حلب - سوريا'); setWhPhone(warehouse?.phone || ''); setShowAddWarehouseModal(true); };
+  const toggleWarehouseMenu = (event: React.MouseEvent<HTMLButtonElement>, warehouse: Warehouse) => { event.stopPropagation(); if (activeWarehouseMenu?.warehouse.id === warehouse.id) { setActiveWarehouseMenu(null); return; } const rect = event.currentTarget.getBoundingClientRect(); setActiveWarehouseMenu({ warehouse, top: rect.bottom + 6, left: Math.max(8, Math.min(window.innerWidth - 216, rect.right - 208)) }); };
+  const warehouseSummary = (warehouse: Warehouse) => { const items = inventory.filter(item => item.status === 'in_stock' && item.warehouseId === warehouse.id); return { items, weight: items.reduce((sum, item) => sum + item.netWeightGrams, 0) }; };
+  const deleteWarehouse = async (warehouse: Warehouse) => { if (!window.confirm(`حذف المستودع «${warehouse.name}»؟ لا يمكن حذف المستودع إذا احتوى بيانات أو مستخدمين.`)) return; const success = await mutate(() => inventoryApi.deleteWarehouse(warehouse.id)); if (success) setActiveWarehouseMenu(null); };
+  const exportWarehouse = async (warehouse: Warehouse) => { const result = await inventoryApi.list({ warehouseId: warehouse.id, status: 'all', page: 1, limit: 100 }); const rows = [['الكود', 'القطعة', 'العيار', 'الوزن الصافي (غ)', 'الحالة'], ...result.items.map(item => [item.code, item.name, item.karat, item.netWeightGrams.toString(), item.status])]; const csv = '\uFEFF' + rows.map(row => row.map(value => `"${value.replaceAll('"', '""')}"`).join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); const link = document.createElement('a'); link.href = url; link.download = `مخزون-${warehouse.name}.csv`; link.click(); URL.revokeObjectURL(url); setActiveWarehouseMenu(null); };
+  const shareWarehouse = async (warehouse: Warehouse) => { const summary = warehouseSummary(warehouse); const text = `تقرير مستودع ${warehouse.name}\nعدد القطع: ${summary.items.length}\nإجمالي الوزن: ${summary.weight.toFixed(3)} غ`; try { if (navigator.share) await navigator.share({ title: `تقرير ${warehouse.name}`, text }); else await navigator.clipboard.writeText(text); } catch { /* The user cancelled sharing; no action is needed. */ } finally { setActiveWarehouseMenu(null); } };
 
   const handleExecuteTransfer = async () => {
     if (showTransferModal && targetWarehouseForTransfer) {
@@ -286,7 +300,7 @@ export const InventoryView: React.FC = () => {
             </button>
           ) : (
             <button
-              onClick={() => setShowAddWarehouseModal(true)}
+              onClick={() => openWarehouseForm()}
               className="bg-amber-400 hover:bg-amber-300 text-slate-900 px-4 py-2.5 rounded-sm font-bold text-xs shadow flex items-center justify-center gap-2 transition w-full sm:w-auto"
             >
               <Plus className="w-4 h-4" />
@@ -595,11 +609,10 @@ export const InventoryView: React.FC = () => {
                       <p className="text-xs text-slate-500">{wh.location}</p>
                     </div>
                   </div>
-                  {wh.isDefault && (
-                    <span className="text-[10px] bg-amber-400 text-slate-900 font-bold px-2 py-0.5 rounded-sm">
-                      الفرع الرئيسي
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {wh.isDefault && <span className="text-[10px] bg-amber-400 text-slate-900 font-bold px-2 py-0.5 rounded-sm">الفرع الرئيسي</span>}
+                    <button type="button" onClick={(event) => toggleWarehouseMenu(event, wh)} className={`min-h-10 min-w-10 rounded-sm border flex items-center justify-center transition ${activeWarehouseMenu?.warehouse.id === wh.id ? 'border-amber-500 bg-amber-400 text-slate-900' : 'border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100'}`} aria-label={`خيارات ${wh.name}`} title="خيارات المستودع"><MoreVertical className="w-5 h-5" /></button>
+                  </div>
                 </div>
 
                 <div className="bg-slate-50 p-3 rounded-sm border border-slate-200 text-xs space-y-2">
@@ -886,6 +899,25 @@ export const InventoryView: React.FC = () => {
         </div>
       )}
 
+      {activeWarehouseMenu && (
+        <div className="fixed inset-0 z-50">
+          <div className="fixed inset-0 bg-slate-900/10" onClick={() => setActiveWarehouseMenu(null)} />
+          <div style={{ top: `${activeWarehouseMenu.top}px`, left: `${activeWarehouseMenu.left}px` }} className="fixed z-50 w-52 overflow-hidden rounded-sm border-2 border-slate-900 bg-white py-1 text-right text-xs font-medium shadow-2xl">
+            <button onClick={() => { openWarehouseForm(activeWarehouseMenu.warehouse); setActiveWarehouseMenu(null); }} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-slate-800 hover:bg-amber-100"><Edit className="h-4 w-4 text-amber-700" />تعديل</button>
+            <button onClick={() => { setPreviewWarehouse(activeWarehouseMenu.warehouse); setActiveWarehouseMenu(null); }} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-slate-800 hover:bg-amber-100"><Eye className="h-4 w-4 text-blue-700" />معاينة</button>
+            <button onClick={() => { setPreviewWarehouse(activeWarehouseMenu.warehouse); setActiveWarehouseMenu(null); }} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-slate-800 hover:bg-amber-100"><FileText className="h-4 w-4 text-violet-700" />تقرير</button>
+            <button onClick={() => exportWarehouse(activeWarehouseMenu.warehouse)} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-slate-800 hover:bg-amber-100"><Download className="h-4 w-4 text-emerald-700" />تصدير</button>
+            <button onClick={() => shareWarehouse(activeWarehouseMenu.warehouse)} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 text-slate-800 hover:bg-amber-100"><Share2 className="h-4 w-4 text-sky-700" />مشاركة</button>
+            <div className="my-1 border-t border-slate-100" />
+            <button onClick={() => deleteWarehouse(activeWarehouseMenu.warehouse)} className="flex min-h-10 w-full items-center gap-2 px-3 py-2 font-bold text-rose-700 hover:bg-rose-50"><Trash2 className="h-4 w-4" />حذف</button>
+          </div>
+        </div>
+      )}
+
+      {previewWarehouse && (() => { const summary = warehouseSummary(previewWarehouse); return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4"><div className="w-full max-w-md rounded-sm border-2 border-slate-900 bg-white p-5 text-right shadow-2xl"><div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3"><h3 className="flex items-center gap-2 font-black text-slate-900"><Building2 className="h-5 w-5 text-amber-700" />معاينة المستودع</h3><button type="button" onClick={() => setPreviewWarehouse(null)} className="min-h-10 min-w-10 text-slate-500"><X className="h-5 w-5" /></button></div><div className="space-y-3 text-xs"><div><p className="text-slate-500">الاسم</p><p className="mt-1 font-bold text-slate-900">{previewWarehouse.name}</p></div><div><p className="text-slate-500">الموقع</p><p className="mt-1 font-bold text-slate-900">{previewWarehouse.location || '—'}</p></div><div className="grid grid-cols-2 gap-3"><div className="rounded-sm bg-amber-50 p-3"><p className="text-slate-500">عدد القطع</p><p className="mt-1 font-mono text-lg font-black text-amber-900">{summary.items.length}</p></div><div className="rounded-sm bg-amber-50 p-3"><p className="text-slate-500">الوزن الصافي</p><p className="mt-1 font-mono text-lg font-black text-amber-900">{summary.weight.toFixed(3)} غ</p></div></div></div><div className="mt-5 flex justify-end border-t border-slate-200 pt-3"><button type="button" onClick={() => setPreviewWarehouse(null)} className="min-h-10 rounded-sm bg-slate-100 px-4 text-xs font-bold text-slate-700">إغلاق</button></div></div></div>
+      ); })()}
+
       {imagePreviewItem?.imageUrl && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-4" onClick={() => setImagePreviewItem(null)} role="dialog" aria-modal="true" aria-label={`صورة ${imagePreviewItem.name}`}>
           <div className="relative max-h-full max-w-3xl" onClick={event => event.stopPropagation()}>
@@ -900,7 +932,7 @@ export const InventoryView: React.FC = () => {
       {showAddWarehouseModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-sm border-2 border-slate-900 shadow-2xl max-w-md w-full p-6 text-right space-y-4">
-            <h3 className="text-base font-black text-slate-900">إضافة مستودع / فرع جديد</h3>
+            <h3 className="text-base font-black text-slate-900">{editingWarehouse ? 'تعديل المستودع / الفرع' : 'إضافة مستودع / فرع جديد'}</h3>
 
             <form onSubmit={handleSaveWarehouse} className="space-y-3 text-xs">
               <div>
@@ -941,16 +973,17 @@ export const InventoryView: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setShowAddWarehouseModal(false)}
+                  onClick={closeWarehouseForm}
                   className="px-4 py-2 bg-slate-100 text-slate-700 rounded-sm font-bold"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-amber-400 text-slate-900 rounded-sm font-bold shadow"
+                  disabled={isSavingWarehouse}
+                  className="px-5 py-2 bg-amber-400 text-slate-900 rounded-sm font-bold shadow disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  حفظ الفرع
+                  {isSavingWarehouse ? 'جارٍ الحفظ...' : editingWarehouse ? 'حفظ التعديل' : 'حفظ الفرع'}
                 </button>
               </div>
             </form>
