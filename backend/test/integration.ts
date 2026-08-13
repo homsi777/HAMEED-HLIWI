@@ -15,15 +15,20 @@ if (!password) throw new Error('SEED_ADMIN_PASSWORD is required for integration 
 const port = 3002;
 const base = `http://127.0.0.1:${port}/api/v1`;
 type ResponseWithCookies = Response & { headers: Headers & { getSetCookie?: () => string[] } };
+let loginWarehouseIds: string[] = [];
 
 function cookieJar(response: ResponseWithCookies) {
   const values = response.headers.getSetCookie?.() ?? (response.headers.get('set-cookie') ? [response.headers.get('set-cookie')!] : []);
   return values.map(value => value.split(';', 1)[0]).filter(value => value.startsWith('hh_')).join('; ');
 }
 
-const login = async (username: string, candidatePassword = password) => {
-  const response = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password: candidatePassword }) }) as ResponseWithCookies;
+const login = async (username: string, candidatePassword = password, warehouseId = loginWarehouseIds[0]) => {
+  const response = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password: candidatePassword, warehouseId }) }) as ResponseWithCookies;
   return { response, cookie: cookieJar(response), body: await response.json() as any };
+};
+const loginForAssignedWarehouse = async (username: string) => {
+  for (const warehouseId of loginWarehouseIds) { const attempt = await login(username, password, warehouseId); if (attempt.response.ok) return attempt; }
+  return login(username, password, 'system');
 };
 const authenticated = (path: string, cookie: string, method = 'GET') => fetch(`${base}${path}`, { method, headers: { cookie } });
 const api = (path: string, cookie: string, method = 'GET', body?: unknown, headers: Record<string, string> = {}) => fetch(`${base}${path}`, { method, headers: { cookie, ...(body === undefined || body instanceof Uint8Array || Buffer.isBuffer(body) ? {} : { 'content-type': 'application/json' }), ...headers }, body: body === undefined ? undefined : (body instanceof Uint8Array || Buffer.isBuffer(body) ? body : JSON.stringify(body)) });
@@ -34,6 +39,7 @@ async function main() {
   await app.listen({ port, host: '127.0.0.1' });
   try {
     const health = await fetch(`${base}/health`); assert.equal(health.status, 200); assert.equal((await health.json() as any).database, 'ok'); assert.equal(health.headers.get('x-content-type-options'), 'nosniff'); assert.ok(health.headers.get('x-request-id'));
+    const loginWarehouses = await fetch(`${base}/auth/login-warehouses`); assert.equal(loginWarehouses.status, 200); loginWarehouseIds = (await loginWarehouses.json() as Array<{ id: string }>).map(warehouse => warehouse.id); assert.ok(loginWarehouseIds.length >= 2);
     const badLogin = await login('admin_dev', 'incorrect-password'); assert.equal(badLogin.response.status, 401);
     const malformedLogin = await fetch(`${base}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'admin_dev', password, unexpected: true }) }); assert.equal(malformedLogin.status, 400); assert.ok((await malformedLogin.json() as any).requestId);
     const unauthenticated = await fetch(`${base}/warehouses/scope`); assert.equal(unauthenticated.status, 401);
@@ -48,8 +54,9 @@ async function main() {
     const otherDeviceStillValid = await authenticated('/auth/me', adminB.cookie); assert.equal(otherDeviceStillValid.status, 200);
 
     const adminScope = await authenticated('/warehouses/scope', renewedCookie); assert.equal(adminScope.status, 200); const adminScopeBody = await adminScope.json() as any; assert.equal(adminScopeBody.allWarehouses, true); assert.equal(adminScopeBody.warehouses.length, 2);
-    const nabil = await login('nabil_manager_dev'); assert.equal(nabil.response.status, 201); const nabilScope = await authenticated('/warehouses/scope', nabil.cookie); const nabilScopeBody = await nabilScope.json() as any; assert.equal(nabilScopeBody.allWarehouses, false); assert.equal(nabilScopeBody.warehouses.length, 1);
-    const ahmad = await login('ahmad_manager_dev'); const ahmadScope = await authenticated('/warehouses/scope', ahmad.cookie); const ahmadScopeBody = await ahmadScope.json() as any; assert.equal(ahmadScopeBody.warehouses.length, 1);
+    const nabil = await loginForAssignedWarehouse('nabil_manager_dev'); assert.equal(nabil.response.status, 201); const nabilScope = await authenticated('/warehouses/scope', nabil.cookie); const nabilScopeBody = await nabilScope.json() as any; assert.equal(nabilScopeBody.allWarehouses, false); assert.equal(nabilScopeBody.warehouses.length, 1);
+    const ahmad = await loginForAssignedWarehouse('ahmad_manager_dev'); const ahmadScope = await authenticated('/warehouses/scope', ahmad.cookie); const ahmadScopeBody = await ahmadScope.json() as any; assert.equal(ahmadScopeBody.warehouses.length, 1);
+    const deniedWarehouseLogin = await login('nabil_manager_dev', password, ahmadScopeBody.warehouses[0].id); assert.equal(deniedWarehouseLogin.response.status, 401);
     const denied = await authenticated(`/warehouses/${ahmadScopeBody.warehouses[0].id}/access`, nabil.cookie); assert.equal(denied.status, 403);
     const allowed = await authenticated(`/warehouses/${nabilScopeBody.warehouses[0].id}/access`, nabil.cookie); assert.equal(allowed.status, 200);
 

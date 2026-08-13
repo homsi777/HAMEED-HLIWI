@@ -28,12 +28,25 @@ export interface AuthSessionResult { identity: AuthIdentity; accessToken: string
 export class AuthService {
   constructor(@Inject(DATABASE) private readonly db: Database, @Inject(JwtService) private readonly jwt: JwtService) {}
 
-  async login(username: string, password: string, context: SessionContext): Promise<AuthSessionResult> {
+  async login(username: string, password: string, warehouseId: string, context: SessionContext): Promise<AuthSessionResult> {
     const user = await this.findUserByUsername(username);
     if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) throw new UnauthorizedException('Invalid username or password.');
     const identity = await this.getIdentity(user.id);
     if (!identity) throw new UnauthorizedException('User is unavailable.');
+    const canAccessAll = identity.permissions.includes('warehouses.scope.all');
+    if (warehouseId === 'system') {
+      if (!canAccessAll) throw new UnauthorizedException('The selected warehouse is not assigned to this user.');
+    } else if (!canAccessAll && !identity.warehouses.some(warehouse => warehouse.id === warehouseId)) {
+      throw new UnauthorizedException('The selected warehouse is not assigned to this user.');
+    } else if (canAccessAll) {
+      const warehouse = await this.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, warehouseId), eq(warehouses.isActive, true))).limit(1);
+      if (!warehouse[0]) throw new UnauthorizedException('The selected warehouse is unavailable.');
+    }
     return this.createSession(identity, context);
+  }
+
+  async loginWarehouses() {
+    return this.db.select({ id: warehouses.id, name: warehouses.name }).from(warehouses).where(eq(warehouses.isActive, true)).orderBy(warehouses.name);
   }
 
   async refresh(refreshToken: string, context: SessionContext): Promise<AuthSessionResult> {

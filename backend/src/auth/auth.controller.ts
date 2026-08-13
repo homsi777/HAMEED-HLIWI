@@ -12,10 +12,10 @@ export class AuthController {
   @Post('login')
   async login(@Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, validationError: { target: false, value: false } })) body: LoginDto, @Req() request: FastifyRequest, @Res({ passthrough: true }) response: FastifyReply) {
     this.validateLoginBody(body);
-    const result = await this.auth.login(body.username, body.password, this.sessionContext(request));
+    const result = await this.auth.login(body.username, body.password, body.warehouseId, this.sessionContext(request));
     this.setSessionCookies(response, result.accessToken, result.refreshToken);
     const { identity, session } = result;
-    await this.audit.record({ actorUserId: identity.id, action: 'auth.login', module: 'auth', entityId: identity.id });
+    await this.audit.record({ actorUserId: identity.id, action: 'auth.login', module: 'auth', entityId: identity.id, metadata: { selectedWarehouseId: body.warehouseId } });
     return { user: identity, session };
   }
   @Post('refresh')
@@ -43,6 +43,7 @@ export class AuthController {
   }
   @Get('me') @UseGuards(AuthGuard)
   me(@Req() request: FastifyRequest) { const { sessionId, sessionExpiresAt, ...user } = request.identity!; return { user, session: { id: sessionId, expiresAt: sessionExpiresAt } }; }
+  @Get('login-warehouses') loginWarehouses() { return this.auth.loginWarehouses(); }
 
   private setSessionCookies(response: FastifyReply, accessToken: string, refreshToken: string) {
     const config = appConfig();
@@ -63,8 +64,8 @@ export class AuthController {
   }
 
   private validateLoginBody(body: LoginDto) {
-    const unexpected = Object.keys(body).filter(key => key !== 'username' && key !== 'password');
-    if (unexpected.length || typeof body.username !== 'string' || !/^[A-Za-z0-9_.-]{3,80}$/.test(body.username) || typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 200) {
+    const unexpected = Object.keys(body).filter(key => key !== 'username' && key !== 'password' && key !== 'warehouseId');
+    if (unexpected.length || typeof body.username !== 'string' || !/^[A-Za-z0-9_.-]{3,80}$/.test(body.username) || typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 200 || typeof body.warehouseId !== 'string' || !/^(system|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(body.warehouseId)) {
       throw new BadRequestException('Invalid login request.');
     }
   }

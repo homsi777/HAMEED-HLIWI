@@ -2,6 +2,7 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '/ap
 
 export interface InfrastructureUser { id: string; username: string; fullName: string; roles: string[]; permissions: string[]; warehouses: Array<{ id: string; name: string; isManager: boolean }>; }
 export interface WarehouseScope { allWarehouses: boolean; warehouses: InfrastructureUser['warehouses']; }
+export interface LoginWarehouse { id: string; name: string; }
 
 async function rawRequest(path: string, options: RequestInit = {}) {
   return fetch(`${apiBaseUrl}${path}`, { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers } });
@@ -18,7 +19,8 @@ async function request<T>(path: string, options: RequestInit = {}, allowRenewal 
 }
 
 export const infrastructureApi = {
-  login: (username: string, password: string) => request<{ user: InfrastructureUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  login: (username: string, password: string, warehouseId: string) => request<{ user: InfrastructureUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password, warehouseId }) }),
+  loginWarehouses: () => request<LoginWarehouse[]>('/auth/login-warehouses', {}, false),
   logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
   logoutAll: () => request<{ success: boolean }>('/auth/logout-all', { method: 'POST' }),
   currentUser: () => request<{ user: InfrastructureUser }>('/auth/me'),
