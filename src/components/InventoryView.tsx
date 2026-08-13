@@ -30,6 +30,20 @@ import {
 } from 'lucide-react';
 import { GoldKarat, ItemCategory, InventoryItem, Warehouse } from '../types';
 
+// Arabic-Indic digits and a decimal comma are normal on an Arabic keyboard, and a
+// number box can be left half-typed. Read them all, or report the field as empty.
+const readNumber = (value: string) => {
+  const normalized = value
+    .replace(/[٠-٩]/g, digit => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, digit => String(digit.charCodeAt(0) - 0x06f0))
+    .replace(/[٫,]/g, '.')
+    .replace(/[\s٬⁦-⁩]/g, '')
+    .trim();
+  if (!normalized || !/^[+-]?\d*\.?\d*$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 export const InventoryView: React.FC = () => {
   const { 
     goldPrices, 
@@ -77,6 +91,7 @@ export const InventoryView: React.FC = () => {
   const [formImageUrl, setFormImageUrl] = useState('');
   const [isCompressingImage, setIsCompressingImage] = useState(false);
   const [imageError, setImageError] = useState('');
+  const [itemError, setItemError] = useState('');
 
   // Form State for Warehouse
   const [whName, setWhName] = useState('');
@@ -96,6 +111,7 @@ export const InventoryView: React.FC = () => {
     setFormInventoryMode('individual');
     setFormQuantity('1');
     setFormImageUrl('');
+    setItemError('');
     setEditingItem(null);
   };
 
@@ -151,14 +167,25 @@ export const InventoryView: React.FC = () => {
 
   const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    const gross = parseFloat(formGrossWeight);
-    const stone = parseFloat(formStoneWeight) || 0;
-    const labor = parseFloat(formLaborFeePerGram) || 0;
+    const gross = readNumber(formGrossWeight);
+    const stone = readNumber(formStoneWeight) ?? 0;
+    const labor = readNumber(formLaborFeePerGram) ?? 0;
 
-    if (isNaN(gross) || gross <= 0) return;
+    if (gross === null || gross <= 0) { setItemError('أدخل الوزن القائم بالجرام (رقم أكبر من صفر).'); return; }
+    if (stone < 0 || labor < 0) { setItemError('وزن الفصوص وأجرة الغرام لا يمكن أن يكونا بالسالب.'); return; }
+    if (stone > gross) { setItemError('وزن الفصوص لا يمكن أن يتجاوز الوزن القائم.'); return; }
 
     const net = Math.max(0, gross - stone);
     const totalLabor = net * labor;
+
+    // The backend only accepts plain fixed-scale decimals, so a half-typed box,
+    // a decimal comma, or a floating point remainder is normalised before it is sent.
+    // The quantity box is optional for an aggregate item, where the label itself says
+    // "if known", so a blank box falls back to the mode default instead of failing.
+    const enteredQuantity = formQuantity.trim() === '' ? (formInventoryMode === 'aggregate' ? 0 : 1) : readNumber(formQuantity);
+    if (enteredQuantity === null || enteredQuantity < 0) { setItemError('أدخل كمية صحيحة (رقم موجب).'); return; }
+    if (formInventoryMode === 'individual' && enteredQuantity <= 0) { setItemError('كمية الصنف الفردي يجب أن تكون أكبر من صفر.'); return; }
+    setItemError('');
 
     let imagePath: string | undefined;
     if (formImageUrl && !formImageUrl.startsWith('/uploads/')) { const response = await fetch(formImageUrl); const blob = await response.blob(); imagePath = (await inventoryApi.uploadImage(blob)).imagePath; }
@@ -166,16 +193,16 @@ export const InventoryView: React.FC = () => {
         name: formName,
         category: formCategory,
         karat: formKarat,
-        grossWeightGrams: gross,
-        stoneWeightGrams: stone,
-        netWeightGrams: net,
-        laborFeeUSDPerGram: labor,
-        totalLaborFeeUSD: totalLabor,
+        grossWeightGrams: gross.toFixed(3),
+        stoneWeightGrams: stone.toFixed(3),
+        netWeightGrams: net.toFixed(3),
+        laborFeeUSDPerGram: labor.toFixed(4),
+        totalLaborFeeUSD: totalLabor.toFixed(4),
         warehouseId: formWarehouseId,
         code: formCode,
         notes: formNotes,
         inventoryMode: formInventoryMode,
-        quantity: formQuantity,
+        quantity: enteredQuantity.toFixed(3),
         imagePath: imagePath ?? (formImageUrl.startsWith('/uploads/') ? formImageUrl.split('/').pop() : undefined)
       };
     const success = await mutate(() => editingItem ? inventoryApi.update(editingItem.id, { ...payload, version: inventoryVersions[editingItem.id] }) : inventoryApi.create({ ...payload, status: 'in_stock' }));
@@ -826,6 +853,8 @@ export const InventoryView: React.FC = () => {
                 {isCompressingImage && <p className="mt-2 text-[11px] font-bold text-amber-800">يتم ضغط الصورة...</p>}
                 {imageError && <p className="mt-2 text-[11px] font-bold text-rose-700">{imageError}</p>}
               </div>
+
+              {itemError && <p className="rounded-sm border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-bold text-rose-700">{itemError}</p>}
 
               <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
                 <button

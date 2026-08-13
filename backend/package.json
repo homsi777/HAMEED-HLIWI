@@ -13,7 +13,8 @@
     "db:bootstrap:production": "tsx src/database/bootstrap-production.ts",
     "test": "tsx --test test/*.spec.ts",
     "test:integration": "tsx test/integration.ts",
-    "test:task06": "tsx test/task06-verification.ts"
+    "test:task06": "tsx test/task06-verification.ts",
+    "test:inventory-quantity": "tsx test/inventory-quantity-regression.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
