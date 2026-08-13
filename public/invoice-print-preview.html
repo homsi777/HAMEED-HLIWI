@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>معاينة قالب فاتورة حليوي A5</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    @page { size: A5 landscape; margin: 0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e5e7eb; color: #5b482d; font-family: Cairo, sans-serif; padding: 24px; }
+    .notice { width: min(210mm, 100%); margin: 0 auto 14px; color: #334155; font-size: 13px; font-weight: 700; }
+    .sheet { position: relative; width: 210mm; min-height: 148mm; margin: auto; overflow: hidden; padding: 5mm 6mm 4mm; background: #fffdf7; }
+    .sheet::before { content: 'HLIWI'; position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%) rotate(-24deg); color: rgba(161,124,65,.055); font-family: Georgia, serif; font-size: 48mm; font-weight: 700; letter-spacing: 5mm; }
+    header, .meta, table, .bottom { position: relative; z-index: 1; }
+    header { display: grid; grid-template-columns: 1fr .7fr 1.1fr; align-items: center; gap: 6mm; border-bottom: 1.2px solid #806846; padding-bottom: 2.5mm; direction: ltr; }
+    .contact { display: grid; gap: .3mm; font-family: Arial; font-size: 4.1mm; line-height: 1; direction: ltr; text-align: left; }.contact small { margin-top: 1.2mm; font-family: Cairo; font-size: 2.2mm; direction: rtl; text-align: right; }
+    .mark { display: grid; justify-items: center; color: #a88148; font-family: Arial; font-size: 2.5mm; font-weight: 700; letter-spacing: .3mm; }.mark b { border: 2.5mm solid #a88148; display: grid; place-items: center; width: 13mm; height: 13mm; margin-bottom: 1mm; transform: rotate(45deg); }.mark b i { display: block; width: 4mm; height: 4mm; background: #a88148; }.mark span { transform: rotate(0); }
+    .brand { display: grid; justify-items: end; color: #a6814b; line-height: 1; direction: rtl; text-align: right; }.brand small { font-size: 4mm; font-weight: 700; }.brand strong { margin-top: -1mm; font-family: Georgia, serif; font-size: 17mm; letter-spacing: -1mm; }.brand span { margin-top: -1mm; font-size: 3.2mm; font-weight: 700; }
+    .meta { display: grid; grid-template-columns: 2.3fr 1.15fr .9fr .7fr; gap: 3mm; min-height: 9mm; align-items: center; border-bottom: 1px solid #9c835d; font-size: 3mm; }.meta em { color: #9b4334; font-style: normal; font-weight: 800; }
+    table { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; border: 1.2px solid #69563a; border-radius: 4mm; overflow: hidden; margin-top: 2.5mm; font-size: 3.1mm; }th { background: #b39870; color: #4c3b27; padding: 2mm 1mm; border-left: 1px solid #69563a; }td { height: 7.4mm; padding: 1mm 1.5mm; border-top: 1px dotted #917858; border-left: 1px solid #69563a; text-align: center; } td:first-child { text-align: right; }th:last-child,td:last-child{border-left:0}th:nth-child(1){width:31%}th:nth-child(2){width:12%}th:nth-child(3){width:9%}th:nth-child(4){width:9%}th:nth-child(5){width:17%}th:nth-child(6){width:22%}.tradein-row td{color:#8a3e2c;background:#fff8ef;font-weight:800}.tradein-row td:first-child{color:#7c4f22}
+    .bottom { margin-top: 2.5mm; text-align: center; font-size: 2.8mm; font-weight: 700; }.tradein { margin: 1mm 0 0; color: #7c4f22; }.totals { display: flex; justify-content: flex-start; gap: 7mm; margin-top: 2mm; font-size: 3mm; }.totals b { color: #a34132; font-size: 4mm; }.footer { display: flex; justify-content: space-between; margin-top: 3mm; border-top: 1px solid #aa8b60; padding-top: 1.5mm; color: #81653d; direction: rtl; font-family: Arial; font-size: 2.6mm; }.disclaimer { position: absolute; z-index: 1; right: 6mm; bottom: 7mm; left: 6mm; margin: 0; color: #59482f; text-align: center; font-size: 2.8mm; font-weight: 700; }
+    @media print { body { padding: 0; background: white; }.notice { display: none; }.sheet { margin: 0; } }
+    @media (max-width: 900px) { body { padding: 8px; overflow-x: auto; }.sheet { transform-origin: top right; } }
+  </style>
+</head>
+<body>
+  <p class="notice">معاينة تجريبية لقالب الطباعة والتصدير فقط - A5 عرضي</p>
+  <section class="sheet">
+    <header><div class="contact"><b>021 263 6064</b><b>0944 866 362</b><small>حلب - شارع القوتلي - سوق الذهب</small></div><div class="mark"><b><i></i></b><span>HLIWI JEWELRY</span></div><div class="brand"><small>مجوهرات</small><strong>حليوي</strong><span>عبد الحميد معين</span></div></header>
+    <div class="meta"><span><b>الاسم:</b> محمد الأحمد</span><span><b>التاريخ:</b> 11/08/2026</span><span><b>رقم:</b> <em>0330</em></span><span><b>النوع:</b> فاتورة بيع</span></div>
+    <table><thead><tr><th>مواصفات البضاعة</th><th>الوزن</th><th>العدد</th><th>عيار</th><th>سعر الغرام</th><th>الإجمالي</th></tr></thead><tbody><tr><td>خاتم ذهب نسائي موديل إيطالي</td><td>11.54 غ</td><td>1</td><td>21</td><td>$ 124.50</td><td>$ 1,436.73</td></tr><tr><td>سلسلة ذهب نسائية</td><td>8.20 غ</td><td>1</td><td>21</td><td>$ 124.50</td><td>$ 1,020.90</td></tr><tr><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr><tr class="tradein-row"><td>سوار ذهب مستعمل</td><td>5.00 غ</td><td>1</td><td>21</td><td>$ 84.00</td><td>-$ 420.00</td></tr></tbody></table>
+    <div class="bottom"><p class="tradein">ملاحظة: تم استلام سوار ذهب مستعمل عيار 21 بوزن 5.00 غ، وخصم قيمته من الحساب.</p><div class="totals"><span>إجمالي المبيعات: <b>$ 2,457.63</b></span><span>سوار مستعمل: -$ 420.00</span><span>الحسم: $ 20.00</span><span>المدفوع: $ 1,000.00</span><span>المتبقي: $ 1,017.63</span></div><div class="footer"><span>مجوهرات حليوي</span><span>021 263 6064 - 0944 866 362</span><span>شكراً لثقتكم بنا</span></div></div><p class="disclaimer">لسنا مسؤولين عن قياس الذهب بعد الاستعمال، تفقد القطعة وصياغتها بعد الاستلام.</p>
+  </section>
+</body>
+</html>

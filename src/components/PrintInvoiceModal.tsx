@@ -1,0 +1,89 @@
+import React, { useEffect } from 'react';
+import { Invoice } from '../types';
+import { useStore } from '../context/StoreContext';
+import { Diamond, Printer, X } from 'lucide-react';
+
+interface PrintInvoiceModalProps {
+  invoice: Invoice;
+  onClose: () => void;
+}
+
+const invoiceTypeLabel = (type: Invoice['type']) => type === 'sale' ? 'فاتورة بيع' : type === 'purchase' ? 'فاتورة شراء' : 'فاتورة مرتجع';
+
+export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, onClose }) => {
+  const { settings } = useStore();
+  const isPurchaseInvoice = invoice.type === 'purchase';
+  const blankRowCount = Math.max(0, (isPurchaseInvoice ? 10 : 6) - invoice.items.length - (invoice.scrapGoldItems?.length || 0));
+  const remainingDebtUSD = Math.max(0, invoice.remainingDebtUSD ?? (invoice.finalTotalUSD - invoice.paidUSD));
+
+  useEffect(() => {
+    const pageStyle = document.createElement('style');
+    pageStyle.dataset.invoiceA5Page = 'true';
+    pageStyle.textContent = `@page { size: A5 ${isPurchaseInvoice ? 'portrait' : 'landscape'}; margin: 0; }`;
+    document.head.appendChild(pageStyle);
+    document.body.classList.add('invoice-a5-print-active');
+    if (isPurchaseInvoice) document.body.classList.add('invoice-a5-print-portrait');
+
+    return () => {
+      pageStyle.remove();
+      document.body.classList.remove('invoice-a5-print-active');
+      document.body.classList.remove('invoice-a5-print-portrait');
+    };
+  }, [isPurchaseInvoice]);
+
+  return (
+    <div className="invoice-print-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
+      <div className="invoice-print-preview my-6 w-full max-w-5xl bg-white p-4 shadow-2xl">
+        <div className="no-print mb-4 flex items-center justify-between border-b border-slate-200 pb-3" dir="rtl">
+          <div className="flex items-center gap-2"><Printer className="h-5 w-5 text-amber-600" /><h3 className="font-bold text-slate-900">معاينة {invoiceTypeLabel(invoice.type)} A5 {isPurchaseInvoice ? 'عامودي' : 'عرضي'}</h3></div>
+          <div className="flex items-center gap-2"><button onClick={() => window.print()} className="flex items-center gap-2 bg-amber-400 px-4 py-2 text-xs font-black text-slate-900"><Printer className="h-4 w-4" />طباعة أو تصدير PDF</button><button onClick={onClose} className="bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
+        </div>
+
+        <section className={`invoice-print-sheet${isPurchaseInvoice ? ' invoice-print-sheet-portrait' : ''}`} dir="rtl">
+          <header className="invoice-paper-header">
+            <div className="invoice-contact" dir="ltr">
+              <b>{settings.phone1 || '021 263 6064'}</b>
+              <b>{settings.phone2 || '0944 866 362'}</b>
+              <small>{settings.address || 'حلب - سوريا'}</small>
+            </div>
+            <div className="invoice-logo-mark"><Diamond /><span>HLIWI JEWELRY</span></div>
+            <div className="invoice-brand"><small>مجوهرات</small><strong>حليوي</strong><span>عبد الحميد معين</span></div>
+          </header>
+
+          <div className="invoice-paper-meta">
+            <span><b>الاسم:</b> {invoice.customerOrSupplierName || '........................'}</span>
+            <span><b>التاريخ:</b> {invoice.date}</span>
+            <span><b>رقم:</b> <em>{invoice.invoiceNumber}</em></span>
+            <span><b>النوع:</b> {invoiceTypeLabel(invoice.type)}</span>
+          </div>
+
+          <table className="invoice-paper-table">
+            <thead><tr><th>مواصفات البضاعة</th><th>الوزن</th><th>العدد</th><th>عيار</th><th>سعر غ الذهب</th><th>أجرة الصياغة</th><th>الإجمالي</th></tr></thead>
+            <tbody>
+              {invoice.items.map((item, index) => (
+                <tr key={`${item.itemId || item.itemName}-${index}`}>
+                  <td>{item.itemName}</td><td>{item.netWeightGrams.toFixed(2)} غ</td><td>1</td><td>{item.karat}</td><td>$ {item.pricePerGramUSD.toFixed(2)}</td><td>$ {item.laborFeeUSDPerGram.toFixed(2)}</td><td>$ {item.totalPriceUSD.toFixed(2)}</td>
+                </tr>
+              ))}
+              {Array.from({ length: blankRowCount }, (_, index) => <tr key={`blank-${index}`} className="invoice-paper-blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>)}
+              {invoice.scrapGoldItems?.map((item, index) => (
+                <tr key={`trade-in-${index}`} className="invoice-paper-tradein-row">
+                  <td>ذهب مستعمل عيار {item.karat}</td><td>-{item.weightGrams.toFixed(2)} غ</td><td>1</td><td>{item.karat}</td><td>$ {item.pricePerGramUSD.toFixed(2)}</td><td>-</td><td>-$ {item.totalScrapValueUSD.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="invoice-paper-bottom">
+            {invoice.notes && <p className="invoice-paper-notes">{invoice.notes}</p>}
+            {invoice.scrapGoldItems && invoice.scrapGoldItems.length > 0 && <p className="invoice-paper-tradein-note">ملاحظة مقايضة: تم استلام ذهب كسر {invoice.scrapGoldItems.map(item => `عيار ${item.karat} بوزن ${item.weightGrams.toFixed(2)} غ`).join('، ')}، وخصم قيمته من الحساب.</p>}
+            <div className="invoice-paper-totals"><span>المجموع: <b>$ {invoice.finalTotalUSD.toFixed(2)}</b></span>{invoice.scrapTotalValueUSD > 0 && <span>مقايضة كسر: -$ {invoice.scrapTotalValueUSD.toFixed(2)}</span>}{invoice.discountUSD > 0 && <span>الحسم: $ {invoice.discountUSD.toFixed(2)}</span>}<span>المدفوع: $ {invoice.paidUSD.toFixed(2)}</span>{invoice.paidSYP > 0 && <span>مدفوع ل.س: {invoice.paidSYP.toLocaleString('ar-SY')}</span>}</div>
+            <div className="invoice-paper-remaining">المتبقي على الحساب: $ {remainingDebtUSD.toFixed(2)}</div>
+            <div className="invoice-paper-footer"><span>مجوهرات حليوي</span><span>{settings.phone1} {settings.phone2 ? `- ${settings.phone2}` : ''}</span><span>شكراً لثقتكم بنا</span></div>
+          </div>
+          <p className="invoice-paper-disclaimer">لسنا مسؤولين عن قياس الذهب بعد الاستعمال، تفقد القطعة صياغتها بعد الاستلام.</p>
+        </section>
+      </div>
+    </div>
+  );
+};

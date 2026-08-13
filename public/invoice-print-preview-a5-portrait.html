@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>معاينة فاتورة حليوي A5 عامودي</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    @page { size: A5 portrait; margin: 0; }
+    * { box-sizing: border-box; } body { margin:0; padding:20px; background:#e5e7eb; color:#58472f; font-family:Cairo,sans-serif; }
+    .notice { width:min(148mm,100%); margin:0 auto 12px; color:#334155; font-size:13px; font-weight:700; }.sheet { position:relative; width:148mm; min-height:210mm; margin:auto; overflow:hidden; padding:6mm 6mm 5mm; background:#fffdf7; }.sheet:before { content:'HLIWI'; position:absolute; top:47%; left:50%; z-index:0; transform:translate(-50%,-50%) rotate(-25deg); color:rgba(161,124,65,.05); font:700 35mm Georgia,serif; letter-spacing:3mm; }
+    header,.meta,table,.summary,.footer,.disclaimer { position:relative; z-index:1; }header { display:grid; grid-template-columns:1fr .7fr 1.1fr; align-items:center; gap:3mm; border-bottom:1.2px solid #806846; padding-bottom:3mm; direction:ltr; }.contact { display:grid; gap:.5mm; font:3.3mm/1 Arial; direction:ltr; text-align:left; }.contact small { margin-top:1mm; font:2mm Cairo; direction:rtl; text-align:right; }.mark{display:grid;justify-items:center;color:#a88148;font:700 2mm Arial;letter-spacing:.2mm}.mark b{display:grid;place-items:center;width:10mm;height:10mm;border:2mm solid #a88148;transform:rotate(45deg);margin-bottom:1mm}.mark i{display:block;width:3mm;height:3mm;background:#a88148}.brand{display:grid;justify-items:end;color:#a6814b;line-height:1;direction:rtl;text-align:right}.brand small{font-size:3mm;font-weight:700}.brand strong{margin-top:-1mm;font:700 12mm Georgia,serif;letter-spacing:-.8mm}.brand span{margin-top:-.6mm;font-size:2.5mm;font-weight:700}
+    .meta { display:grid; grid-template-columns:1.35fr 1fr .75fr; gap:2mm; min-height:9mm; align-items:center; border-bottom:1px solid #9c835d; font-size:2.5mm; }.meta b{color:#554228}.meta em{color:#9b4334;font-style:normal;font-weight:800}.customer { grid-column:1 / -1; border-bottom:1px dotted #a98d64; padding-bottom:1.2mm; }
+    table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;border:1.2px solid #69563a;border-radius:3mm;overflow:hidden;margin-top:2.5mm;font-size:2.45mm}th{background:#b39870;color:#4c3b27;padding:1.8mm .5mm;border-left:1px solid #69563a;font-weight:900}td{height:9.5mm;padding:.8mm 1mm;border-top:1px dotted #917858;border-left:1px solid #69563a;text-align:center;vertical-align:middle}td:first-child{text-align:right}th:last-child,td:last-child{border-left:0}th:nth-child(1){width:36%}th:nth-child(2){width:12%}th:nth-child(3){width:9%}th:nth-child(4){width:9%}th:nth-child(5){width:16%}th:nth-child(6){width:18%}.tradein td{color:#8a3e2c;background:#fff8ef;font-weight:800}
+    .summary{margin-top:3mm;border-top:1px solid #a98d64;padding-top:2mm}.trade-note{margin:0;color:#7c4f22;text-align:center;font-size:2.35mm;font-weight:700}.totals{display:grid;grid-template-columns:1fr 1fr;gap:1mm 5mm;margin-top:2mm;font-size:2.6mm}.totals b{color:#9b4334;font-size:3.4mm}.totals span:last-child{font-weight:900}.footer{display:flex;justify-content:space-between;margin-top:3mm;border-top:1px solid #aa8b60;padding-top:1.5mm;color:#81653d;direction:rtl;font:700 2.2mm Arial}.disclaimer{position:absolute;right:6mm;bottom:5mm;left:6mm;margin:0;text-align:center;color:#59482f;font-size:2.35mm;font-weight:700}
+    @media print{body{padding:0;background:white}.notice{display:none}.sheet{margin:0}}@media(max-width:700px){body{padding:6px;overflow-x:auto}.sheet{transform-origin:top right}}
+  </style>
+</head>
+<body>
+  <p class="notice">معاينة تجريبية - فاتورة A5 عامودي - 10 أسطر بيع</p>
+  <section class="sheet">
+    <header><div class="contact"><b>021 263 6064</b><b>0944 866 362</b><small>حلب - شارع القوتلي - سوق الذهب</small></div><div class="mark"><b><i></i></b><span>HLIWI JEWELRY</span></div><div class="brand"><small>مجوهرات</small><strong>حليوي</strong><span>عبد الحميد معين</span></div></header>
+    <div class="meta"><span class="customer"><b>الاسم:</b> محمد الأحمد</span><span><b>التاريخ:</b> 11/08/2026</span><span><b>رقم:</b> <em>0331</em></span><span><b>النوع:</b> فاتورة بيع</span></div>
+    <table><thead><tr><th>مواصفات البضاعة</th><th>الوزن</th><th>العدد</th><th>عيار</th><th>سعر الغرام</th><th>الإجمالي</th></tr></thead><tbody>
+      <tr><td>خاتم ذهب نسائي موديل إيطالي</td><td>11.54 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$1,436.73</td></tr>
+      <tr><td>سلسلة ذهب نسائية ناعمة</td><td>8.20 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$1,020.90</td></tr>
+      <tr><td>طقم ذهب أطفال</td><td>6.40 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$796.80</td></tr>
+      <tr><td>حلق ذهب إيطالي</td><td>4.75 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$591.38</td></tr>
+      <tr><td>سوار ذهب نسائي</td><td>12.10 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$1,506.45</td></tr>
+      <tr><td>تعليقة ذهب باسم</td><td>3.60 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$448.20</td></tr>
+      <tr><td>خاتم رجالي عيار 21</td><td>9.35 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$1,164.08</td></tr>
+      <tr><td>سلسلة ذهب رجالي</td><td>14.20 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$1,767.90</td></tr>
+      <tr><td>أسوارة ذهب ناعمة</td><td>5.80 غ</td><td>1</td><td>21</td><td>$124.50</td><td>$722.10</td></tr>
+      <tr class="tradein"><td>سوار ذهب مستعمل</td><td>-7.15 غ</td><td>1</td><td>21</td><td>$84.00</td><td>-$600.60</td></tr>
+    </tbody></table>
+    <div class="summary"><p class="trade-note">ملاحظة: تم استلام سوار ذهب مستعمل عيار 21 بوزن 7.15 غ من الزبون، وخصم قيمته من الحساب.</p><div class="totals"><span>إجمالي المبيعات: <b>$9,454.54</b></span><span>سوار مستعمل: -$600.60</span><span>الحسم للزبون: -$44.72</span><span>المدفوع: $8,809.22</span><span>المتبقي: $0.00</span></div><div class="footer"><span>مجوهرات حليوي</span><span>021 263 6064 - 0944 866 362</span><span>شكراً لثقتكم بنا</span></div></div>
+    <p class="disclaimer">لسنا مسؤولين عن قياس الذهب بعد الاستعمال، تفقد القطعة وصياغتها بعد الاستلام.</p>
+  </section>
+</body>
+</html>

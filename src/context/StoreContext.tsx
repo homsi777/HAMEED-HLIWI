@@ -1,0 +1,735 @@
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import {
+  GeneralSettings,
+  GoldPriceSetting,
+  Warehouse,
+  InventoryItem,
+  Partner,
+  Invoice,
+  Voucher,
+  CashBox,
+  User,
+  WorkShift,
+  ActivityLog,
+  GoldKarat
+  , GoldWeightAccount, GoldDebtEntry
+} from '../types';
+import {
+  initialSettings,
+  initialGoldPrices,
+  initialWarehouses,
+  initialInventory,
+  initialPartners,
+  initialCashBoxes,
+  initialUsers,
+  initialInvoices,
+  initialVouchers,
+  initialActivityLogs
+} from '../data/initialData';
+
+interface StoreContextType {
+  settings: GeneralSettings;
+  goldPrices: GoldPriceSetting[];
+  warehouses: Warehouse[];
+  inventory: InventoryItem[];
+  partners: Partner[];
+  goldWeightAccounts: GoldWeightAccount[];
+  invoices: Invoice[];
+  vouchers: Voucher[];
+  cashBoxes: CashBox[];
+  users: User[];
+  currentUser: User;
+  shifts: WorkShift[];
+  activeShift: WorkShift | null;
+  activityLogs: ActivityLog[];
+  activeCurrency: 'USD' | 'SYP';
+  
+  // Actions
+  updateSettings: (newSettings: Partial<GeneralSettings>) => void;
+  updateGoldPrices: (newPrices: GoldPriceSetting[]) => void;
+  updateKaratPrice: (karat: GoldKarat, buyUSD: number, sellUSD: number) => void;
+  recalculateAllGoldPricesFromBase: (baseOunceUSD: number, exchangeRateSYP: number) => void;
+  
+  // Warehouses
+  addWarehouse: (warehouse: Omit<Warehouse, 'id'>) => void;
+  updateWarehouse: (id: string, warehouse: Partial<Warehouse>) => void;
+  
+  // Inventory
+  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'dateAdded'>) => void;
+  updateInventoryItem: (id: string, item: Partial<InventoryItem>) => void;
+  deleteInventoryItem: (id: string) => void;
+  transferInventoryItem: (itemId: string, targetWarehouseId: string) => void;
+  
+  // Invoices
+  addInvoice: (invoice: Omit<Invoice, 'id' | 'invoiceNumber'>) => Invoice;
+  cancelInvoice: (invoiceId: string) => void;
+  
+  // Partners
+  addPartner: (partner: Omit<Partner, 'id' | 'createdAt'>) => void;
+  updatePartner: (id: string, partner: Partial<Partner>) => void;
+  addGoldWeightAccount: (personName: string, phone?: string) => void;
+  addGoldWeightEntry: (accountId: string, entry: Omit<GoldDebtEntry, 'id' | 'date'>) => void;
+  
+  // Vouchers & Cashboxes
+  addVoucher: (voucher: Omit<Voucher, 'id' | 'voucherNumber'>) => void;
+  updateVoucher: (id: string, voucher: Partial<Voucher>) => void;
+  cancelVoucher: (id: string) => void;
+  addCashBox: (cashBox: Omit<CashBox, 'id'>) => void;
+  transferBetweenCashBoxes: (fromBoxId: string, toBoxId: string, amountFrom: number, amountTo: number, statement: string) => void;
+  
+  // Users
+  addUser: (user: Omit<User, 'id'>) => void;
+  updateUser: (id: string, user: Partial<User>) => void;
+  setCurrentUser: (user: User) => void;
+  startShift: () => WorkShift | null;
+  closeShift: () => void;
+  
+  // Currency & System
+  setActiveCurrency: (curr: 'USD' | 'SYP') => void;
+  logActivity: (action: string, details: string, type: ActivityLog['type']) => void;
+  resetToDefaultData: () => void;
+  
+  // Helpers
+  getGoldPrice: (karat: GoldKarat, type: 'buy' | 'sell', curr?: 'USD' | 'SYP') => number;
+  formatMoney: (amountInUSD: number, targetCurr?: 'USD' | 'SYP') => string;
+}
+
+const StoreContext = createContext<StoreContextType | undefined>(undefined);
+
+const LOCAL_STORAGE_KEY = 'HAMEED_HLIWI_GOLD_STORE_V1';
+
+export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Try loading from localStorage
+  const loadInitialState = () => {
+    try {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Failed to load state from localStorage', e);
+    }
+    return null;
+  };
+
+  const savedData = loadInitialState();
+
+  const [settings, setSettings] = useState<GeneralSettings>(savedData?.settings || initialSettings);
+  const [goldPrices, setGoldPrices] = useState<GoldPriceSetting[]>(() => (savedData?.goldPrices || initialGoldPrices).map((price: GoldPriceSetting) => ({ ...price, laborFeeUSDPerGram: price.laborFeeUSDPerGram ?? 5 })));
+  const [warehouses, setWarehouses] = useState<Warehouse[]>(savedData?.warehouses || initialWarehouses);
+  const [inventory, setInventory] = useState<InventoryItem[]>(savedData?.inventory || initialInventory);
+  const [partners, setPartners] = useState<Partner[]>(savedData?.partners || initialPartners);
+  const [goldWeightAccounts, setGoldWeightAccounts] = useState<GoldWeightAccount[]>(savedData?.goldWeightAccounts || []);
+  const [invoices, setInvoices] = useState<Invoice[]>(savedData?.invoices || initialInvoices);
+  const [vouchers, setVouchers] = useState<Voucher[]>(savedData?.vouchers || initialVouchers);
+  const [cashBoxes, setCashBoxes] = useState<CashBox[]>(savedData?.cashBoxes || initialCashBoxes);
+  const [users, setUsers] = useState<User[]>(savedData?.users || initialUsers);
+  const [currentUser, setCurrentUser] = useState<User>(savedData?.currentUser || initialUsers[0]);
+  const [shifts, setShifts] = useState<WorkShift[]>(savedData?.shifts || []);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(savedData?.activityLogs || initialActivityLogs);
+  const [activeCurrency, setActiveCurrency] = useState<'USD' | 'SYP'>(savedData?.activeCurrency || 'USD');
+
+  // Save state on change
+  useEffect(() => {
+    const stateToSave = {
+      settings,
+      goldPrices,
+      warehouses,
+      inventory,
+      partners,
+      goldWeightAccounts,
+      invoices,
+      vouchers,
+      cashBoxes,
+      users,
+      currentUser,
+      shifts,
+      activityLogs,
+      activeCurrency
+    };
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(stateToSave));
+    } catch (e) {
+      console.error('Failed to save state to localStorage', e);
+    }
+  }, [
+    settings,
+    goldPrices,
+    warehouses,
+    inventory,
+    partners,
+    goldWeightAccounts,
+    invoices,
+    vouchers,
+    cashBoxes,
+    users,
+    currentUser,
+    shifts,
+    activityLogs,
+    activeCurrency
+  ]);
+
+  const logActivity = (action: string, details: string, type: ActivityLog['type']) => {
+    const newLog: ActivityLog = {
+      id: 'act-' + Date.now(),
+      timestamp: new Date().toLocaleString('ar-SY', { hour12: false }),
+      userName: currentUser.fullName,
+      action,
+      details,
+      type
+    };
+    setActivityLogs(prev => [newLog, ...prev]);
+  };
+
+  const updateSettings = (newSettings: Partial<GeneralSettings>) => {
+    setSettings(prev => {
+      const updated = { ...prev, ...newSettings };
+      // If rate changed, recalculate SYP prices
+      if (newSettings.usdToSypRate && newSettings.usdToSypRate !== prev.usdToSypRate) {
+        recalculateAllGoldPricesFromBase(updated.baseGoldOunceUSD, newSettings.usdToSypRate);
+      }
+      return updated;
+    });
+    logActivity('تحديث الإعدادات', 'تم تعديل إعدادات النظام العامة', 'setting');
+  };
+
+  const updateGoldPrices = (newPrices: GoldPriceSetting[]) => {
+    setGoldPrices(newPrices);
+    logActivity('تحديث أسعار الذهب', 'تم تحديث جدول أسعار الذهب رسمياً', 'setting');
+  };
+
+  const updateKaratPrice = (karat: GoldKarat, buyUSD: number, sellUSD: number) => {
+    const rate = settings.usdToSypRate;
+    setGoldPrices(prev =>
+      prev.map(p => {
+        if (p.karat === karat) {
+          return {
+            ...p,
+            buyPriceUSDPerGram: buyUSD,
+            sellPriceUSDPerGram: sellUSD,
+            buyPriceSYPPerGram: Math.round(buyUSD * rate),
+            sellPriceSYPPerGram: Math.round(sellUSD * rate)
+          };
+        }
+        return p;
+      })
+    );
+    logActivity('تحديث سعر العيار', `تم تعديل سعر عيار ${karat} إلى شراء $${buyUSD} / بيع $${sellUSD}`, 'setting');
+  };
+
+  const recalculateAllGoldPricesFromBase = (baseOunceUSD: number, rateSYP: number) => {
+    // 1 Ounce = 31.1034768 grams of 24K gold
+    const gram24USD = baseOunceUSD / 31.1034768;
+    const karatsMultiplier: Record<GoldKarat, number> = {
+      '24': 1.0,
+      '22': 22 / 24,
+      '21': 21 / 24,
+      '18': 18 / 24,
+      '14': 14 / 24
+    };
+
+    const newPrices: GoldPriceSetting[] = (['24', '22', '21', '18', '14'] as GoldKarat[]).map(k => {
+      const pureGramVal = gram24USD * karatsMultiplier[k];
+      const buyUSD = Number((pureGramVal * (1 - settings.buyMarginPercent / 100)).toFixed(2));
+      const sellUSD = Number((pureGramVal * (1 + settings.sellMarginPercent / 100)).toFixed(2));
+      return {
+        karat: k,
+        buyPriceUSDPerGram: buyUSD,
+        sellPriceUSDPerGram: sellUSD,
+        laborFeeUSDPerGram: goldPrices.find(price => price.karat === k)?.laborFeeUSDPerGram ?? 5,
+        buyPriceSYPPerGram: Math.round(buyUSD * rateSYP),
+        sellPriceSYPPerGram: Math.round(sellUSD * rateSYP)
+      };
+    });
+
+    setGoldPrices(newPrices);
+  };
+
+  const addWarehouse = (whData: Omit<Warehouse, 'id'>) => {
+    const newWh: Warehouse = {
+      ...whData,
+      id: 'wh-' + Date.now()
+    };
+    setWarehouses(prev => [...prev, newWh]);
+    logActivity('إضافة مستودع', `تم إضافة مستودع/فرع جديد: ${newWh.name}`, 'inventory');
+  };
+
+  const updateWarehouse = (id: string, whData: Partial<Warehouse>) => {
+    setWarehouses(prev => prev.map(w => (w.id === id ? { ...w, ...whData } : w)));
+    logActivity('تعديل مستودع', `تم تعديل بيانت المستودع ${id}`, 'inventory');
+  };
+
+  const addInventoryItem = (itemData: Omit<InventoryItem, 'id' | 'dateAdded'>) => {
+    const newItem: InventoryItem = {
+      ...itemData,
+      id: 'item-' + Date.now(),
+      dateAdded: new Date().toISOString().split('T')[0]
+    };
+    setInventory(prev => [newItem, ...prev]);
+    logActivity('إضافة منتج', `تم إضافة القطعة (${newItem.name}) كود ${newItem.code}`, 'inventory');
+  };
+
+  const updateInventoryItem = (id: string, itemData: Partial<InventoryItem>) => {
+    setInventory(prev => prev.map(item => (item.id === id ? { ...item, ...itemData } : item)));
+    logActivity('تعديل منتج', `تم تعديل القطعة برقم ${id}`, 'inventory');
+  };
+
+  const deleteInventoryItem = (id: string) => {
+    const target = inventory.find(i => i.id === id);
+    setInventory(prev => prev.filter(i => i.id !== id));
+    if (target) {
+      logActivity('حذف منتج', `تم حذف القطعة (${target.name}) من المخزون`, 'inventory');
+    }
+  };
+
+  const transferInventoryItem = (itemId: string, targetWarehouseId: string) => {
+    const item = inventory.find(i => i.id === itemId);
+    const targetWh = warehouses.find(w => w.id === targetWarehouseId);
+    if (item && targetWh) {
+      setInventory(prev => prev.map(i => (i.id === itemId ? { ...i, warehouseId: targetWarehouseId } : i)));
+      logActivity('نقل قطعة', `تم نقل القطعة (${item.name}) إلى مستودع ${targetWh.name}`, 'inventory');
+    }
+  };
+
+  const activeShift = shifts.find(shift => shift.userId === currentUser.id && !shift.endedAt) || null;
+
+  const startShift = (): WorkShift | null => {
+    if (activeShift) return activeShift;
+    const shift: WorkShift = { id: `shift-${Date.now()}`, userId: currentUser.id, userName: currentUser.fullName, startedAt: new Date().toISOString() };
+    setShifts(previous => [shift, ...previous]);
+    logActivity('بدء وردية', `بدأ الموظف ${currentUser.fullName} وردية جديدة`, 'user');
+    if ('Notification' in window && Notification.permission === 'granted') new Notification(settings.storeName, { body: `بدء وردية جديدة\nالموظف: ${currentUser.fullName}\n${new Date().toLocaleString('ar-SY')}`, tag: shift.id });
+    return shift;
+  };
+
+  const closeShift = () => {
+    if (!activeShift) return;
+    const relatedInvoices = invoices.filter(invoice => invoice.shiftId === activeShift.id && invoice.type === 'sale');
+    const summary = { invoiceCount: relatedInvoices.length, salesTotalUSD: relatedInvoices.reduce((sum, invoice) => sum + invoice.finalTotalUSD, 0), soldWeightGrams: relatedInvoices.reduce((sum, invoice) => sum + invoice.items.reduce((weight, item) => weight + item.netWeightGrams, 0), 0) };
+    setShifts(previous => previous.map(shift => shift.id === activeShift.id ? { ...shift, endedAt: new Date().toISOString(), ...summary } : shift));
+    logActivity('إغلاق وردية', `أنهى الموظف ${currentUser.fullName} ورديته: ${summary.invoiceCount} فاتورة بيع`, 'user');
+    if ('Notification' in window && Notification.permission === 'granted') new Notification(settings.storeName, { body: `إغلاق وردية\nالموظف: ${currentUser.fullName}\nمبيعات: $ ${summary.salesTotalUSD.toFixed(2)} • فواتير: ${summary.invoiceCount}`, tag: activeShift.id });
+  };
+
+  const addInvoice = (invData: Omit<Invoice, 'id' | 'invoiceNumber'>): Invoice => {
+    const count = invoices.length + 1;
+    const invNumber = `INV-${new Date().getFullYear()}-${String(count).padStart(3, '0')}`;
+    const newInvoice: Invoice = {
+      ...invData,
+      id: 'inv-' + Date.now(),
+      invoiceNumber: invNumber,
+      shiftId: activeShift?.id
+    };
+
+    setInvoices(prev => [newInvoice, ...prev]);
+
+    // Handle Stock updates
+    if (newInvoice.type === 'sale') {
+      // Mark sold items
+      const soldItemIds = newInvoice.items.map(i => i.itemId).filter(Boolean) as string[];
+      setInventory(prev =>
+        prev.map(item => (soldItemIds.includes(item.id) ? { ...item, status: 'sold' as const } : item))
+      );
+    } else if (newInvoice.type === 'purchase') {
+      // Automatically create new inventory items for purchased gold
+      const newItems: InventoryItem[] = newInvoice.items.map((item, idx) => ({
+        id: 'item-purchased-' + Date.now() + '-' + idx,
+        code: `PUR-${newInvoice.invoiceNumber}-${idx + 1}`,
+        name: item.itemName,
+        category: item.category,
+        karat: item.karat,
+        grossWeightGrams: item.grossWeightGrams,
+        stoneWeightGrams: item.stoneWeightGrams,
+        netWeightGrams: item.netWeightGrams,
+        laborFeeUSDPerGram: item.laborFeeUSDPerGram,
+        totalLaborFeeUSD: item.laborFeeUSDPerGram * item.netWeightGrams,
+        warehouseId: newInvoice.warehouseId,
+        status: 'in_stock',
+        notes: `مشتريات فاتورة ${invNumber}`,
+        dateAdded: newInvoice.date
+      }));
+      setInventory(prev => [...newItems, ...prev]);
+    }
+
+    // Update Partner Balance if debt remaining
+    if (newInvoice.customerOrSupplierId && (newInvoice.remainingDebtUSD !== 0 || (newInvoice.remainingDebtGold21kGrams && newInvoice.remainingDebtGold21kGrams !== 0))) {
+      setPartners(prev =>
+        prev.map(partner => {
+          if (partner.id === newInvoice.customerOrSupplierId) {
+            // Sale debt means customer owes us money (negative balance)
+            // Purchase debt means we owe supplier money (positive balance)
+            const debtUSDMultiplier = newInvoice.type === 'sale' ? -1 : 1;
+            const updatedDebt = partner.balanceUSD + newInvoice.remainingDebtUSD * debtUSDMultiplier;
+            const updatedGold = partner.goldBalance21kGrams + (newInvoice.remainingDebtGold21kGrams || 0) * debtUSDMultiplier;
+            return {
+              ...partner,
+              balanceUSD: Number(updatedDebt.toFixed(2)),
+              goldBalance21kGrams: Number(updatedGold.toFixed(2))
+            };
+          }
+          return partner;
+        })
+      );
+    }
+
+    // Update Cash Boxes if paid amount
+    if (newInvoice.paidUSD > 0) {
+      setCashBoxes(prev =>
+        prev.map(box => {
+          if (box.currency === 'USD' && box.id === 'box-usd') {
+            const multiplier = newInvoice.type === 'sale' ? 1 : -1;
+            return { ...box, balanceAmount: box.balanceAmount + newInvoice.paidUSD * multiplier };
+          }
+          return box;
+        })
+      );
+    }
+
+    if (newInvoice.paidSYP > 0) {
+      setCashBoxes(prev =>
+        prev.map(box => {
+          if (box.currency === 'SYP' && box.id === 'box-syp') {
+            const multiplier = newInvoice.type === 'sale' ? 1 : -1;
+            return { ...box, balanceAmount: box.balanceAmount + newInvoice.paidSYP * multiplier };
+          }
+          return box;
+        })
+      );
+    }
+
+    logActivity(
+      `إنشاء فاتورة ${newInvoice.type === 'sale' ? 'بيع' : newInvoice.type === 'purchase' ? 'شراء' : 'مرتجع'}`,
+      `فاتورة رقم ${invNumber} بقيمة $${newInvoice.finalTotalUSD} للعميل/المورد ${newInvoice.customerOrSupplierName}`,
+      'invoice'
+    );
+
+    return newInvoice;
+  };
+
+  const cancelInvoice = (invoiceId: string) => {
+    const inv = invoices.find(i => i.id === invoiceId);
+    if (!inv) return;
+
+    // Restore stock status if sale
+    if (inv.type === 'sale') {
+      const itemIds = inv.items.map(i => i.itemId).filter(Boolean) as string[];
+      setInventory(prev =>
+        prev.map(item => (itemIds.includes(item.id) ? { ...item, status: 'in_stock' as const } : item))
+      );
+    }
+
+    // Reverse Partner Balance changes if applicable
+    if (inv.customerOrSupplierId && (inv.remainingDebtUSD !== 0 || (inv.remainingDebtGold21kGrams && inv.remainingDebtGold21kGrams !== 0))) {
+      setPartners(prev =>
+        prev.map(partner => {
+          if (partner.id === inv.customerOrSupplierId) {
+            const debtUSDMultiplier = inv.type === 'sale' ? 1 : -1;
+            const updatedDebt = partner.balanceUSD + inv.remainingDebtUSD * debtUSDMultiplier;
+            const updatedGold = partner.goldBalance21kGrams + (inv.remainingDebtGold21kGrams || 0) * debtUSDMultiplier;
+            return {
+              ...partner,
+              balanceUSD: Number(updatedDebt.toFixed(2)),
+              goldBalance21kGrams: Number(updatedGold.toFixed(2))
+            };
+          }
+          return partner;
+        })
+      );
+    }
+
+    // Reverse Cash box changes
+    if (inv.paidUSD > 0) {
+      setCashBoxes(prev =>
+        prev.map(box => {
+          if (box.currency === 'USD' && box.id === 'box-usd') {
+            const multiplier = inv.type === 'sale' ? -1 : 1;
+            return { ...box, balanceAmount: Math.max(0, box.balanceAmount + inv.paidUSD * multiplier) };
+          }
+          return box;
+        })
+      );
+    }
+
+    if (inv.paidSYP > 0) {
+      setCashBoxes(prev =>
+        prev.map(box => {
+          if (box.currency === 'SYP' && box.id === 'box-syp') {
+            const multiplier = inv.type === 'sale' ? -1 : 1;
+            return { ...box, balanceAmount: Math.max(0, box.balanceAmount + inv.paidSYP * multiplier) };
+          }
+          return box;
+        })
+      );
+    }
+
+    // Remove invoice
+    setInvoices(prev => prev.filter(i => i.id !== invoiceId));
+
+    logActivity('إلغاء فاتورة', `تم إلغاء الفاتورة رقم ${inv.invoiceNumber} وإعادة ضبط قيودها`, 'invoice');
+  };
+
+  const addPartner = (partnerData: Omit<Partner, 'id' | 'createdAt'>) => {
+    const newPartner: Partner = {
+      ...partnerData,
+      id: 'prt-' + Date.now(),
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    setPartners(prev => [...prev, newPartner]);
+    logActivity('إضافة عميل/مورد', `تم إضافة ${newPartner.type === 'customer' ? 'العميل' : 'المورد'} ${newPartner.name}`, 'partners');
+  };
+
+  const updatePartner = (id: string, partnerData: Partial<Partner>) => {
+    setPartners(prev => prev.map(p => (p.id === id ? { ...p, ...partnerData } : p)));
+    logActivity('تعديل عميل/مورد', `تم تعديل البيانات للجهة رقم ${id}`, 'partners');
+  };
+
+  const addGoldWeightAccount = (personName: string, phone?: string) => {
+    setGoldWeightAccounts(prev => [...prev, { id: `weight-account-${Date.now()}`, personName, phone, entries: [] }]);
+  };
+
+  const addGoldWeightEntry = (accountId: string, entry: Omit<GoldDebtEntry, 'id' | 'date'>) => {
+    const newEntry: GoldDebtEntry = { ...entry, id: `weight-entry-${Date.now()}`, date: new Date().toISOString() };
+    setGoldWeightAccounts(prev => prev.map(account => account.id === accountId ? { ...account, entries: [...account.entries, newEntry] } : account));
+  };
+
+  const addVoucher = (vchData: Omit<Voucher, 'id' | 'voucherNumber'>) => {
+    const count = vouchers.length + 1;
+    const voucherNumber = `VCH-${new Date().getFullYear()}-${String(count).padStart(2, '0')}`;
+    const newVoucher: Voucher = {
+      ...vchData,
+      id: 'vch-' + Date.now(),
+      voucherNumber
+    };
+
+    setVouchers(prev => [newVoucher, ...prev]);
+
+    // Update cash box balance
+    setCashBoxes(prev =>
+      prev.map(box => {
+        if (box.id === newVoucher.cashBoxId) {
+          const isReceipt = newVoucher.type === 'receipt';
+          const isUSD = box.currency === 'USD';
+          const delta = isUSD ? newVoucher.amountUSD : newVoucher.amountSYP;
+          return {
+            ...box,
+            balanceAmount: isReceipt ? box.balanceAmount + delta : box.balanceAmount - delta
+          };
+        }
+        return box;
+      })
+    );
+
+    // Update partner balance if receipt or payment
+    if (newVoucher.partnerId && newVoucher.type !== 'expense') {
+      setPartners(prev =>
+        prev.map(partner => {
+          if (partner.id === newVoucher.partnerId) {
+            // Receipt voucher from partner reduces customer debt (increases balance towards positive)
+            // Payment voucher to partner reduces supplier debt
+            const isReceipt = newVoucher.type === 'receipt';
+            const updatedUSD = partner.balanceUSD + (isReceipt ? newVoucher.amountUSD : -newVoucher.amountUSD);
+            const updatedGold = partner.goldBalance21kGrams + (isReceipt ? (newVoucher.goldWeight21kGrams || 0) : -(newVoucher.goldWeight21kGrams || 0));
+            return {
+              ...partner,
+              balanceUSD: Number(updatedUSD.toFixed(2)),
+              goldBalance21kGrams: Number(updatedGold.toFixed(2))
+            };
+          }
+          return partner;
+        })
+      );
+    }
+
+    logActivity(
+      `سند ${newVoucher.type === 'receipt' ? 'قبض' : newVoucher.type === 'payment' ? 'صرف' : 'مصروف'}`,
+      `سند رقم ${voucherNumber} بقيمة $${newVoucher.amountUSD} (${newVoucher.statement})`,
+      'finance'
+    );
+  };
+
+  const updateVoucher = (id: string, voucherData: Partial<Voucher>) => {
+    setVouchers(prev => prev.map(voucher => voucher.id === id ? { ...voucher, ...voucherData } : voucher));
+    logActivity('تعديل سند', `تم تعديل السند ${id}`, 'finance');
+  };
+
+  const cancelVoucher = (id: string) => {
+    const voucher = vouchers.find(item => item.id === id);
+    if (!voucher) return;
+    setVouchers(prev => prev.filter(item => item.id !== id));
+    setCashBoxes(prev => prev.map(box => {
+      if (box.id !== voucher.cashBoxId) return box;
+      const amount = box.currency === 'USD' ? voucher.amountUSD : voucher.amountSYP;
+      return { ...box, balanceAmount: voucher.type === 'receipt' ? box.balanceAmount - amount : box.balanceAmount + amount };
+    }));
+    if (voucher.partnerId && voucher.type !== 'expense') {
+      setPartners(prev => prev.map(partner => partner.id !== voucher.partnerId ? partner : {
+        ...partner,
+        balanceUSD: Number((partner.balanceUSD - (voucher.type === 'receipt' ? voucher.amountUSD : -voucher.amountUSD)).toFixed(2)),
+        goldBalance21kGrams: Number((partner.goldBalance21kGrams - (voucher.type === 'receipt' ? (voucher.goldWeight21kGrams || 0) : -(voucher.goldWeight21kGrams || 0))).toFixed(2))
+      }));
+    }
+    logActivity('إلغاء وعكس سند', `تم عكس السند ${voucher.voucherNumber}`, 'finance');
+  };
+
+  const transferBetweenCashBoxes = (
+    fromBoxId: string,
+    toBoxId: string,
+    amountFrom: number,
+    amountTo: number,
+    statement: string
+  ) => {
+    setCashBoxes(prev =>
+      prev.map(box => {
+        if (box.id === fromBoxId) {
+          return { ...box, balanceAmount: box.balanceAmount - amountFrom };
+        }
+        if (box.id === toBoxId) {
+          return { ...box, balanceAmount: box.balanceAmount + amountTo };
+        }
+        return box;
+      })
+    );
+
+    const fromBox = cashBoxes.find(b => b.id === fromBoxId);
+    const toBox = cashBoxes.find(b => b.id === toBoxId);
+    const count = vouchers.length + 1;
+    const voucherNumber = `TRF-${new Date().getFullYear()}-${String(count).padStart(2, '0')}`;
+
+    const newVoucher: Voucher = {
+      id: 'vch-trf-' + Date.now(),
+      voucherNumber,
+      type: 'expense',
+      date: new Date().toISOString().split('T')[0],
+      cashBoxId: fromBoxId,
+      amountUSD: fromBox?.currency === 'USD' ? amountFrom : amountTo / settings.usdToSypRate,
+      amountSYP: fromBox?.currency === 'SYP' ? amountFrom : amountTo,
+      exchangeRate: settings.usdToSypRate,
+      category: 'مناقلة تحويل بين الخزائن',
+      statement: statement || `مناقلة من ${fromBox?.name} إلى ${toBox?.name}`,
+      createdBy: currentUser.fullName
+    };
+
+    setVouchers(prev => [newVoucher, ...prev]);
+    logActivity('مناقلة نقدية', `تحويل من ${fromBox?.name} إلى ${toBox?.name}`, 'finance');
+  };
+
+  const addCashBox = (cashBoxData: Omit<CashBox, 'id'>) => {
+    const newCashBox: CashBox = { ...cashBoxData, id: 'box-' + Date.now() };
+    setCashBoxes(prev => [...prev, newCashBox]);
+    logActivity('إضافة صندوق', `تم إنشاء صندوق جديد: ${newCashBox.name}`, 'finance');
+  };
+
+  const addUser = (userData: Omit<User, 'id'>) => {
+    const newUser: User = {
+      ...userData,
+      id: 'usr-' + Date.now()
+    };
+    setUsers(prev => [...prev, newUser]);
+    logActivity('إضافة مستخدم', `تم إنشاء حساب مستخدم جديد: ${newUser.fullName} (${newUser.username})`, 'user');
+  };
+
+  const updateUser = (id: string, userData: Partial<User>) => {
+    setUsers(prev => prev.map(u => (u.id === id ? { ...u, ...userData } : u)));
+    logActivity('تعديل مستخدم', `تم تعديل بيانات المستخدم رقم ${id}`, 'user');
+  };
+
+  const resetToDefaultData = () => {
+    setSettings(initialSettings);
+    setGoldPrices(initialGoldPrices);
+    setWarehouses(initialWarehouses);
+    setInventory(initialInventory);
+    setPartners(initialPartners);
+    setInvoices(initialInvoices);
+    setVouchers(initialVouchers);
+    setCashBoxes(initialCashBoxes);
+    setUsers(initialUsers);
+    setCurrentUser(initialUsers[0]);
+    setShifts([]);
+    setActivityLogs(initialActivityLogs);
+    setActiveCurrency('USD');
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+  };
+
+  // Helper getters
+  const getGoldPrice = (karat: GoldKarat, type: 'buy' | 'sell', curr: 'USD' | 'SYP' = activeCurrency): number => {
+    const item = goldPrices.find(g => g.karat === karat);
+    if (!item) return 0;
+    if (curr === 'USD') {
+      return type === 'buy' ? item.buyPriceUSDPerGram : item.sellPriceUSDPerGram;
+    } else {
+      return type === 'buy' ? item.buyPriceSYPPerGram : item.sellPriceSYPPerGram;
+    }
+  };
+
+  const formatMoney = (amountInUSD: number, targetCurr: 'USD' | 'SYP' = activeCurrency): string => {
+    if (targetCurr === 'USD') {
+      return `$ ${amountInUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } else {
+      const syp = Math.round(amountInUSD * settings.usdToSypRate);
+      return `${syp.toLocaleString('ar-SY')} ل.س`;
+    }
+  };
+
+  return (
+    <StoreContext.Provider
+      value={{
+        settings,
+        goldPrices,
+        warehouses,
+        inventory,
+        partners,
+        goldWeightAccounts,
+        invoices,
+        vouchers,
+        cashBoxes,
+        users,
+        currentUser,
+        shifts,
+        activeShift,
+        activityLogs,
+        activeCurrency,
+        updateSettings,
+        updateGoldPrices,
+        updateKaratPrice,
+        recalculateAllGoldPricesFromBase,
+        addWarehouse,
+        updateWarehouse,
+        addInventoryItem,
+        updateInventoryItem,
+        deleteInventoryItem,
+        transferInventoryItem,
+        addInvoice,
+        cancelInvoice,
+        addPartner,
+        updatePartner,
+        addGoldWeightAccount,
+        addGoldWeightEntry,
+        addVoucher,
+        updateVoucher,
+        cancelVoucher,
+        addCashBox,
+        transferBetweenCashBoxes,
+        addUser,
+        updateUser,
+        setCurrentUser,
+        startShift,
+        closeShift,
+        setActiveCurrency,
+        logActivity,
+        resetToDefaultData,
+        getGoldPrice,
+        formatMoney
+      }}
+    >
+      {children}
+    </StoreContext.Provider>
+  );
+};
+
+export const useStore = () => {
+  const context = useContext(StoreContext);
+  if (!context) {
+    throw new Error('useStore must be used within a StoreProvider');
+  }
+  return context;
+};

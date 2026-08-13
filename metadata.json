@@ -1,0 +1,8 @@
+{
+  "name": "حميد حليوي - نظام إدارة تجارة الذهب والمجوهرات",
+  "description": "نظام شامل وإحترافي لإدارة تجارة وصياغة الذهب، المخزون والمستودعات، الفواتير، والمالية بالدولار والليرة السورية - حلب",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
