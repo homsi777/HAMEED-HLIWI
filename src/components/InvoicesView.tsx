@@ -49,6 +49,17 @@ interface InvoicesViewProps {
 
 const money = (value: number) => Number(value.toFixed(2));
 
+// List rows deliberately carry no invoice lines, so the number of pieces comes from the
+// server-side aggregate over the invoice lines. It falls back to the loaded lines only
+// when a row already has them (a freshly saved invoice held in memory).
+const pieceCount = (invoice: any) => {
+  const aggregated = Number(invoice?.itemCount);
+  if (Number.isFinite(aggregated) && aggregated > 0) return Number(aggregated.toFixed(3)).toLocaleString('en-US');
+  const lines: any[] = Array.isArray(invoice?.items) ? invoice.items : [];
+  const summed = lines.reduce((total, line) => total + (Number(line?.quantity) || 1), 0);
+  return Number(summed.toFixed(3)).toLocaleString('en-US');
+};
+
 // Both the gold value and the labor charge are calculated per gram for each item.
 // Rounding each line prevents floating-point fractions from affecting the invoice total.
 const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: number, laborFeeUSDPerGram: number) => {
@@ -140,25 +151,31 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   };
 
   // Handlers for Invoice 3-Dots Menu
-  // Opening an invoice also loads the financial trail it produced, so a manager can
-  // follow the money from the document into Finance without leaving the screen.
-  const handlePreviewInvoice = async (inv: Invoice) => {
-    setActiveMenu(null);
-    setSelectedInvoiceForPrint(inv);
-    setInvoiceFinancials(null);
-    if (inv.type === 'return') return;
-    try {
-      const detail: any = inv.type === 'sale' ? await salesApi.get(inv.id) : await purchasesApi.get(inv.id);
-      setInvoiceFinancials({ invoiceId: inv.id, vouchers: detail.vouchers ?? [], outstandingUSD: detail.customerOutstandingUSD ?? detail.supplierOutstandingUSD ?? 0 });
-    } catch { /* The printable document still stands on its own if Finance is unreachable. */ }
+  // List rows carry summary data only. Printing must use the authoritative document from
+  // the backend, which is the single source of the saved line snapshots, and the same
+  // fetch brings the financial trail so a manager can follow the money from the invoice.
+  const loadInvoiceDocument = async (inv: Invoice) => {
+    const detail: any = inv.type === 'sale' ? await salesApi.get(inv.id) : inv.type === 'purchase' ? await purchasesApi.get(inv.id) : await returnsApi.get(inv.id);
+    setSelectedInvoiceForPrint(detail);
+    if (inv.type !== 'return') setInvoiceFinancials({ invoiceId: inv.id, vouchers: detail.vouchers ?? [], outstandingUSD: detail.customerOutstandingUSD ?? detail.supplierOutstandingUSD ?? 0 });
+    return detail as Invoice;
   };
 
-  const handlePrintInvoice = (inv: Invoice) => {
+  const handlePreviewInvoice = async (inv: Invoice) => {
     setActiveMenu(null);
+    setInvoiceFinancials(null);
     setSelectedInvoiceForPrint(inv);
-    setTimeout(() => {
-      window.print();
-    }, 300);
+    try { await loadInvoiceDocument(inv); }
+    catch (error: any) { setSalesError(error?.message || 'تعذر تحميل تفاصيل الفاتورة من الخادم.'); }
+  };
+
+  // Printing waits for the saved document so the sheet can never go to paper with
+  // the header filled in and the item rows blank.
+  const handlePrintInvoice = async (inv: Invoice) => {
+    setActiveMenu(null);
+    setInvoiceFinancials(null);
+    try { await loadInvoiceDocument(inv); } catch (error: any) { setSalesError(error?.message || 'تعذر تحميل تفاصيل الفاتورة للطباعة.'); return; }
+    setTimeout(() => { window.print(); }, 300);
   };
 
   // The returnable lines and every amount come from the server, so the browser never
@@ -184,16 +201,18 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     }
   };
 
-  const handleExportPdf = (inv: Invoice) => {
+  const handleExportPdf = async (inv: Invoice) => {
     setActiveMenu(null);
-    setSelectedInvoiceForPrint(inv);
-    setTimeout(() => {
-      window.print();
-    }, 400);
+    setInvoiceFinancials(null);
+    try { await loadInvoiceDocument(inv); } catch (error: any) { setSalesError(error?.message || 'تعذر تحميل تفاصيل الفاتورة للتصدير.'); return; }
+    setTimeout(() => { window.print(); }, 400);
   };
 
-  const handleShareWhatsApp = (inv: Invoice) => {
+  // Sharing quotes the saved lines, so it needs the document rather than the list row.
+  const handleShareWhatsApp = async (listRow: Invoice) => {
     setActiveMenu(null);
+    let inv = listRow;
+    try { inv = await loadInvoiceDocument(listRow); } catch { /* fall back to the summary row */ }
     const itemLines = inv.items.map((item, index) => `${index + 1}. ${item.itemName}\n   عيار ${item.karat} • صافي ${item.netWeightGrams.toFixed(2)} غ • أجرة $${item.laborFeeUSDPerGram.toFixed(2)}/غ\n   الإجمالي: $${item.totalPriceUSD.toFixed(2)}`).join('\n');
     const scrapLines = inv.scrapGoldItems?.length ? `\n\n*الذهب المستبدل:*\n${inv.scrapGoldItems.map((item, index) => `${index + 1}. عيار ${item.karat} • ${item.weightGrams.toFixed(2)} غ • $${item.totalScrapValueUSD.toFixed(2)}`).join('\n')}` : '';
     const text = `*${settings.storeName}* 💎\n*${inv.type === 'sale' ? 'فاتورة بيع ذهب' : inv.type === 'purchase' ? 'فاتورة شراء ذهب' : 'فاتورة مرتجع'}*\n\n*رقم الفاتورة:* ${inv.invoiceNumber}\n*التاريخ:* ${inv.date}\n*العميل/المورد:* ${inv.customerOrSupplierName}${inv.customerPhone ? `\n*الهاتف:* ${inv.customerPhone}` : ''}\n\n*بنود الفاتورة:*\n${itemLines}${scrapLines}\n\n*ملخص مالي:*\nقيمة الذهب: $${inv.subtotalGoldUSD.toFixed(2)}\nالمصنعية: $${inv.totalLaborUSD.toFixed(2)}\nالخصم: $${inv.discountUSD.toFixed(2)}\n*الإجمالي الصافي: $${inv.finalTotalUSD.toFixed(2)}*\nالمدفوع: $${inv.paidUSD.toFixed(2)}\nالمتبقي: $${inv.remainingDebtUSD.toFixed(2)}\n\nشكراً لثقتكم بـ ${settings.storeName}`;
@@ -738,7 +757,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
                       {inv.customerOrSupplierName}
                     </span>
                     <span className="text-[10px] text-slate-400 font-mono block">
-                      {inv.items.length} قطعة | البائع: {inv.createdBy}
+                      {pieceCount(inv)} قطعة | البائع: {inv.createdBy}
                     </span>
                   </div>
                   <div className="text-left font-mono shrink-0">
@@ -827,7 +846,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
                     </td>
                     <td className="py-3 px-3 text-slate-500 font-mono">{inv.date}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{inv.customerOrSupplierName}</td>
-                    <td className="py-3 px-3 text-center font-bold text-slate-600 font-mono">{inv.items.length} قطع</td>
+                    <td className="py-3 px-3 text-center font-bold text-slate-600 font-mono">{pieceCount(inv)} قطع</td>
                     <td className="py-3 px-3 font-black font-mono text-amber-900">$ {inv.finalTotalUSD.toFixed(2)}</td>
                     <td className="py-3 px-3 text-emerald-700 font-bold font-mono">$ {inv.paidUSD.toFixed(2)}</td>
                     <td className="py-3 px-3">
@@ -1721,7 +1740,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               </button>
 
               <button
-                onClick={() => handlePrintInvoice(activeMenu.inv)}
+                onClick={() => void handlePrintInvoice(activeMenu.inv)}
                 className="w-full px-3 py-2 text-slate-800 hover:bg-amber-100 flex items-center gap-2 transition"
               >
                 <Printer className="w-4 h-4 text-slate-700 shrink-0" />
@@ -1737,7 +1756,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               </button>
 
               <button
-                onClick={() => handleExportPdf(activeMenu.inv)}
+                onClick={() => void handleExportPdf(activeMenu.inv)}
                 className="w-full px-3 py-2 text-slate-800 hover:bg-amber-100 flex items-center gap-2 transition"
               >
                 <FileDown className="w-4 h-4 text-purple-600 shrink-0" />
@@ -1745,7 +1764,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               </button>
 
               <button
-                onClick={() => handleShareWhatsApp(activeMenu.inv)}
+                onClick={() => void handleShareWhatsApp(activeMenu.inv)}
                 className="w-full px-3 py-2 text-emerald-800 hover:bg-emerald-50 flex items-center gap-2 transition font-bold"
               >
                 <Share2 className="w-4 h-4 text-emerald-600 shrink-0" />

@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
+import { publicImageUrl } from '../config/upload-path.js';
 import { inventoryItems, inventoryMovements, stocktakes } from '../database/schema.js';
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
@@ -12,7 +13,7 @@ const categories = new Set(['أطقم', 'خواتم ومحابس', 'أساور �
 const decimal = (value: unknown, name: string, minimum = 0) => { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < minimum || !/^\d+(\.\d{1,3})?$/.test(String(value))) throw new ConflictException(`${name} is invalid.`); return parsed.toFixed(3); };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const money = (value: unknown, name: string) => { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < 0) throw new ConflictException(`${name} is invalid.`); return parsed.toFixed(4); };
-const itemDto = (item: typeof inventoryItems.$inferSelect) => ({ ...item, grossWeightGrams: Number(item.grossWeightGrams), stoneWeightGrams: Number(item.stoneWeightGrams), netWeightGrams: Number(item.netWeightGrams), quantity: Number(item.quantity), laborFeeUSDPerGram: Number(item.laborFeeUsdPerGram), totalLaborFeeUSD: Number(item.totalLaborFeeUsd), imageUrl: item.imagePath ? `/uploads/inventory/${item.imagePath}` : undefined });
+const itemDto = (item: typeof inventoryItems.$inferSelect) => ({ ...item, grossWeightGrams: Number(item.grossWeightGrams), stoneWeightGrams: Number(item.stoneWeightGrams), netWeightGrams: Number(item.netWeightGrams), quantity: Number(item.quantity), laborFeeUSDPerGram: Number(item.laborFeeUsdPerGram), totalLaborFeeUSD: Number(item.totalLaborFeeUsd), imageUrl: publicImageUrl(item.imagePath, item.updatedAt) });
 
 @Injectable()
 export class InventoryService {

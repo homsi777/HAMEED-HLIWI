@@ -32,6 +32,10 @@ import { GoldKarat, ItemCategory, InventoryItem, Warehouse } from '../types';
 
 // Arabic-Indic digits and a decimal comma are normal on an Arabic keyboard, and a
 // number box can be left half-typed. Read them all, or report the field as empty.
+// The served image URL carries a cache-busting version token; only the stored file name
+// may be written back to the record.
+const storedImageName = (url: string) => (url.startsWith('/uploads/') ? url.split('?')[0]!.split('/').pop() : undefined);
+
 const readNumber = (value: string) => {
   const normalized = value
     .replace(/[٠-٩]/g, digit => String(digit.charCodeAt(0) - 0x0660))
@@ -203,7 +207,7 @@ export const InventoryView: React.FC = () => {
         notes: formNotes,
         inventoryMode: formInventoryMode,
         quantity: enteredQuantity.toFixed(3),
-        imagePath: imagePath ?? (formImageUrl.startsWith('/uploads/') ? formImageUrl.split('/').pop() : undefined)
+        imagePath: imagePath ?? storedImageName(formImageUrl)
       };
     const success = await mutate(() => editingItem ? inventoryApi.update(editingItem.id, { ...payload, version: inventoryVersions[editingItem.id] }) : inventoryApi.create({ ...payload, status: 'in_stock' }));
     if (!success) return;
