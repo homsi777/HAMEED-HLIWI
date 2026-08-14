@@ -265,6 +265,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const returnDiscountUSD = money((returnDocument?.discountUSD ?? 0) * returnShare);
   const returnScrapCreditUSD = money((returnDocument?.scrapTotalValueUSD ?? 0) * returnShare);
   const returnFinalTotalUSD = money(Math.max(0, returnGrossUSD - returnDiscountUSD - returnScrapCreditUSD));
+  // Money is not the whole story: returning a sale paid with scrap leaves the shop owing
+  // that weight back, at the same karat and in the same proportion as the credit.
+  const returnGoldObligation = (returnDocument?.scrapGoldItems ?? [])
+    .map(entry => ({ karat: entry.karat, weightGrams: Number((entry.weightGrams * returnShare).toFixed(3)) }))
+    .filter(entry => entry.weightGrams > 0);
   const returnRefundApplied = money((parseFloat(returnRefundUSD) || 0) + (parseFloat(returnRefundSYP) || 0) / (returnDocument?.exchangeRateSypPerUsd || settings.usdToSypRate));
   const returnOutstandingUSD = money(Math.max(0, returnFinalTotalUSD - returnRefundApplied));
 
@@ -1707,6 +1712,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
                 <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">قيمة البنود المرتجعة</span><span>$ {returnGrossUSD.toFixed(2)}</span></div>
                 <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">حصة الخصم الأصلي</span><span>- $ {returnDiscountUSD.toFixed(2)}</span></div>
                 {returnScrapCreditUSD > 0 && <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">حصة الذهب المستبدل</span><span>- $ {returnScrapCreditUSD.toFixed(2)}</span></div>}
+                {returnGoldObligation.length > 0 && <p className="font-sans text-[10px] font-bold text-amber-700">سيصبح المحل مديناً بوزن: {returnGoldObligation.map(entry => `${entry.weightGrams.toFixed(3)} غ عيار ${entry.karat}`).join('، ')} — يُسلَّم من شاشة ذمم الأوزان.</p>}
                 <div className="flex items-center justify-between border-t border-slate-300 pt-1.5 text-sm font-black text-slate-900"><span className="font-sans">إجمالي المرتجع</span><span>$ {returnFinalTotalUSD.toFixed(2)}</span></div>
                 <div className="flex items-center justify-between"><span className="font-sans font-bold text-slate-700">{returnDocument.type === 'sales_return' ? 'يخصم من رصيد الزبون' : 'يخصم من رصيد المورد'}</span><span>$ {returnOutstandingUSD.toFixed(2)}</span></div>
                 <p className="font-sans text-[10px] text-slate-500">القيم النهائية تُحتسب على الخادم عند الحفظ.</p>

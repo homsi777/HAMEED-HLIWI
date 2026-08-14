@@ -20,8 +20,11 @@
     "test:task07": "tsx test/task07-verification.ts",
     "test:task071": "tsx test/task071-regression.spec.ts",
     "db:backfill:accounting": "tsx src/database/backfill-accounting.ts",
+    "db:backfill:gold": "tsx src/database/backfill-gold.ts",
     "test:accounting": "tsx test/accounting-core.spec.ts",
-    "test:task08": "tsx test/task08-verification.ts"
+    "test:task08": "tsx test/task08-verification.ts",
+    "test:gold": "tsx test/gold-accounts.spec.ts",
+    "test:task09": "tsx test/task09-verification.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

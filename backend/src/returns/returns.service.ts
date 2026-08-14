@@ -8,6 +8,7 @@ import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js';
 import { FinancePostingService } from '../finance/finance-posting.service.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
+import { GoldDocumentsService } from '../gold/gold-documents.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TYPES = new Set(['sales_return', 'purchase_return']);
@@ -42,7 +43,7 @@ const dto = (invoice: any, items: any[] = [], payments: any[] = []) => ({
 
 @Injectable()
 export class ReturnsService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(GoldDocumentsService) private readonly gold: GoldDocumentsService) {}
 
   async list(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit); const conditions: any[] = [];
@@ -90,6 +91,9 @@ export class ReturnsService {
       return {
         invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, type, status: invoice.status, warehouseId: invoice.warehouseId, partnerId: invoice.customerPartnerId, partnerName: invoice.customerNameSnapshot, partnerPhone: invoice.customerPhoneSnapshot ?? '',
         date: invoice.createdAt.toISOString().slice(0, 10), exchangeRateSypPerUsd: Number(invoice.exchangeRateSypPerUsd), grossTotalUSD: Number(invoice.goldSubtotalUsd) + Number(invoice.workmanshipSubtotalUsd), discountUSD: Number(invoice.discountUsd), scrapTotalValueUSD: Number(invoice.scrapTotalValueUsd), finalTotalUSD: Number(invoice.finalTotalUsd),
+        // The scrap this sale took in, so the return screen can state the weight the shop
+        // will owe back rather than only the money.
+        scrapGoldItems: await this.gold.saleGoldSummary(this.db, invoice.id),
         alreadyReturnedValueUSD: await this.returnedValue('sales_return', invoice.id),
         lines: lines.map(line => { const done = returned.get(line.id) ?? { quantity: 0, net: 0 }; const item = stock.find(row => row.id === line.inventoryItemId); return { sourceLineId: line.id, lineNumber: line.lineNumber, lineType: line.lineType, inventoryItemId: line.inventoryItemId, inventoryMode: item?.inventoryMode ?? null, inventoryRestorable: Boolean(item && !item.archivedAt && (item.isManualSaleEntry || item.inventoryMode === 'aggregate' || item.status === 'sold')), itemCode: line.itemCodeSnapshot, itemName: line.itemNameSnapshot, category: line.categorySnapshot, karat: line.karatSnapshot, pricePerGramUSD: Number(line.goldPriceUsdPerGram), laborFeeUSDPerGram: Number(line.workmanshipUsdPerGram), originalQuantity: Number(line.quantity), originalGrossWeightGrams: Number(line.grossWeightGrams), originalStoneWeightGrams: Number(line.stoneWeightGrams), originalNetWeightGrams: Number(line.netWeightGrams), returnedQuantity: done.quantity, returnedNetWeightGrams: done.net, remainingQuantity: Number((Number(line.quantity) - done.quantity).toFixed(3)), remainingNetWeightGrams: Number((Number(line.netWeightGrams) - done.net).toFixed(3)) }; }),
       };
@@ -103,7 +107,7 @@ export class ReturnsService {
     const stock = received.length ? await this.db.select({ id: inventoryItems.id, inventoryMode: inventoryItems.inventoryMode, status: inventoryItems.status, archivedAt: inventoryItems.archivedAt, quantity: inventoryItems.quantity, netWeightGrams: inventoryItems.netWeightGrams }).from(inventoryItems).where(inArray(inventoryItems.id, received)) : [];
     return {
       invoiceId: invoice.id, invoiceNumber: invoice.purchaseNumber, type, status: invoice.status, warehouseId: invoice.warehouseId, partnerId: invoice.supplierPartnerId, partnerName: invoice.supplierNameSnapshot, partnerPhone: invoice.supplierPhoneSnapshot ?? '',
-      date: invoice.createdAt.toISOString().slice(0, 10), exchangeRateSypPerUsd: Number(invoice.exchangeRateSypPerUsd), grossTotalUSD: Number(invoice.goldSubtotalUsd) + Number(invoice.workmanshipSubtotalUsd), discountUSD: Number(invoice.discountUsd), scrapTotalValueUSD: 0, finalTotalUSD: Number(invoice.finalTotalUsd),
+      date: invoice.createdAt.toISOString().slice(0, 10), exchangeRateSypPerUsd: Number(invoice.exchangeRateSypPerUsd), grossTotalUSD: Number(invoice.goldSubtotalUsd) + Number(invoice.workmanshipSubtotalUsd), discountUSD: Number(invoice.discountUsd), scrapTotalValueUSD: 0, finalTotalUSD: Number(invoice.finalTotalUsd), scrapGoldItems: [],
       alreadyReturnedValueUSD: await this.returnedValue('purchase_return', invoice.id),
       lines: lines.map(line => { const done = returned.get(line.id) ?? { quantity: 0, net: 0 }; const item = stock.find(row => row.id === line.receivedInventoryItemId); return { sourceLineId: line.id, lineNumber: line.lineNumber, lineType: 'stock', inventoryItemId: line.receivedInventoryItemId, inventoryMode: item?.inventoryMode ?? null, inventoryRestorable: Boolean(item && !item.archivedAt && item.status === 'in_stock'), availableQuantity: item ? Number(item.quantity) : 0, availableNetWeightGrams: item ? Number(item.netWeightGrams) : 0, itemCode: line.itemCodeSnapshot, itemName: line.itemNameSnapshot, category: line.categorySnapshot, karat: line.karatSnapshot, pricePerGramUSD: Number(line.goldPriceUsdPerGram), laborFeeUSDPerGram: Number(line.workmanshipUsdPerGram), originalQuantity: Number(line.quantity), originalGrossWeightGrams: Number(line.grossWeightGrams), originalStoneWeightGrams: Number(line.stoneWeightGrams), originalNetWeightGrams: Number(line.netWeightGrams), returnedQuantity: done.quantity, returnedNetWeightGrams: done.net, remainingQuantity: Number((Number(line.quantity) - done.quantity).toFixed(3)), remainingNetWeightGrams: Number((Number(line.netWeightGrams) - done.net).toFixed(3)) }; }),
     };
@@ -216,6 +220,9 @@ export class ReturnsService {
         const postedReturnPayments = await tx.select().from(returnPayments).where(eq(returnPayments.returnInvoiceId, header.id));
         await this.finance.postReturnFinancials(tx, user, { returnId: header.id, returnNumber: header.returnNumber, type, partnerId, partnerName: partner.name, warehouseId, finalTotalUsd: finalTotal.toFixed(4), exchangeRateSypPerUsd: exchangeRate, payments: postedReturnPayments });
         await this.accounting.postReturn(tx, user, { id: header.id, returnNumber: header.returnNumber, type, partnerId, warehouseId, finalTotalUsd: finalTotal, rate: Number(exchangeRate) });
+        // Returning a sale that was paid with scrap leaves the shop owing that weight back,
+        // in the original karat, until it is handed over by an explicit gold payment.
+        if (type === 'sales_return') await this.gold.postSalesReturnGoldObligation(tx, user, { id: header.id, returnNumber: header.returnNumber, partnerId, warehouseId, originalSalesInvoiceId: original.id, scrapCreditAllocatedUsd: scrapTotal });
         await this.audit.record({ actorUserId: user.id, action: 'returns.create', module: 'returns', entityId: header.id, warehouseId, metadata: { returnNumber: header.returnNumber, type, partnerId, originalInvoiceId: original.id, originalInvoiceNumber: (original as any).invoiceNumber ?? (original as any).purchaseNumber, lineCount: requested.length, finalTotalUsd: finalTotal.toFixed(4) } }, tx);
         return { id: header.id, warehouseId };
       });
@@ -257,6 +264,7 @@ export class ReturnsService {
       }
       await this.finance.reverseSourceDocument(tx, user, { returnInvoiceId: returnId }, reason);
       await this.accounting.reverseDocument(tx, user, original.type, returnId, reason);
+      await this.gold.reverseDocument(tx, user, original.type, returnId, reason);
       await this.audit.record({ actorUserId: user.id, action: 'returns.cancel', module: 'returns', entityId: returnId, warehouseId: original.warehouseId, metadata: { returnNumber: original.returnNumber, type: original.type, partnerId: original.partnerId, reason } }, tx);
       return original.warehouseId;
     });

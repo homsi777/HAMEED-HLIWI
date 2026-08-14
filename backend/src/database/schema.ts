@@ -115,6 +115,9 @@ export const accountClass = pgEnum('account_class', ['asset', 'liability', 'equi
 export const accountNormalBalance = pgEnum('account_normal_balance', ['debit', 'credit']);
 export const journalStatus = pgEnum('journal_status', ['posted', 'reversed']);
 export const journalSourceType = pgEnum('journal_source_type', ['manual', 'opening', 'sale', 'purchase', 'sales_return', 'purchase_return', 'voucher', 'cashbox_transfer']);
+export const goldAccountKind = pgEnum('gold_account_kind', ['partner', 'company']);
+export const goldTransactionType = pgEnum('gold_transaction_type', ['opening', 'sale_exchange', 'sales_return_obligation', 'purchase_settlement', 'purchase_return_adjustment', 'receipt', 'payment', 'conversion', 'reversal']);
+export const goldTransactionStatus = pgEnum('gold_transaction_status', ['posted', 'reversed']);
 
 export const inventoryItems = pgTable('inventory_items', {
   id: id(), code: text('code').notNull(), name: text('name').notNull(), category: text('category').notNull(), karat: text('karat').notNull(),
@@ -321,6 +324,61 @@ export const journalEntryLines = pgTable('journal_entry_lines', {
   index('journal_entry_lines_entry_idx').on(table.journalEntryId), index('journal_entry_lines_account_idx').on(table.accountId), index('journal_entry_lines_partner_idx').on(table.partnerId), index('journal_entry_lines_cashbox_idx').on(table.cashboxId),
   check('journal_entry_lines_single_side_check', sql`(${table.debitUsd} > 0 and ${table.creditUsd} = 0) or (${table.creditUsd} > 0 and ${table.debitUsd} = 0)`),
   check('journal_entry_lines_amounts_check', sql`${table.debitUsd} >= 0 and ${table.creditUsd} >= 0 and ${table.originalAmount} > 0 and ${table.exchangeRateSypPerUsd} > 0`),
+]);
+
+// Gold is an obligation measured in grams at a stated karat, never in cash. A partner
+// account holds what is owed between the shop and that partner; a company account holds
+// the metal the shop physically has. Balances are always derived from the ledger.
+//
+// Sign convention, used everywhere: a positive net on a partner account means the
+// partner owes the shop gold; a negative net means the shop owes the partner. On a
+// company account a positive net is gold physically held.
+export const goldAccounts = pgTable('gold_accounts', {
+  id: id(), kind: goldAccountKind('kind').notNull(), name: text('name').notNull(), systemCode: text('system_code'),
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  isActive: boolean('is_active').notNull().default(true), notes: text('notes'),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [
+  uniqueIndex('gold_accounts_partner_unique').on(table.partnerId).where(sql`${table.partnerId} is not null`),
+  uniqueIndex('gold_accounts_company_warehouse_unique').on(table.warehouseId).where(sql`${table.kind} = 'company' and ${table.warehouseId} is not null`),
+  uniqueIndex('gold_accounts_system_code_unique').on(table.systemCode).where(sql`${table.systemCode} is not null`),
+  index('gold_accounts_kind_idx').on(table.kind, table.isActive),
+  check('gold_accounts_scope_check', sql`(${table.kind} = 'partner' and ${table.partnerId} is not null) or (${table.kind} = 'company' and ${table.partnerId} is null)`),
+]);
+
+export const goldTransactionSequences = pgTable('gold_transaction_sequences', { year: integer('year').notNull(), type: text('type').notNull(), lastNumber: integer('last_number').notNull().default(0), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow() }, table => [primaryKey({ columns: [table.year, table.type], name: 'gold_transaction_sequences_pk' })]);
+
+export const goldTransactions = pgTable('gold_transactions', {
+  id: id(), transactionNumber: text('transaction_number').notNull(), transactionYear: integer('transaction_year').notNull(), sequenceNumber: integer('sequence_number').notNull(),
+  type: goldTransactionType('type').notNull(), status: goldTransactionStatus('status').notNull().default('posted'),
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  sourceType: text('source_type').notNull().default('manual'), sourceId: uuid('source_id'), sourceLineId: uuid('source_line_id'), sourceNumber: text('source_number'), postingEvent: text('posting_event').notNull(),
+  description: text('description').notNull(), userNote: text('user_note'),
+  reversalOfTransactionId: uuid('reversal_of_transaction_id'), reversedByTransactionId: uuid('reversed_by_transaction_id'),
+  idempotencyKey: text('idempotency_key').notNull(), occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [
+  uniqueIndex('gold_transactions_number_unique').on(table.transactionNumber), uniqueIndex('gold_transactions_idempotency_unique').on(table.idempotencyKey),
+  uniqueIndex('gold_transactions_year_type_sequence_unique').on(table.transactionYear, table.type, table.sequenceNumber),
+  uniqueIndex('gold_transactions_source_event_unique').on(table.sourceType, table.sourceId, table.sourceLineId, table.postingEvent).where(sql`${table.sourceId} is not null`),
+  index('gold_transactions_partner_idx').on(table.partnerId, table.occurredAt), index('gold_transactions_type_status_idx').on(table.type, table.status), index('gold_transactions_source_idx').on(table.sourceType, table.sourceId),
+]);
+
+export const goldLedgerEntries = pgTable('gold_ledger_entries', {
+  id: id(), goldTransactionId: uuid('gold_transaction_id').notNull().references(() => goldTransactions.id, { onDelete: 'restrict' }), lineNumber: integer('line_number').notNull(),
+  goldAccountId: uuid('gold_account_id').notNull().references(() => goldAccounts.id, { onDelete: 'restrict' }),
+  karat: text('karat').notNull(), debitGrams: numeric('debit_grams', { precision: 14, scale: 3 }).notNull().default('0'), creditGrams: numeric('credit_grams', { precision: 14, scale: 3 }).notNull().default('0'),
+  pureGoldGrams: numeric('pure_gold_grams', { precision: 14, scale: 4 }).notNull(),
+  goldPriceUsdPerGram: numeric('gold_price_usd_per_gram', { precision: 18, scale: 4 }), valuationUsd: numeric('valuation_usd', { precision: 18, scale: 4 }),
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  salesInvoiceId: uuid('sales_invoice_id').references(() => salesInvoices.id, { onDelete: 'restrict' }), purchaseInvoiceId: uuid('purchase_invoice_id').references(() => purchaseInvoices.id, { onDelete: 'restrict' }), returnInvoiceId: uuid('return_invoice_id').references(() => returnInvoices.id, { onDelete: 'restrict' }), salesGoldExchangeId: uuid('sales_gold_exchange_id').references(() => salesGoldExchanges.id, { onDelete: 'restrict' }),
+  description: text('description').notNull(), occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(), actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex('gold_ledger_entries_transaction_line_unique').on(table.goldTransactionId, table.lineNumber),
+  index('gold_ledger_entries_account_karat_idx').on(table.goldAccountId, table.karat, table.occurredAt), index('gold_ledger_entries_partner_idx').on(table.partnerId, table.occurredAt), index('gold_ledger_entries_transaction_idx').on(table.goldTransactionId), index('gold_ledger_entries_sales_exchange_idx').on(table.salesGoldExchangeId),
+  check('gold_ledger_entries_karat_check', sql`${table.karat} in ('24','22','21','18','14')`),
+  check('gold_ledger_entries_single_side_check', sql`(${table.debitGrams} > 0 and ${table.creditGrams} = 0) or (${table.creditGrams} > 0 and ${table.debitGrams} = 0)`),
+  check('gold_ledger_entries_amounts_check', sql`${table.debitGrams} >= 0 and ${table.creditGrams} >= 0`),
 ]);
 
 export type UserRow = typeof users.$inferSelect;

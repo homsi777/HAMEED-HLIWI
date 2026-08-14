@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MoreVertical, Phone, Plus, Search, Users } from 'lucide-react';
 import type { Partner, PartnerType } from '../types';
 import { useStore } from '../context/StoreContext';
 import { PrintAccountStatementModal } from './PrintAccountStatementModal';
 import { usePartnersModule } from '../hooks/usePartnersModule';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
+import { goldApi, type ApiGoldBalance } from '../services/goldApi';
 
 const PAGE_SIZE = 20;
 
@@ -24,6 +25,14 @@ export const PartnersView: React.FC = () => {
   const [formNotes, setFormNotes] = useState('');
   const filterType = activeTab === 'customers' ? 'customer' : activeTab === 'suppliers' ? 'supplier' : undefined;
   const { partners, total, loading, error, mutate } = usePartnersModule({ type: filterType, search: searchQuery, page });
+  // Weight obligations come from the gold ledger, per karat — the partner record only ever
+  // held an opening figure, and grams of different karats are never added together.
+  const [goldBalances, setGoldBalances] = useState<Record<string, ApiGoldBalance[]>>({});
+  useEffect(() => {
+    void goldApi.partnerBalances()
+      .then(rows => setGoldBalances(Object.fromEntries(rows.filter(row => row.partnerId).map(row => [row.partnerId as string, row.balances]))))
+      .catch(() => undefined);
+  }, [partners]);
 
   const resetForm = () => { setFormName(''); setFormType('customer'); setFormPhone(''); setFormAddress('حلب - سوريا'); setFormNotes(''); setEditingPartner(null); };
   const switchTab = (tab: 'all' | 'customers' | 'suppliers') => { setActiveTab(tab); setPage(1); };
@@ -47,14 +56,17 @@ export const PartnersView: React.FC = () => {
 
   const handleSharePartner = (partner: Partner) => {
     const balanceText = partner.balanceUSD < 0 ? `مطلوب منه: $ ${Math.abs(partner.balanceUSD).toFixed(2)}` : partner.balanceUSD > 0 ? `له عندنا: $ ${partner.balanceUSD.toFixed(2)}` : 'الحساب خالص';
-    const text = `${settings.storeName}\nكشف حساب الجهة: ${partner.name}\nالهاتف: ${partner.phone || '-'}\n${balanceText}\nرصيد الذهب الافتتاحي عيار 21: ${Math.abs(partner.goldBalance21kGrams)} غ\n\nتفاصيل الفواتير والسندات ستظهر بعد ترحيل دفتر الحسابات.`;
+    const balances = goldBalances[partner.id] ?? [];
+    const goldText = balances.length ? balances.map(row => `عيار ${row.karat}: ${Math.abs(row.grams).toFixed(3)} غ ${row.grams > 0 ? 'عليه' : 'له'}`).join('\n') : 'لا توجد ذمم أوزان مفتوحة';
+    const text = `${settings.storeName}\nكشف حساب الجهة: ${partner.name}\nالهاتف: ${partner.phone || '-'}\n${balanceText}\nذمم الأوزان:\n${goldText}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
     setActivePartnerMenu(null);
   };
 
   const totalReceivablesUSD = partners.filter(partner => partner.balanceUSD < 0).reduce((sum, partner) => sum + Math.abs(partner.balanceUSD), 0);
   const totalPayablesUSD = partners.filter(partner => partner.balanceUSD > 0).reduce((sum, partner) => sum + partner.balanceUSD, 0);
-  const totalGoldReceivables21k = partners.filter(partner => partner.goldBalance21kGrams < 0).reduce((sum, partner) => sum + Math.abs(partner.goldBalance21kGrams), 0);
+  // Karats cannot be summed as grams, so the headline figure is stated in fine gold.
+  const totalGoldReceivablesPure = (Object.values(goldBalances) as ApiGoldBalance[][]).flat().filter(row => row.grams > 0).reduce((sum, row) => sum + row.pureGoldGrams, 0);
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const Menu = ({ partner }: { partner: ApiPartner }) => <div onClick={event => event.stopPropagation()} className="absolute left-0 top-9 z-50 w-40 rounded-sm border border-slate-300 bg-white py-1 text-right text-xs shadow-xl">
@@ -75,7 +87,7 @@ export const PartnersView: React.FC = () => {
 
     <div className="grid grid-cols-3 gap-2 sm:gap-4">
       <Summary tone="border-r-rose-600" label="إجمالي ديون العملاء (لنا بالدولار)" value={formatMoney(totalReceivablesUSD)} />
-      <Summary tone="border-r-amber-400" label="إجمالي الذمم بالذهب (لنا بالجرام 21)" value={`${totalGoldReceivables21k.toFixed(2)} غ`} valueClass="text-amber-800" />
+      <Summary tone="border-r-amber-400" label="إجمالي ذمم الأوزان لنا (ذهب صافٍ)" value={`${totalGoldReceivablesPure.toFixed(2)} غ`} valueClass="text-amber-800" />
       <Summary tone="border-r-emerald-600" label="مستحقات الموردين (علينا للموردين)" value={formatMoney(totalPayablesUSD)} />
     </div>
 
@@ -91,12 +103,12 @@ export const PartnersView: React.FC = () => {
     <div className="space-y-2.5 md:hidden">
       {!loading && partners.length === 0 ? <Empty /> : partners.map(partner => <article key={partner.id} onClick={() => setSelectedPartnerForStatement(partner)} className={`relative cursor-pointer space-y-3 rounded-sm border border-slate-200 bg-white p-3 pl-14 shadow-sm ${activePartnerMenu?.id === partner.id ? 'z-50' : 'z-0'}`}>
         <div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><Avatar partner={partner} /><div className="min-w-0"><h3 className="truncate text-sm font-black text-slate-900">{partner.name}</h3>{partner.phone && <a onClick={event => event.stopPropagation()} href={`tel:${partner.phone}`} dir="ltr" className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-500"><Phone className="h-3 w-3" />{partner.phone}</a>}</div></div><TypeBadge type={partner.type} /><div className="absolute left-3 top-3"><button onClick={event => { event.stopPropagation(); setActivePartnerMenu(activePartnerMenu?.id === partner.id ? null : partner); }} aria-label={`إجراءات ${partner.name}`} className="rounded-sm border border-slate-200 bg-white p-1.5 text-slate-700 shadow-sm"><MoreVertical className="h-4 w-4" /></button>{activePartnerMenu?.id === partner.id && <Menu partner={partner} />}</div></div>
-        <BalanceGrid partner={partner} />
+        <BalanceGrid partner={partner} balances={goldBalances[partner.id] ?? []} />
       </article>)}
     </div>
 
-    <div className="hidden overflow-visible rounded-sm border border-slate-200 bg-white shadow-sm md:block"><div className="overflow-visible"><table className="w-full text-right text-xs"><thead className="border-b border-slate-800 bg-slate-900 font-bold uppercase text-amber-400"><tr><th className="px-4 py-3.5">اسم العميل / المورد</th><th className="px-3 py-3.5">الصفة</th><th className="px-3 py-3.5">رقم الهاتف</th><th className="px-3 py-3.5">العنوان والموقع</th><th className="px-3 py-3.5">الرصيد المالي ($)</th><th className="px-3 py-3.5">ذمة الذهب (غرام 21)</th><th className="px-4 py-3.5 text-center">الإجراءات</th></tr></thead><tbody className="divide-y divide-slate-200 font-medium text-slate-800">
-      {!loading && partners.length === 0 ? <tr><td colSpan={7}><Empty /></td></tr> : partners.map(partner => <tr key={partner.id} onClick={() => setSelectedPartnerForStatement(partner)} className={`cursor-pointer transition hover:bg-amber-50/50 ${activePartnerMenu?.id === partner.id ? 'relative z-50' : ''}`}><td className="px-4 py-3 font-bold text-slate-900"><div className="flex items-center gap-2"><Avatar partner={partner} /><div><span>{partner.name}</span>{partner.notes && <p className="text-[10px] font-normal text-slate-400">{partner.notes}</p>}</div></div></td><td className="px-3 py-3"><TypeBadge type={partner.type} /></td><td className="px-3 py-3 font-mono font-bold text-slate-600" dir="ltr">{partner.phone || '-'}</td><td className="px-3 py-3 text-slate-600">{partner.address || '-'}</td><td className="px-3 py-3"><MoneyBalance partner={partner} /></td><td className="px-3 py-3"><GoldBalance partner={partner} /></td><td className="relative px-4 py-3 text-center"><button onClick={event => { event.stopPropagation(); setActivePartnerMenu(activePartnerMenu?.id === partner.id ? null : partner); }} className="rounded-sm border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50"><MoreVertical className="h-4 w-4" /></button>{activePartnerMenu?.id === partner.id && <Menu partner={partner} />}</td></tr>)}
+    <div className="hidden overflow-visible rounded-sm border border-slate-200 bg-white shadow-sm md:block"><div className="overflow-visible"><table className="w-full text-right text-xs"><thead className="border-b border-slate-800 bg-slate-900 font-bold uppercase text-amber-400"><tr><th className="px-4 py-3.5">اسم العميل / المورد</th><th className="px-3 py-3.5">الصفة</th><th className="px-3 py-3.5">رقم الهاتف</th><th className="px-3 py-3.5">العنوان والموقع</th><th className="px-3 py-3.5">الرصيد المالي ($)</th><th className="px-3 py-3.5">ذمة الأوزان (غرام / عيار)</th><th className="px-4 py-3.5 text-center">الإجراءات</th></tr></thead><tbody className="divide-y divide-slate-200 font-medium text-slate-800">
+      {!loading && partners.length === 0 ? <tr><td colSpan={7}><Empty /></td></tr> : partners.map(partner => <tr key={partner.id} onClick={() => setSelectedPartnerForStatement(partner)} className={`cursor-pointer transition hover:bg-amber-50/50 ${activePartnerMenu?.id === partner.id ? 'relative z-50' : ''}`}><td className="px-4 py-3 font-bold text-slate-900"><div className="flex items-center gap-2"><Avatar partner={partner} /><div><span>{partner.name}</span>{partner.notes && <p className="text-[10px] font-normal text-slate-400">{partner.notes}</p>}</div></div></td><td className="px-3 py-3"><TypeBadge type={partner.type} /></td><td className="px-3 py-3 font-mono font-bold text-slate-600" dir="ltr">{partner.phone || '-'}</td><td className="px-3 py-3 text-slate-600">{partner.address || '-'}</td><td className="px-3 py-3"><MoneyBalance partner={partner} /></td><td className="px-3 py-3"><GoldBalance balances={goldBalances[partner.id] ?? []} /></td><td className="relative px-4 py-3 text-center"><button onClick={event => { event.stopPropagation(); setActivePartnerMenu(activePartnerMenu?.id === partner.id ? null : partner); }} className="rounded-sm border border-slate-200 bg-white p-1.5 text-slate-700 hover:bg-slate-50"><MoreVertical className="h-4 w-4" /></button>{activePartnerMenu?.id === partner.id && <Menu partner={partner} />}</td></tr>)}
     </tbody></table></div></div>
 
     {total > PAGE_SIZE && <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600"><button disabled={page <= 1} onClick={() => setPage(current => current - 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">السابق</button><span>صفحة {page} من {pages}</span><button disabled={page >= pages} onClick={() => setPage(current => current + 1)} className="rounded-sm border border-slate-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:opacity-50">التالي</button></div>}
@@ -112,6 +124,9 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
 const Avatar = ({ partner }: { partner: Partner }) => <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-slate-900 font-bold text-amber-400">{partner.name.charAt(0)}</div>;
 const TypeBadge = ({ type }: { type: PartnerType }) => <span className={`shrink-0 rounded-sm px-2 py-1 text-[10px] font-black ${type === 'customer' ? 'bg-blue-100 text-blue-900' : type === 'supplier' ? 'bg-emerald-100 text-emerald-900' : 'bg-purple-100 text-purple-900'}`}>{type === 'customer' ? 'عميل' : type === 'supplier' ? 'مورّد' : 'عميل ومورّد'}</span>;
 const MoneyBalance = ({ partner }: { partner: Partner }) => <span className={`font-mono text-sm font-black ${partner.balanceUSD < 0 ? 'text-rose-700' : partner.balanceUSD > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>{partner.balanceUSD === 0 ? 'خالص ($0)' : partner.balanceUSD < 0 ? `مطلوب منه $ ${Math.abs(partner.balanceUSD).toFixed(2)}` : `له عندنا $ ${partner.balanceUSD.toFixed(2)}`}</span>;
-const GoldBalance = ({ partner }: { partner: Partner }) => <span className={`font-mono text-sm font-black ${partner.goldBalance21kGrams < 0 ? 'text-rose-700' : partner.goldBalance21kGrams > 0 ? 'text-amber-800' : 'text-slate-400'}`}>{partner.goldBalance21kGrams === 0 ? '0 غرام' : partner.goldBalance21kGrams < 0 ? `${Math.abs(partner.goldBalance21kGrams)} غ عليه` : `${partner.goldBalance21kGrams} غ له`}</span>;
-const BalanceGrid = ({ partner }: { partner: Partner }) => <div className="grid grid-cols-2 divide-x divide-x-reverse divide-slate-200 border-y border-slate-100 py-2 text-[11px]"><div className="pl-2"><p className="mb-0.5 text-slate-400">الرصيد المالي</p><MoneyBalance partner={partner} /></div><div className="pr-2"><p className="mb-0.5 text-slate-400">ذهب 21</p><GoldBalance partner={partner} /></div></div>;
+// One line per karat: a positive balance is weight the partner owes the shop.
+const GoldBalance = ({ balances }: { balances: ApiGoldBalance[] }) => (!balances.length
+  ? <span className="font-mono text-sm font-black text-slate-400">0 غرام</span>
+  : <span className="block">{balances.map(row => <span key={row.karat} className={`block font-mono text-sm font-black ${row.grams > 0 ? 'text-amber-800' : 'text-rose-700'}`}>{Math.abs(row.grams).toFixed(3)} غ ع{row.karat} {row.grams > 0 ? 'عليه' : 'له'}</span>)}</span>);
+const BalanceGrid = ({ partner, balances }: { partner: Partner; balances: ApiGoldBalance[] }) => <div className="grid grid-cols-2 divide-x divide-x-reverse divide-slate-200 border-y border-slate-100 py-2 text-[11px]"><div className="pl-2"><p className="mb-0.5 text-slate-400">الرصيد المالي</p><MoneyBalance partner={partner} /></div><div className="pr-2"><p className="mb-0.5 text-slate-400">ذمة الأوزان</p><GoldBalance balances={balances} /></div></div>;
 const Empty = () => <div className="py-10 text-center text-xs text-slate-400">لا يوجد نتائج مطابقة للبحث</div>;

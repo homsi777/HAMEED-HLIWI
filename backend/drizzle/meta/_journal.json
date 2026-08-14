@@ -71,6 +71,13 @@
       "when": 1786706378026,
       "tag": "0009_groovy_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786712511081,
+      "tag": "0010_quick_zombie",
+      "breakpoints": true
     }
   ]
 }
