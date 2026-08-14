@@ -7,6 +7,8 @@ import { cashMovements, cashboxTransferSequences, cashboxTransfers, cashboxes, e
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js';
 import { FinancePostingService, type CashCurrency } from './finance-posting.service.js';
+import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
+import { AccountingPostingService } from '../accounting/accounting-posting.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CURRENCIES = new Set(['USD', 'SYP']);
@@ -41,6 +43,8 @@ export class FinanceService {
     @Inject(AuditService) private readonly audit: AuditService,
     @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway,
     @Inject(FinancePostingService) private readonly posting: FinancePostingService,
+    @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService,
+    @Inject(AccountingPostingService) private readonly accountingPosting: AccountingPostingService,
   ) {}
 
   // ---------------------------------------------------------------- cashboxes
@@ -82,6 +86,8 @@ export class FinanceService {
     const created = await this.db.transaction(async tx => {
       if (isDefault) await tx.update(cashboxes).set({ isDefault: false, updatedByUserId: user.id, updatedAt: new Date() }).where(and(warehouseId ? eq(cashboxes.warehouseId, warehouseId) : isNull(cashboxes.warehouseId), eq(cashboxes.currency, currency), eq(cashboxes.isDefault, true), isNull(cashboxes.archivedAt)));
       const row = (await tx.insert(cashboxes).values({ name, currency, warehouseId, openingBalance, isDefault, notes: this.optional(input.notes, 500), createdByUserId: user.id, updatedByUserId: user.id }).returning())[0]!;
+      await this.accountingPosting.ensureCashboxAccount(tx, user, { id: row.id, name: row.name, currency: row.currency as CashCurrency, warehouseId: row.warehouseId });
+      await this.accounting.postCashboxOpening(tx, user, { id: row.id, name: row.name, currency: row.currency as CashCurrency, warehouseId: row.warehouseId, openingBalance: Number(openingBalance), rate: Number(input.exchangeRateSypPerUsd ?? 1) || 1 });
       await this.audit.record({ actorUserId: user.id, action: 'finance.cashbox.create', module: 'finance', entityId: row.id, warehouseId: warehouseId ?? undefined, metadata: { name, currency, isDefault, openingBalance } }, tx);
       return row;
     });
@@ -219,6 +225,7 @@ export class FinanceService {
       if (voucher.sourceType !== 'manual' && voucher.sourceType !== 'expense') throw new ConflictException('Automatic vouchers are reversed by cancelling their source document, not on their own.');
       const reversal = await this.posting.reverseVoucher(tx, user, voucher, reason);
       if (!reversal) throw new ConflictException('Voucher is already cancelled.');
+      await this.accounting.reverseDocument(tx, user, 'voucher', voucherId, reason);
       await this.audit.record({ actorUserId: user.id, action: 'finance.voucher.cancel', module: 'finance', entityId: voucherId, warehouseId: voucher.warehouseId ?? undefined, metadata: { voucherNumber: voucher.voucherNumber, reversalVoucherNumber: reversal.voucherNumber, reason } }, tx);
     });
     const result = await this.getVoucher(user, voucherId);
@@ -262,6 +269,7 @@ export class FinanceService {
       const label = note ? ` — ${note}` : '';
       await this.posting.postVoucher(tx, user, { type: 'payment', sourceType: 'cashbox_transfer', cashboxTransferId: transfer.id, sourceDocumentNumber: transfer.transferNumber, cashboxId: fromCashboxId, warehouseId: source.warehouseId ?? undefined, currency: source.currency as CashCurrency, amount: amountFrom, exchangeRateSypPerUsd: exchangeRate, systemNote: `مناقلة ${transfer.transferNumber} إلى ${target.name}${label}`, idempotencyKey: `${idempotencyKey}:out` });
       await this.posting.postVoucher(tx, user, { type: 'receipt', sourceType: 'cashbox_transfer', cashboxTransferId: transfer.id, sourceDocumentNumber: transfer.transferNumber, cashboxId: toCashboxId, warehouseId: target.warehouseId, currency: target.currency as CashCurrency, amount: amountTo, exchangeRateSypPerUsd: exchangeRate, systemNote: `مناقلة ${transfer.transferNumber} من ${source.name}${label}`, idempotencyKey: `${idempotencyKey}:in` });
+      await this.accounting.postTransfer(tx, user, { id: transfer.id, transferNumber: transfer.transferNumber, note, from: { cashboxId: fromCashboxId, currency: source.currency as CashCurrency, amount: Number(amountFrom), warehouseId: source.warehouseId }, to: { cashboxId: toCashboxId, currency: target.currency as CashCurrency, amount: Number(amountTo), warehouseId: target.warehouseId }, rate: Number(exchangeRate) });
       await this.audit.record({ actorUserId: user.id, action: 'finance.transfer.create', module: 'finance', entityId: transfer.id, warehouseId: source.warehouseId ?? undefined, metadata: { transferNumber: transfer.transferNumber, fromCashboxId, toCashboxId, amountFrom, amountTo } }, tx);
       return transfer.id;
     });

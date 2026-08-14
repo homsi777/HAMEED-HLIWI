@@ -3,6 +3,7 @@ import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { cashMovements, cashboxes, partnerLedgerEntries, voucherSequences, vouchers } from '../database/schema.js';
+import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 
 export type CashCurrency = 'USD' | 'SYP';
 export type VoucherKind = 'receipt' | 'payment' | 'expense';
@@ -40,7 +41,7 @@ export type PostVoucherInput = {
 // moved because a sale was posted or because a cashier recorded a manual receipt.
 @Injectable()
 export class FinancePostingService {
-  constructor(@Inject(DATABASE) private readonly db: Database) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService) {}
 
   usdEquivalent(currency: CashCurrency, amount: string, exchangeRate: string) {
     return currency === 'USD' ? Number(amount).toFixed(4) : (Number(amount) / Number(exchangeRate)).toFixed(4);
@@ -90,6 +91,18 @@ export class FinancePostingService {
       actorUserId: user.id, description: `${voucher.voucherNumber} — ${input.systemNote}`,
     });
 
+    // A transfer leg is accounted once as a single balanced entry by postTransfer, so
+    // its individual vouchers are skipped here to avoid posting the movement twice.
+    if (input.sourceType !== 'cashbox_transfer') {
+      await this.accounting.postVoucher(tx, user, {
+        id: voucher.id, voucherNumber: voucher.voucherNumber, type: input.type, sourceType: input.sourceType,
+        partnerId: input.partnerId ?? null, warehouseId: input.warehouseId ?? cashbox.warehouseId ?? null, cashboxId: cashbox.id,
+        expenseCategory: input.expenseCategory ?? null, systemNote: input.systemNote,
+        salesInvoiceId: input.salesInvoiceId ?? null, purchaseInvoiceId: input.purchaseInvoiceId ?? null, returnInvoiceId: input.returnInvoiceId ?? null,
+        money: { currency: input.currency, originalAmount: Number(input.amount), amountUsd: Number(amountUsdEquivalent), rate: Number(input.exchangeRateSypPerUsd) },
+      });
+    }
+
     if (input.partnerId && input.ledgerEntryType && input.ledgerDirection) {
       await this.recordLedgerEntry(tx, user, {
         partnerId: input.partnerId, entryType: input.ledgerEntryType, direction: input.ledgerDirection, amountUsd: amountUsdEquivalent,
@@ -136,13 +149,38 @@ export class FinancePostingService {
     });
   }
 
-  // Reverses everything a cancelled invoice or return posted into finance.
+  // Reverses everything a cancelled invoice or return posted into finance: its vouchers
+  // and, just as importantly, the document's own subledger entry. Leaving the latter
+  // behind would keep a cancelled invoice inside the partner's balance forever.
   async reverseSourceDocument(tx: any, user: AuthIdentity, source: { salesInvoiceId?: string; purchaseInvoiceId?: string; returnInvoiceId?: string }, reason: string) {
     const column = source.salesInvoiceId ? vouchers.salesInvoiceId : source.purchaseInvoiceId ? vouchers.purchaseInvoiceId : vouchers.returnInvoiceId;
     const value = source.salesInvoiceId ?? source.purchaseInvoiceId ?? source.returnInvoiceId!;
     const posted = await tx.select().from(vouchers).where(and(eq(column, value), eq(vouchers.status, 'posted'), isNull(vouchers.reversalOfVoucherId)));
     for (const voucher of posted) await this.reverseVoucher(tx, user, voucher, reason);
+    await this.reverseDocumentLedger(tx, user, source, reason);
     return posted.length;
+  }
+
+  // Writes the opposite of a document's own ledger entry. Voucher-linked entries are
+  // skipped because their compensating voucher already carries its own reversal.
+  async reverseDocumentLedger(tx: any, user: AuthIdentity, source: { salesInvoiceId?: string; purchaseInvoiceId?: string; returnInvoiceId?: string }, reason: string) {
+    const column = source.salesInvoiceId ? partnerLedgerEntries.salesInvoiceId : source.purchaseInvoiceId ? partnerLedgerEntries.purchaseInvoiceId : partnerLedgerEntries.returnInvoiceId;
+    const value = source.salesInvoiceId ?? source.purchaseInvoiceId ?? source.returnInvoiceId!;
+    const entries = await tx.select().from(partnerLedgerEntries).where(and(eq(column, value), isNull(partnerLedgerEntries.voucherId), isNull(partnerLedgerEntries.reversalOfEntryId)));
+    let reversed = 0;
+    for (const entry of entries) {
+      const already = (await tx.select({ id: partnerLedgerEntries.id }).from(partnerLedgerEntries).where(eq(partnerLedgerEntries.reversalOfEntryId, entry.id)).limit(1))[0];
+      if (already) continue;
+      await this.recordLedgerEntry(tx, user, {
+        partnerId: entry.partnerId, entryType: 'reversal', direction: Number(entry.debitUsd) > 0 ? 'credit' : 'debit',
+        amountUsd: Number(entry.debitUsd) > 0 ? entry.debitUsd : entry.creditUsd,
+        currency: entry.currency, originalAmount: entry.originalAmount, exchangeRateSypPerUsd: entry.exchangeRateSypPerUsd,
+        salesInvoiceId: entry.salesInvoiceId, purchaseInvoiceId: entry.purchaseInvoiceId, returnInvoiceId: entry.returnInvoiceId,
+        documentNumber: entry.documentNumber, description: `عكس ${entry.description}: ${reason}`, warehouseId: entry.warehouseId, reversalOfEntryId: entry.id,
+      });
+      reversed += 1;
+    }
+    return reversed;
   }
 
   // ------------------------------------------------------------ document posting

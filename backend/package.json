@@ -18,7 +18,9 @@
     "db:backfill:finance": "tsx src/database/backfill-finance.ts",
     "test:finance": "tsx test/finance-cycle.spec.ts",
     "test:task07": "tsx test/task07-verification.ts",
-    "test:task071": "tsx test/task071-regression.spec.ts"
+    "test:task071": "tsx test/task071-regression.spec.ts",
+    "db:backfill:accounting": "tsx src/database/backfill-accounting.ts",
+    "test:accounting": "tsx test/accounting-core.spec.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

@@ -7,6 +7,7 @@ import { inventoryItems, inventoryMovements, partners, purchaseInvoiceItems, pur
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js';
 import { FinancePostingService } from '../finance/finance-posting.service.js';
+import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TYPES = new Set(['sales_return', 'purchase_return']);
@@ -41,7 +42,7 @@ const dto = (invoice: any, items: any[] = [], payments: any[] = []) => ({
 
 @Injectable()
 export class ReturnsService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService) {}
 
   async list(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit); const conditions: any[] = [];
@@ -214,6 +215,7 @@ export class ReturnsService {
 
         const postedReturnPayments = await tx.select().from(returnPayments).where(eq(returnPayments.returnInvoiceId, header.id));
         await this.finance.postReturnFinancials(tx, user, { returnId: header.id, returnNumber: header.returnNumber, type, partnerId, partnerName: partner.name, warehouseId, finalTotalUsd: finalTotal.toFixed(4), exchangeRateSypPerUsd: exchangeRate, payments: postedReturnPayments });
+        await this.accounting.postReturn(tx, user, { id: header.id, returnNumber: header.returnNumber, type, partnerId, warehouseId, finalTotalUsd: finalTotal, rate: Number(exchangeRate) });
         await this.audit.record({ actorUserId: user.id, action: 'returns.create', module: 'returns', entityId: header.id, warehouseId, metadata: { returnNumber: header.returnNumber, type, partnerId, originalInvoiceId: original.id, originalInvoiceNumber: (original as any).invoiceNumber ?? (original as any).purchaseNumber, lineCount: requested.length, finalTotalUsd: finalTotal.toFixed(4) } }, tx);
         return { id: header.id, warehouseId };
       });
@@ -254,6 +256,7 @@ export class ReturnsService {
         await tx.insert(inventoryMovements).values({ inventoryItemId: line.inventoryItemId, returnInvoiceId: returnId, salesInvoiceId: original.originalSalesInvoiceId, purchaseInvoiceId: original.originalPurchaseInvoiceId, type: 'return_cancellation', fromWarehouseId: original.type === 'sales_return' ? original.warehouseId : null, toWarehouseId: original.type === 'purchase_return' ? original.warehouseId : null, actorUserId: user.id, note: `Return cancellation ${original.returnNumber}: ${reason}`, metadata: { restoredQuantity: before.beforeQuantity, restoredNetWeightGrams: before.beforeNetWeightGrams } });
       }
       await this.finance.reverseSourceDocument(tx, user, { returnInvoiceId: returnId }, reason);
+      await this.accounting.reverseDocument(tx, user, original.type, returnId, reason);
       await this.audit.record({ actorUserId: user.id, action: 'returns.cancel', module: 'returns', entityId: returnId, warehouseId: original.warehouseId, metadata: { returnNumber: original.returnNumber, type: original.type, partnerId: original.partnerId, reason } }, tx);
       return original.warehouseId;
     });

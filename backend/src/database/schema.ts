@@ -111,6 +111,10 @@ export const voucherStatus = pgEnum('voucher_status', ['posted', 'cancelled']);
 export const voucherSourceType = pgEnum('voucher_source_type', ['manual', 'sale', 'purchase', 'sales_return', 'purchase_return', 'cashbox_transfer', 'expense']);
 export const cashMovementDirection = pgEnum('cash_movement_direction', ['inflow', 'outflow']);
 export const partnerLedgerEntryType = pgEnum('partner_ledger_entry_type', ['opening', 'sale', 'purchase', 'sales_return', 'purchase_return', 'receipt', 'payment', 'reversal']);
+export const accountClass = pgEnum('account_class', ['asset', 'liability', 'equity', 'revenue', 'expense']);
+export const accountNormalBalance = pgEnum('account_normal_balance', ['debit', 'credit']);
+export const journalStatus = pgEnum('journal_status', ['posted', 'reversed']);
+export const journalSourceType = pgEnum('journal_source_type', ['manual', 'opening', 'sale', 'purchase', 'sales_return', 'purchase_return', 'voucher', 'cashbox_transfer']);
 
 export const inventoryItems = pgTable('inventory_items', {
   id: id(), code: text('code').notNull(), name: text('name').notNull(), category: text('category').notNull(), karat: text('karat').notNull(),
@@ -267,6 +271,57 @@ export const voucherAllocations = pgTable('voucher_allocations', {
 }, table => [index('voucher_allocations_voucher_idx').on(table.voucherId), index('voucher_allocations_sales_invoice_idx').on(table.salesInvoiceId), index('voucher_allocations_purchase_invoice_idx').on(table.purchaseInvoiceId), check('voucher_allocations_amount_check', sql`${table.amountUsd} > 0`), check('voucher_allocations_target_check', sql`(${table.salesInvoiceId} is not null)::int + (${table.purchaseInvoiceId} is not null)::int + (${table.returnInvoiceId} is not null)::int = 1`)]);
 
 export const expenseCategories = pgTable('expense_categories', { id: id(), name: text('name').notNull(), isActive: boolean('is_active').notNull().default(true), createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps }, table => [uniqueIndex('expense_categories_name_unique').on(table.name)]);
+
+// The accounting core. Journals are immutable once posted; a correction is always a new
+// reversing journal. USD is the reporting currency, and every line that converted from
+// another currency keeps its original amount and the rate used at the time.
+export const accounts = pgTable('accounts', {
+  id: id(), code: text('code').notNull(), nameAr: text('name_ar').notNull(), nameEn: text('name_en'), parentAccountId: uuid('parent_account_id'),
+  accountClass: accountClass('account_class').notNull(), normalBalance: accountNormalBalance('normal_balance').notNull(),
+  allowsPosting: boolean('allows_posting').notNull().default(true), isSystem: boolean('is_system').notNull().default(false), systemKey: text('system_key'),
+  isActive: boolean('is_active').notNull().default(true), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }), currency: cashCurrency('currency'),
+  notes: text('notes'), version: integer('version').notNull().default(1), archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), updatedByUserId: uuid('updated_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [uniqueIndex('accounts_code_unique').on(table.code), uniqueIndex('accounts_system_key_unique').on(table.systemKey).where(sql`${table.systemKey} is not null`), index('accounts_parent_idx').on(table.parentAccountId), index('accounts_class_active_idx').on(table.accountClass, table.isActive)]);
+
+// Maps an operational object (a cashbox, an expense category) to the account it posts to.
+// Nothing in application source may hardcode an account id.
+export const accountMappings = pgTable('account_mappings', {
+  id: id(), mappingKey: text('mapping_key').notNull(), accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'restrict' }),
+  description: text('description'), createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [uniqueIndex('account_mappings_key_unique').on(table.mappingKey), index('account_mappings_account_idx').on(table.accountId)]);
+
+export const journalSequences = pgTable('journal_sequences', { year: integer('year').primaryKey(), lastNumber: integer('last_number').notNull().default(0), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow() });
+
+export const journalEntries = pgTable('journal_entries', {
+  id: id(), journalNumber: text('journal_number').notNull(), journalYear: integer('journal_year').notNull(), sequenceNumber: integer('sequence_number').notNull(),
+  entryDate: timestamp('entry_date', { withTimezone: true }).notNull().defaultNow(), status: journalStatus('status').notNull().default('posted'),
+  sourceType: journalSourceType('source_type').notNull(), sourceId: uuid('source_id'), sourceNumber: text('source_number'), postingEvent: text('posting_event').notNull(),
+  description: text('description').notNull(), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }), partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }),
+  totalDebitUsd: numeric('total_debit_usd', { precision: 20, scale: 4 }).notNull(), totalCreditUsd: numeric('total_credit_usd', { precision: 20, scale: 4 }).notNull(),
+  reversalOfJournalId: uuid('reversal_of_journal_id'), reversedByJournalId: uuid('reversed_by_journal_id'),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), postedByUserId: uuid('posted_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), postedAt: timestamp('posted_at', { withTimezone: true }).notNull().defaultNow(), ...timestamps,
+}, table => [
+  uniqueIndex('journal_entries_number_unique').on(table.journalNumber), uniqueIndex('journal_entries_year_sequence_unique').on(table.journalYear, table.sequenceNumber),
+  uniqueIndex('journal_entries_source_event_unique').on(table.sourceType, table.sourceId, table.postingEvent).where(sql`${table.sourceId} is not null`),
+  index('journal_entries_date_idx').on(table.entryDate), index('journal_entries_source_idx').on(table.sourceType, table.sourceId), index('journal_entries_warehouse_idx').on(table.warehouseId), index('journal_entries_partner_idx').on(table.partnerId),
+  check('journal_entries_balanced_check', sql`${table.totalDebitUsd} = ${table.totalCreditUsd} and ${table.totalDebitUsd} > 0`),
+]);
+
+export const journalEntryLines = pgTable('journal_entry_lines', {
+  id: id(), journalEntryId: uuid('journal_entry_id').notNull().references(() => journalEntries.id, { onDelete: 'restrict' }), lineNumber: integer('line_number').notNull(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'restrict' }),
+  debitUsd: numeric('debit_usd', { precision: 20, scale: 4 }).notNull().default('0'), creditUsd: numeric('credit_usd', { precision: 20, scale: 4 }).notNull().default('0'),
+  currency: cashCurrency('currency').notNull().default('USD'), originalAmount: numeric('original_amount', { precision: 20, scale: 4 }).notNull(), exchangeRateSypPerUsd: numeric('exchange_rate_syp_per_usd', { precision: 18, scale: 4 }).notNull(),
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), cashboxId: uuid('cashbox_id').references(() => cashboxes.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  salesInvoiceId: uuid('sales_invoice_id').references(() => salesInvoices.id, { onDelete: 'restrict' }), purchaseInvoiceId: uuid('purchase_invoice_id').references(() => purchaseInvoices.id, { onDelete: 'restrict' }), returnInvoiceId: uuid('return_invoice_id').references(() => returnInvoices.id, { onDelete: 'restrict' }), voucherId: uuid('voucher_id').references(() => vouchers.id, { onDelete: 'restrict' }), cashboxTransferId: uuid('cashbox_transfer_id').references(() => cashboxTransfers.id, { onDelete: 'restrict' }),
+  memo: text('memo'), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  uniqueIndex('journal_entry_lines_entry_line_unique').on(table.journalEntryId, table.lineNumber),
+  index('journal_entry_lines_entry_idx').on(table.journalEntryId), index('journal_entry_lines_account_idx').on(table.accountId), index('journal_entry_lines_partner_idx').on(table.partnerId), index('journal_entry_lines_cashbox_idx').on(table.cashboxId),
+  check('journal_entry_lines_single_side_check', sql`(${table.debitUsd} > 0 and ${table.creditUsd} = 0) or (${table.creditUsd} > 0 and ${table.debitUsd} = 0)`),
+  check('journal_entry_lines_amounts_check', sql`${table.debitUsd} >= 0 and ${table.creditUsd} >= 0 and ${table.originalAmount} > 0 and ${table.exchangeRateSypPerUsd} > 0`),
+]);
 
 export type UserRow = typeof users.$inferSelect;
 export type WarehouseRow = typeof warehouses.$inferSelect;
