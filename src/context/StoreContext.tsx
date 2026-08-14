@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import {
   GeneralSettings,
   GoldPriceSetting,
@@ -37,7 +37,6 @@ interface StoreContextType {
   invoices: Invoice[];
   vouchers: Voucher[];
   cashBoxes: CashBox[];
-  users: User[];
   currentUser: User;
   shifts: WorkShift[];
   activeShift: WorkShift | null;
@@ -78,9 +77,7 @@ interface StoreContextType {
   transferBetweenCashBoxes: (fromBoxId: string, toBoxId: string, amountFrom: number, amountTo: number, statement: string) => void;
   
   // Users
-  addUser: (user: Omit<User, 'id'>) => void;
-  updateUser: (id: string, user: Partial<User>) => void;
-  setCurrentUser: (user: User) => void;
+  // Users are administered through the backend users API; the store no longer owns identity.
   startShift: () => WorkShift | null;
   closeShift: () => void;
   
@@ -98,7 +95,9 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY = 'HAMEED_HLIWI_GOLD_STORE_V1';
 
-export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export interface SessionIdentity { id: string; username: string; fullName: string; roles: string[]; permissions: string[]; warehouses: Array<{ id: string; name: string; isManager: boolean }>; }
+
+export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIdentity }> = ({ children, identity }) => {
   // Try loading from localStorage
   const loadInitialState = () => {
     try {
@@ -133,8 +132,17 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [invoices, setInvoices] = useState<Invoice[]>(savedData?.invoices || initialInvoices);
   const [vouchers, setVouchers] = useState<Voucher[]>(savedData?.vouchers || initialVouchers);
   const [cashBoxes, setCashBoxes] = useState<CashBox[]>(savedData?.cashBoxes || initialCashBoxes);
-  const [users, setUsers] = useState<User[]>(savedData?.users || initialUsers);
-  const [currentUser, setCurrentUser] = useState<User>(savedData?.currentUser || initialUsers[0]);
+  // The authenticated identity is the only identity. It is derived from the backend session
+  // on every render, so nothing stored in this browser can change who the user is.
+  const currentUser = useMemo<User>(() => ({
+    id: identity.id,
+    username: identity.username,
+    fullName: identity.fullName,
+    role: identity.permissions.includes('warehouses.scope.all') ? 'admin' : identity.permissions.includes('data.scope.own') ? 'sales' : 'inventory_manager',
+    assignedWarehouseId: identity.warehouses[0]?.id ?? '',
+    active: true,
+    permissions: { dashboard: true, inventory: true, invoices: true, partners: true, finance: true, reports: true, users: true, settings: true },
+  }), [identity]);
   const [shifts, setShifts] = useState<WorkShift[]>(savedData?.shifts || []);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(savedData?.activityLogs || initialActivityLogs);
   const [activeCurrency, setActiveCurrency] = useState<'USD' | 'SYP'>(savedData?.activeCurrency || 'USD');
@@ -151,8 +159,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       invoices,
       vouchers,
       cashBoxes,
-      users,
-      currentUser,
       shifts,
       activityLogs,
       activeCurrency
@@ -172,7 +178,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     invoices,
     vouchers,
     cashBoxes,
-    users,
     currentUser,
     shifts,
     activityLogs,
@@ -631,20 +636,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     logActivity('إضافة صندوق', `تم إنشاء صندوق جديد: ${newCashBox.name}`, 'finance');
   };
 
-  const addUser = (userData: Omit<User, 'id'>) => {
-    const newUser: User = {
-      ...userData,
-      id: 'usr-' + Date.now()
-    };
-    setUsers(prev => [...prev, newUser]);
-    logActivity('إضافة مستخدم', `تم إنشاء حساب مستخدم جديد: ${newUser.fullName} (${newUser.username})`, 'user');
-  };
-
-  const updateUser = (id: string, userData: Partial<User>) => {
-    setUsers(prev => prev.map(u => (u.id === id ? { ...u, ...userData } : u)));
-    logActivity('تعديل مستخدم', `تم تعديل بيانات المستخدم رقم ${id}`, 'user');
-  };
-
   const resetToDefaultData = () => {
     setSettings(initialSettings);
     setGoldPrices(initialGoldPrices);
@@ -654,8 +645,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setInvoices(initialInvoices);
     setVouchers(initialVouchers);
     setCashBoxes(initialCashBoxes);
-    setUsers(initialUsers);
-    setCurrentUser(initialUsers[0]);
     setShifts([]);
     setActivityLogs(initialActivityLogs);
     setActiveCurrency('USD');
@@ -694,7 +683,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         invoices,
         vouchers,
         cashBoxes,
-        users,
         currentUser,
         shifts,
         activeShift,
@@ -721,9 +709,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         cancelVoucher,
         addCashBox,
         transferBetweenCashBoxes,
-        addUser,
-        updateUser,
-        setCurrentUser,
         startShift,
         closeShift,
         setActiveCurrency,

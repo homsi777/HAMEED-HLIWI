@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StoreProvider, useStore } from './context/StoreContext';
+import { StoreProvider } from './context/StoreContext';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -17,42 +17,32 @@ import { InstallPrompt } from './components/InstallPrompt';
 import { LoginView } from './components/LoginView';
 import { ServiceUnavailableView } from './components/ServiceUnavailableView';
 import { useInfrastructureSession } from './hooks/useInfrastructureSession';
-import { infrastructureApi, type InfrastructureUser } from './services/infrastructureApi';
+import { infrastructureApi, type InfrastructureUser, type SessionScope } from './services/infrastructureApi';
 
-function MainAppContent({ authenticatedUser, onLogout }: { authenticatedUser?: InfrastructureUser | null; onLogout?: () => void }) {
-  const { currentUser } = useStore();
-  const firstAllowedTab = () => {
-    const permissions = currentUser.permissions;
-    if (permissions.dashboard) return 'dashboard';
-    if (permissions.invoices) return 'invoices';
-    if (permissions.inventory) return 'inventory';
-    if (permissions.partners) return 'partners';
-    if (permissions.finance) return 'finance-boxes';
-    if (permissions.reports) return 'reports';
-    if (permissions.users) return 'users';
-    if (permissions.settings) return 'settings';
-    return 'invoices';
-  };
+// Which authenticated module each screen belongs to. The module list itself is produced by the
+// backend from real permission codes, so nothing here can widen access on its own.
+const TAB_MODULE: Record<string, string> = {
+  dashboard: 'dashboard', inventory: 'inventory', invoices: 'invoices', partners: 'partners',
+  'gold-weight-accounts': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'users', settings: 'settings',
+  'finance-accounts': 'accounting', 'finance-ledger': 'accounting',
+};
+// The order a user lands in: the most senior screen they are actually allowed to open.
+const LANDING_ORDER = ['dashboard', 'invoices', 'inventory', 'partners', 'finance-boxes', 'reports', 'users', 'settings'];
+
+function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedUser?: InfrastructureUser | null; scope: SessionScope; onLogout?: () => void }) {
+  const modules = scope.modules;
   const canAccessTab = (tab: string) => {
-    const permissions = currentUser.permissions;
-    if (tab === 'dashboard') return permissions.dashboard;
-    if (tab === 'inventory') return permissions.inventory;
-    if (tab === 'invoices') return permissions.invoices;
-    if (tab === 'partners') return permissions.partners;
-    if (tab === 'gold-weight-accounts') return permissions.partners;
-    if (tab.startsWith('finance')) return permissions.finance;
-    if (tab === 'reports') return permissions.reports;
-    if (tab === 'users') return permissions.users;
-    if (tab === 'shifts') return permissions.users;
-    if (tab === 'settings') return permissions.settings;
-    return false;
+    const module = TAB_MODULE[tab] ?? (tab.startsWith('finance') ? 'finance' : undefined);
+    return module ? modules.includes(module) : false;
   };
+  // A seller lands straight in Sales because it is the only module they hold.
+  const firstAllowedTab = () => LANDING_ORDER.find(canAccessTab) ?? 'invoices';
   const [activeTab, setActiveTab] = useState<string>(() => firstAllowedTab());
   const [invoiceTypeTrigger, setInvoiceTypeTrigger] = useState<'sale' | 'purchase'>('sale');
 
   useEffect(() => {
     if (!canAccessTab(activeTab)) setActiveTab(firstAllowedTab());
-  }, [currentUser, activeTab]);
+  }, [modules, activeTab]);
 
   const handleNewInvoiceClick = (type: 'sale' | 'purchase') => {
     setInvoiceTypeTrigger(type);
@@ -62,11 +52,11 @@ function MainAppContent({ authenticatedUser, onLogout }: { authenticatedUser?: I
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-900" dir="rtl">
       {/* Top Fixed Header with Gold Ticker */}
-      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} authenticatedUser={authenticatedUser} onLogout={onLogout} />
+      <Navbar activeTab={activeTab} setActiveTab={setActiveTab} authenticatedUser={authenticatedUser} scope={scope} onLogout={onLogout} />
 
       {/* Sticky Top Horizontal Navigation Bar (Phone & Mobile Optimized) */}
       <div className="sticky top-0 z-30 shadow-md">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} modules={modules} />
       </div>
 
       {/* Main Container */}
@@ -82,7 +72,7 @@ function MainAppContent({ authenticatedUser, onLogout }: { authenticatedUser?: I
 
           {activeTab === 'inventory' && <InventoryView />}
 
-          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} />}
+          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} canPurchase={modules.includes('purchases')} />}
 
           {activeTab === 'partners' && <PartnersView />}
           {activeTab === 'gold-weight-accounts' && <GoldWeightAccountsView />}
@@ -124,10 +114,10 @@ export default function App() {
   const logout = async () => { await infrastructureApi.logout(); await session.refresh(); };
   if (session.mode === 'loading') return <ServiceUnavailableView connecting />;
   if (session.mode === 'unavailable') return <ServiceUnavailableView />;
-  if (session.mode === 'unauthenticated') return <LoginView onLoggedIn={session.refresh} />;
+  if (session.mode === 'unauthenticated' || !session.user || !session.scope) return <LoginView onLoggedIn={session.refresh} />;
   return (
-    <StoreProvider>
-      <MainAppContent authenticatedUser={session.user} onLogout={session.mode === 'authenticated' ? () => { void logout(); } : undefined} />
+    <StoreProvider identity={session.user}>
+      <MainAppContent authenticatedUser={session.user} scope={session.scope} onLogout={() => { void logout(); }} />
     </StoreProvider>
   );
 }

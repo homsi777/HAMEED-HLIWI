@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
-import { infrastructureApi, type InfrastructureUser, type WarehouseScope } from '../services/infrastructureApi';
+import { infrastructureApi, type InfrastructureUser, type SessionScope, type WarehouseScope } from '../services/infrastructureApi';
 
 export function useInfrastructureSession() {
   const [user, setUser] = useState<InfrastructureUser | null>(null);
+  // The scope the backend computed for this session. Navigation is derived from it, so a
+  // browser can no longer grant itself a module by editing local storage.
+  const [scope, setScope] = useState<SessionScope | null>(null);
   const [warehouseScope, setWarehouseScope] = useState<WarehouseScope | null>(null);
   const [mode, setMode] = useState<'loading' | 'authenticated' | 'unauthenticated' | 'legacy' | 'unavailable'>('loading');
   const refresh = async () => {
     try {
       const result = await infrastructureApi.currentUser();
-      const scope = await infrastructureApi.warehouseScope();
-      setUser(result.user); setWarehouseScope(scope); setMode('authenticated');
+      const warehouses = await infrastructureApi.warehouseScope();
+      setUser(result.user); setScope(result.scope); setWarehouseScope(warehouses); setMode('authenticated');
     } catch (error: any) {
-      setUser(null); setWarehouseScope(null);
+      setUser(null); setScope(null); setWarehouseScope(null);
       if (error?.status === 401 || error?.status === 403) setMode('unauthenticated');
       else setMode(import.meta.env.PROD ? 'unavailable' : 'legacy');
     }
   };
   useEffect(() => { void refresh(); }, []);
-  return { user, warehouseScope, mode, refresh };
+  return { user, scope, warehouseScope, mode, refresh };
 }

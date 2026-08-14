@@ -40,6 +40,9 @@ export const roles = pgTable('roles', {
   displayName: text('display_name').notNull(),
   description: text('description'),
   isActive: boolean('is_active').notNull().default(true),
+  // Internal technical roles (`system_admin`, per-user permission overrides) are never
+  // offered as business presets in the user-creation screen.
+  isSystem: boolean('is_system').notNull().default(false),
   ...timestamps,
 }, table => [uniqueIndex('roles_name_unique').on(table.name)]);
 

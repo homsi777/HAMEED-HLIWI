@@ -47,6 +47,8 @@ import { inventoryApi } from '../services/inventoryApi';
 
 interface InvoicesViewProps {
   initialType?: 'sale' | 'purchase';
+  /** Whether this session holds the purchases module. A seller does not. */
+  canPurchase?: boolean;
 }
 
 const money = (value: number) => Number(value.toFixed(2));
@@ -75,7 +77,7 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
   };
 };
 
-export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
+export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, canPurchase = true }) => {
   const {
     inventory: legacyInventory,
     partners,
@@ -118,7 +120,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   const refreshOperationalStock = async () => { try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); } };
   const refreshServerReturns = async () => { try { setReturnsError(''); const response = await returnsApi.list({ page: returnsPage, limit: 30 }); setServerReturns(response.items); setReturnsTotal(response.meta.total); } catch (reason: any) { setReturnsError(reason?.message || 'تعذر تحميل المرتجعات من الخادم.'); } };
   useEffect(() => { void refreshServerSales(); }, [salesPage]);
-  useEffect(() => { void refreshServerPurchases(); }, [purchasesPage]);
+  useEffect(() => { if (canPurchase) void refreshServerPurchases(); }, [purchasesPage, canPurchase]);
   useEffect(() => { void refreshServerReturns(); }, [returnsPage]);
   useEffect(() => { void refreshCustomers(); void refreshSuppliers(); void refreshOperationalStock(); }, []);
 
@@ -690,6 +692,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
             <span>+ فاتورة بيع جديدة</span>
           </button>
 
+          {canPurchase && (
           <button
             onClick={() => handleOpenCreateModal('purchase')}
             className="flex-1 sm:flex-none justify-center bg-slate-900 hover:bg-slate-800 text-amber-400 px-3 py-2 sm:px-4 sm:py-2.5 rounded-sm font-bold text-xs shadow flex items-center gap-1.5 transition"
@@ -697,6 +700,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
             <ArrowDownLeft className="w-4 h-4 text-emerald-400" />
             <span>فاتورة شراء ذهب</span>
           </button>
+          )}
         </div>
       </div>
 
@@ -719,6 +723,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
           >
             البيع ({salesTotal})
           </button>
+          {canPurchase && (
           <button
             onClick={() => setFilterType('purchase')}
             className={`px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-sm transition whitespace-nowrap text-[11px] sm:text-xs ${
@@ -727,6 +732,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
           >
             الشراء ({purchasesTotal})
           </button>
+          )}
           <button
             onClick={() => setFilterType('return')}
             className={`px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-sm transition whitespace-nowrap text-[11px] sm:text-xs ${

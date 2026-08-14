@@ -10,6 +10,7 @@ import { FinancePostingService } from '../finance/finance-posting.service.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { GoldDocumentsService } from '../gold/gold-documents.service.js';
 import { DocumentNumberService } from '../common/document-number.service.js';
+import { AuthorizationScopeService } from '../authorization/authorization-scope.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TYPES = new Set(['sales_return', 'purchase_return']);
@@ -44,13 +45,16 @@ const dto = (invoice: any, items: any[] = [], payments: any[] = []) => ({
 
 @Injectable()
 export class ReturnsService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(GoldDocumentsService) private readonly gold: GoldDocumentsService, @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(GoldDocumentsService) private readonly gold: GoldDocumentsService, @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService, @Inject(AuthorizationScopeService) private readonly authorization: AuthorizationScopeService) {}
 
   async list(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit); const conditions: any[] = [];
     const warehouseId = query.warehouseId ? uuid(query.warehouseId, 'warehouseId') : undefined;
     if (warehouseId) { this.scope.assertAccess(user, warehouseId); conditions.push(eq(returnInvoices.warehouseId, warehouseId)); }
     else if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; if (!ids.length) return { items: [], meta: { page, limit, total: 0 } }; conditions.push(inArray(returnInvoices.warehouseId, ids)); }
+    // A seller only ever sees the returns they raised themselves.
+    const ownership = this.authorization.ownerCondition(user, returnInvoices.createdByUserId);
+    if (ownership) conditions.push(ownership);
     if (query.type && TYPES.has(String(query.type))) conditions.push(eq(returnInvoices.type, query.type as ReturnKind));
     if (query.partnerId) conditions.push(eq(returnInvoices.partnerId, uuid(query.partnerId, 'partnerId')));
     if (query.status && ['posted', 'cancelled'].includes(String(query.status))) conditions.push(eq(returnInvoices.status, query.status as 'posted' | 'cancelled'));
@@ -85,7 +89,8 @@ export class ReturnsService {
     if (type === 'sales_return') {
       const invoice = (await this.db.select().from(salesInvoices).where(eq(salesInvoices.id, invoiceId)).limit(1))[0];
       if (!invoice) throw new NotFoundException('Sales invoice not found.');
-      this.scope.assertAccess(user, invoice.warehouseId);
+      // A seller cannot open a colleague's sale through the return screen either.
+      this.authorization.assertDocumentAccess(user, invoice);
       const lines = await this.db.select().from(salesInvoiceItems).where(eq(salesInvoiceItems.salesInvoiceId, invoice.id)).orderBy(asc(salesInvoiceItems.lineNumber));
       const returned = await this.returnedByLine('sales_return', lines.map(line => line.id));
       const stock = lines.length ? await this.db.select({ id: inventoryItems.id, inventoryMode: inventoryItems.inventoryMode, status: inventoryItems.status, archivedAt: inventoryItems.archivedAt, isManualSaleEntry: inventoryItems.isManualSaleEntry }).from(inventoryItems).where(inArray(inventoryItems.id, lines.map(line => line.inventoryItemId).filter(Boolean) as string[])) : [];
@@ -139,7 +144,8 @@ export class ReturnsService {
         if (!original) throw new NotFoundException(type === 'sales_return' ? 'Sales invoice not found.' : 'Purchase invoice not found.');
         if (original.status !== 'posted') throw new ConflictException('A cancelled invoice cannot be returned.');
         const warehouseId = original.warehouseId;
-        this.scope.assertAccess(user, warehouseId);
+        // Raising a return is a read of the source document, so it obeys the same ownership rule.
+        this.authorization.assertDocumentAccess(user, original);
         const partnerId = type === 'sales_return' ? (original as any).customerPartnerId : (original as any).supplierPartnerId;
         if (expectedPartnerId && expectedPartnerId !== partnerId) throw new ConflictException(type === 'sales_return' ? 'The selected customer does not match the original sale.' : 'The selected supplier does not match the original purchase.');
         const partner = (await tx.select().from(partners).where(eq(partners.id, partnerId)).limit(1))[0];
@@ -244,7 +250,7 @@ export class ReturnsService {
     const warehouseId = await this.db.transaction(async tx => {
       const original = (await tx.select().from(returnInvoices).where(eq(returnInvoices.id, returnId)).limit(1).for('update'))[0];
       if (!original) throw new NotFoundException('Return not found.');
-      this.scope.assertAccess(user, original.warehouseId);
+      this.authorization.assertDocumentAccess(user, original);
       const cancelled = (await tx.update(returnInvoices).set({ status: 'cancelled', cancelledAt: new Date(), cancelledByUserId: user.id, cancellationReason: reason, updatedByUserId: user.id, updatedAt: new Date(), version: sql`${returnInvoices.version} + 1` }).where(and(eq(returnInvoices.id, returnId), eq(returnInvoices.status, 'posted'))).returning())[0];
       if (!cancelled) throw new ConflictException('Return is already cancelled.');
       const lines = await tx.select().from(returnInvoiceItems).where(eq(returnInvoiceItems.returnInvoiceId, returnId));
@@ -362,7 +368,7 @@ export class ReturnsService {
       .leftJoin(salesInvoices, eq(salesInvoices.id, returnInvoices.originalSalesInvoiceId)).leftJoin(purchaseInvoices, eq(purchaseInvoices.id, returnInvoices.originalPurchaseInvoiceId))
       .where(eq(returnInvoices.id, returnId)).limit(1))[0];
     if (!row) throw new NotFoundException('Return not found.');
-    this.scope.assertAccess(user, row.invoice.warehouseId);
+    this.authorization.assertDocumentAccess(user, row.invoice);
     return { ...row.invoice, createdByName: row.createdByName, originalInvoiceNumber: row.saleNumber ?? row.purchaseNumber };
   }
 

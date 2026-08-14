@@ -5,8 +5,9 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { appConfig } from '../config/app-config.js';
 import { permissions, rolePermissions, roles, userRoles, users } from './schema.js';
+import { ALL_PERMISSION_CODES, GENERAL_MANAGER_PERMISSIONS, GENERAL_MANAGER_ROLE, OWN_SCOPE_PERMISSION } from '../authorization/authorization.constants.js';
 
-const permissionCodes = ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.delete', 'inventory.transfer', 'inventory.adjust', 'sales.view', 'sales.create', 'sales.update', 'sales.cancel', 'sales.return', 'sales.discount', 'sales.approve', 'purchases.view', 'purchases.create', 'purchases.cancel', 'returns.view', 'returns.create', 'returns.cancel', 'customers.view', 'customers.create', 'customers.update', 'customers.archive', 'suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.archive', 'reports.view', 'users.view', 'users.manage', 'warehouses.view', 'warehouses.manage', 'warehouses.scope.all'];
+const permissionCodes = [...ALL_PERMISSION_CODES];
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -25,11 +26,12 @@ async function main() {
   const db = drizzle(sql);
   try {
     for (const code of permissionCodes) await db.insert(permissions).values({ code, description: code }).onConflictDoNothing();
-    await db.insert(roles).values({ name: 'system_admin', displayName: 'System Administrator', description: 'Initial production administrator' }).onConflictDoNothing();
-    const adminRole = (await db.select().from(roles).where(eq(roles.name, 'system_admin')).limit(1))[0];
-    if (!adminRole) throw new Error('System administrator role could not be initialized.');
+    // The first production account is the operational General Manager, not a technical role.
+    await db.insert(roles).values({ name: GENERAL_MANAGER_ROLE, displayName: 'المدير العام', description: 'المدير العام للشركة بنطاق شامل', isSystem: false }).onConflictDoNothing();
+    const adminRole = (await db.select().from(roles).where(eq(roles.name, GENERAL_MANAGER_ROLE)).limit(1))[0];
+    if (!adminRole) throw new Error('General manager role could not be initialized.');
     const allPermissions = await db.select().from(permissions);
-    for (const permission of allPermissions) await db.insert(rolePermissions).values({ roleId: adminRole.id, permissionId: permission.id }).onConflictDoNothing();
+    for (const permission of allPermissions.filter(row => GENERAL_MANAGER_PERMISSIONS.includes(row.code as typeof GENERAL_MANAGER_PERMISSIONS[number]) && row.code !== OWN_SCOPE_PERMISSION)) await db.insert(rolePermissions).values({ roleId: adminRole.id, permissionId: permission.id }).onConflictDoNothing();
     const existingUser = (await db.select().from(users).where(eq(users.username, username)).limit(1))[0];
     const user = existingUser ?? (await db.insert(users).values({ username, fullName, passwordHash: await bcrypt.hash(password, 12) }).returning())[0];
     if (!user) throw new Error('Initial production administrator could not be created.');

@@ -5,8 +5,11 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { appConfig } from '../config/app-config.js';
 import { permissions, rolePermissions, roles, userRoles, userWarehouses, users, warehouses } from './schema.js';
+import { ALL_PERMISSION_CODES, GENERAL_MANAGER_PERMISSIONS, ROLE_PRESETS, SELLER_PERMISSIONS, WAREHOUSE_MANAGER_PERMISSIONS } from '../authorization/authorization.constants.js';
 
-const permissionCodes = ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.delete', 'inventory.transfer', 'inventory.adjust', 'sales.view', 'sales.create', 'sales.update', 'sales.cancel', 'sales.return', 'sales.discount', 'sales.approve', 'purchases.view', 'purchases.create', 'purchases.cancel', 'returns.view', 'returns.create', 'returns.cancel', 'customers.view', 'customers.create', 'customers.update', 'customers.archive', 'suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.archive', 'reports.view', 'users.view', 'users.manage', 'warehouses.view', 'warehouses.manage', 'warehouses.scope.all'];
+// The seed reads the same role model the migration and the users API use, so a developer
+// environment can never drift from what production enforces.
+const permissionCodes = [...ALL_PERMISSION_CODES];
 async function main() {
   if ((process.env.NODE_ENV ?? 'development') === 'production') throw new Error('Refusing to seed production. Use an explicit production bootstrap process.');
   const password = process.env.SEED_ADMIN_PASSWORD;
@@ -14,15 +17,16 @@ async function main() {
   const config = appConfig(); const sql = postgres(config.databaseUrl, { max: 1 }); const db = drizzle(sql);
   try {
     for (const code of permissionCodes) await db.insert(permissions).values({ code, description: code }).onConflictDoNothing();
-    const roleDefinitions = [{ name: 'system_admin', displayName: 'System Administrator' }, { name: 'warehouse_manager', displayName: 'Warehouse Manager' }, { name: 'sales', displayName: 'Sales User' }];
+    const roleDefinitions = [{ name: 'system_admin', displayName: 'System Administrator', isSystem: true }, ...ROLE_PRESETS.map(preset => ({ name: preset.name, displayName: preset.displayName, description: preset.description, isSystem: false }))];
     for (const role of roleDefinitions) await db.insert(roles).values(role).onConflictDoNothing();
     const allRoles = await db.select().from(roles); const allPermissions = await db.select().from(permissions);
-    const admin = allRoles.find(role => role.name === 'system_admin')!; const manager = allRoles.find(role => role.name === 'warehouse_manager')!; const sales = allRoles.find(role => role.name === 'sales')!;
+    const admin = allRoles.find(role => role.name === 'system_admin')!; const generalManager = allRoles.find(role => role.name === 'general_manager')!; const manager = allRoles.find(role => role.name === 'warehouse_manager')!; const sales = allRoles.find(role => role.name === 'sales')!;
     const permissionId = (code: string) => allPermissions.find(permission => permission.code === code)!.id;
     const mapPermissions = async (roleId: string, codes: string[]) => { for (const code of codes) await db.insert(rolePermissions).values({ roleId, permissionId: permissionId(code) }).onConflictDoNothing(); };
-    await mapPermissions(admin.id, permissionCodes);
-    await mapPermissions(manager.id, ['inventory.view', 'inventory.create', 'inventory.update', 'inventory.transfer', 'sales.view', 'sales.create', 'sales.update', 'purchases.view', 'purchases.create', 'returns.view', 'returns.create', 'customers.view', 'customers.create', 'customers.update', 'suppliers.view', 'suppliers.create', 'suppliers.update', 'reports.view', 'warehouses.view']);
-    await mapPermissions(sales.id, ['sales.view', 'sales.create', 'returns.view', 'customers.view', 'customers.create', 'warehouses.view']);
+    await mapPermissions(admin.id, permissionCodes.filter(code => code !== 'data.scope.own'));
+    await mapPermissions(generalManager.id, GENERAL_MANAGER_PERMISSIONS);
+    await mapPermissions(manager.id, WAREHOUSE_MANAGER_PERMISSIONS);
+    await mapPermissions(sales.id, SELLER_PERMISSIONS);
     const hash = await bcrypt.hash(password, 12); const localVisualPassword = process.env.LOCAL_VISUAL_ADMIN_PASSWORD;
     const developmentUsers = [...(localVisualPassword ? [{ username: 'admin', fullName: 'Local Visual Administrator', passwordHash: await bcrypt.hash(localVisualPassword, 12) }] : []), { username: 'admin_dev', fullName: 'Development Administrator', passwordHash: hash }, { username: 'nabil_manager_dev', fullName: 'Nabil Warehouse Manager', passwordHash: hash }, { username: 'ahmad_manager_dev', fullName: 'Ahmad Warehouse Manager', passwordHash: hash }, { username: 'furqan_sales_dev', fullName: 'Furqan Sales User', passwordHash: hash }, { username: 'dana_sales_dev', fullName: 'Dana Sales User', passwordHash: hash }];
     for (const user of developmentUsers) await db.insert(users).values(user).onConflictDoUpdate({ target: users.username, set: { fullName: user.fullName, passwordHash: user.passwordHash } });

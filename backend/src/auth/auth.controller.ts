@@ -2,13 +2,14 @@ import { BadRequestException, Body, Controller, Get, Inject, Post, Req, Res, Una
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { appConfig } from '../config/app-config.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AuthorizationScopeService } from '../authorization/authorization-scope.service.js';
 import { AuthGuard } from './auth.guard.js';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 
 @Controller('auth')
 export class AuthController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService, @Inject(AuditService) private readonly audit: AuditService) {}
+  constructor(@Inject(AuthService) private readonly auth: AuthService, @Inject(AuditService) private readonly audit: AuditService, @Inject(AuthorizationScopeService) private readonly authorization: AuthorizationScopeService) {}
   @Post('login')
   async login(@Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, validationError: { target: false, value: false } })) body: LoginDto, @Req() request: FastifyRequest, @Res({ passthrough: true }) response: FastifyReply) {
     this.validateLoginBody(body);
@@ -16,7 +17,7 @@ export class AuthController {
     this.setSessionCookies(response, result.accessToken, result.refreshToken);
     const { identity, session } = result;
     await this.audit.record({ actorUserId: identity.id, action: 'auth.login', module: 'auth', entityId: identity.id, metadata: { selectedWarehouseId: body.warehouseId } });
-    return { user: identity, session };
+    return { user: identity, scope: this.authorization.resolve(identity), session };
   }
   @Post('refresh')
   async refresh(@Req() request: FastifyRequest, @Res({ passthrough: true }) response: FastifyReply) {
@@ -42,7 +43,9 @@ export class AuthController {
     return { success: true };
   }
   @Get('me') @UseGuards(AuthGuard)
-  me(@Req() request: FastifyRequest) { const { sessionId, sessionExpiresAt, ...user } = request.identity!; return { user, session: { id: sessionId, expiresAt: sessionExpiresAt } }; }
+  // The single source of truth for who the browser is talking as, and what that identity may
+  // reach. The frontend derives its navigation from this payload rather than from local state.
+  me(@Req() request: FastifyRequest) { const identity = request.identity!; const { sessionId, sessionExpiresAt, ...user } = identity; return { user, scope: this.authorization.resolve(identity), session: { id: sessionId, expiresAt: sessionExpiresAt } }; }
   @Get('login-warehouses') loginWarehouses() { return this.auth.loginWarehouses(); }
 
   private setSessionCookies(response: FastifyReply, accessToken: string, refreshToken: string) {

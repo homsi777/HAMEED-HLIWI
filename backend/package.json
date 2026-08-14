@@ -27,7 +27,8 @@
     "test:task08": "tsx test/task08-verification.ts",
     "test:gold": "tsx test/gold-accounts.spec.ts",
     "test:task09": "tsx test/task09-verification.ts",
-    "test:task091": "tsx test/task091-regression.spec.ts"
+    "test:task091": "tsx test/task091-regression.spec.ts",
+    "test:task10": "tsx test/task10-authorization.spec.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

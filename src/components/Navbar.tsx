@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
-import type { InfrastructureUser } from '../services/infrastructureApi';
+import type { InfrastructureUser, SessionScope } from '../services/infrastructureApi';
 import { 
   Coins, 
   RefreshCw, 
@@ -15,21 +15,17 @@ import {
 } from 'lucide-react';
 import { GoldKarat } from '../types';
 
-export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void; authenticatedUser?: InfrastructureUser | null; onLogout?: () => void }> = ({ activeTab, setActiveTab, authenticatedUser, onLogout }) => {
+export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) => void; authenticatedUser?: InfrastructureUser | null; scope: SessionScope; onLogout?: () => void }> = ({ activeTab, setActiveTab, authenticatedUser, scope, onLogout }) => {
   const { 
     settings, 
     goldPrices, 
     activeCurrency, 
     setActiveCurrency, 
-    currentUser, 
-    users, 
-    setCurrentUser,
     updateKaratPrice,
     updateSettings,
     warehouses
   } = useStore();
 
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [editingKarat, setEditingKarat] = useState<GoldKarat | null>(null);
   const [editBuyUSD, setEditBuyUSD] = useState('');
   const [editSellUSD, setEditSellUSD] = useState('');
@@ -62,9 +58,11 @@ export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) =
     setEditingRate(false);
   };
 
-  const currentWh = warehouses.find(w => w.id === currentUser.assignedWarehouseId) || warehouses[0];
-  const canSwitchLegacyUser = currentUser.permissions.users && !authenticatedUser;
-  const displayName = authenticatedUser?.fullName || currentUser.fullName;
+  // The header reflects the authenticated session only. Switching accounts means logging out
+  // and logging in again, so a browser can never present itself as somebody else.
+  const scopeLabel = scope.type === 'global' ? 'المدير العام — كل الفروع' : scope.type === 'own' ? 'بائع' : 'مدير مستودع';
+  const currentWh = warehouses.find(w => w.name === authenticatedUser?.warehouses[0]?.name) || warehouses[0];
+  const displayName = authenticatedUser?.fullName || '';
 
   return (
     <header className="bg-white text-slate-900 shadow-sm border-b-2 border-slate-200 sticky top-0 z-40">
@@ -160,19 +158,15 @@ export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) =
 
           {/* Current User Dropdown */}
           <div className="relative">
-            <button
-              onClick={() => canSwitchLegacyUser && setShowUserMenu(!showUserMenu)}
-              className="bg-slate-900 hover:bg-slate-800 text-white rounded-sm px-1 sm:px-3 py-1 text-xs flex items-center gap-1 sm:gap-2.5 transition"
-            >
+            <div className="bg-slate-900 text-white rounded-sm px-1 sm:px-3 py-1 text-xs flex items-center gap-1 sm:gap-2.5">
               <div className="w-6 h-6 rounded-sm bg-amber-400 text-slate-900 flex items-center justify-center font-bold text-xs shrink-0">
                 {displayName.charAt(0)}
               </div>
               <div className="text-right hidden md:block">
                 <p className="font-bold text-amber-400 leading-tight">{displayName}</p>
-                <p className="text-[10px] text-slate-400">{currentUser.role === 'admin' ? 'مدير عام' : currentUser.role}</p>
+                <p className="text-[10px] text-slate-400">{scopeLabel}</p>
               </div>
-              {canSwitchLegacyUser && <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
-            </button>
+            </div>
 
             {authenticatedUser && onLogout && (
               <button type="button" onClick={onLogout} className="mt-1 w-full text-[11px] font-bold text-slate-500 transition hover:text-rose-600">
@@ -180,42 +174,6 @@ export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) =
               </button>
             )}
 
-            {canSwitchLegacyUser && showUserMenu && (
-              <div className="absolute left-0 mt-2 w-56 sm:w-60 bg-slate-900 border-2 border-slate-800 rounded-sm shadow-2xl py-2 z-50 text-xs text-white">
-                <div className="px-3 py-1.5 border-b border-slate-800 text-slate-400 font-bold">
-                  تبديل حساب المستخدم
-                </div>
-                {users.map(u => (
-                  <button
-                    key={u.id}
-                    onClick={() => {
-                      setCurrentUser(u);
-                      setShowUserMenu(false);
-                    }}
-                    className={`w-full text-right px-3 py-2 flex items-center justify-between hover:bg-slate-800 transition ${
-                      u.id === currentUser.id ? 'bg-amber-400/20 text-amber-400 font-bold' : 'text-slate-300'
-                    }`}
-                  >
-                    <div>
-                      <p>{u.fullName}</p>
-                      <p className="text-[10px] text-slate-500">@{u.username}</p>
-                    </div>
-                    {u.id === currentUser.id && <Check className="w-4 h-4 text-amber-400" />}
-                  </button>
-                ))}
-                <div className="border-t border-slate-800 pt-1 mt-1 px-3">
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      setActiveTab('users');
-                    }}
-                    className="text-amber-400 hover:underline text-[11px] font-bold block py-1"
-                  >
-                    إدارة الصلاحيات والمستخدمين
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

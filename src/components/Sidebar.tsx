@@ -21,16 +21,15 @@ import {
   Layers,
   Scale
 } from 'lucide-react';
-import { useStore } from '../context/StoreContext';
-
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  /** Modules the authenticated session actually holds, as computed by the backend. */
+  modules: string[];
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
-  const { currentUser } = useStore();
-  const perms = currentUser.permissions;
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modules }) => {
+  const allows = (module: string) => modules.includes(module);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showFinanceDropdown, setShowFinanceDropdown] = useState(false);
   const [showMobileDrawer, setShowMobileDrawer] = useState(false);
@@ -40,36 +39,36 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       id: 'dashboard',
       label: 'الرئيسية',
       icon: LayoutDashboard,
-      allowed: perms.dashboard,
+      allowed: allows('dashboard'),
       badge: null
     },
     {
       id: 'inventory',
       label: 'المخزون والعيارات',
       icon: PackageSearch,
-      allowed: perms.inventory,
+      allowed: allows('inventory'),
       badge: 'الذهب'
     },
     {
       id: 'invoices',
       label: 'الفواتير والمبيعات',
       icon: FileText,
-      allowed: perms.invoices,
+      allowed: allows('invoices'),
       badge: 'جديد'
     },
     {
       id: 'partners',
       label: 'العملاء والموردين',
       icon: Users,
-      allowed: perms.partners,
+      allowed: allows('partners'),
       badge: 'ذمم'
     },
-    { id: 'gold-weight-accounts', label: 'ذمم الأوزان', icon: Coins, allowed: perms.partners, badge: 'غرام' },
+    { id: 'gold-weight-accounts', label: 'ذمم الأوزان', icon: Coins, allowed: allows('gold-weight-accounts'), badge: 'غرام' },
     {
       id: 'finance',
       label: 'الإدارة المالية',
       icon: Wallet,
-      allowed: perms.finance,
+      allowed: allows('finance') || allows('accounting'),
       badge: '4 أقسام',
       hasDropdown: true
     },
@@ -77,40 +76,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       id: 'reports',
       label: 'التقارير والتحليلات',
       icon: BarChart3,
-      allowed: perms.reports,
+      allowed: allows('reports'),
       badge: null
     },
     {
       id: 'users',
       label: 'الصلاحيات والمستخدمين',
       icon: ShieldCheck,
-      allowed: perms.users,
+      allowed: allows('users'),
       badge: null
     },
     {
       id: 'shifts',
       label: 'سجل الورديات',
       icon: Clock3,
-      allowed: perms.users,
+      allowed: allows('users'),
       badge: null
     },
     {
       id: 'settings',
       label: 'الإعدادات العامة',
       icon: Settings,
-      allowed: perms.settings,
+      allowed: allows('settings'),
       badge: null
     }
   ];
 
+  // The two accounting screens sit under the same menu but answer to their own permission.
   const financeSubItems = [
-    { id: 'finance-boxes', label: 'الصناديق والخزائن', icon: Building2, desc: 'حسابات السيولة والخزن' },
-    { id: 'finance-vouchers', label: 'السندات المالية', icon: Receipt, desc: 'سندات قبض وصرف وقيد' },
-    { id: 'finance-journal', label: 'دفتر اليومية العام', icon: BookOpen, desc: 'كشف الحركات والتسويات' },
-    { id: 'finance-expenses', label: 'المصاريف والتشغيل', icon: Coins, desc: 'مصاريف وإيجارات وطاقة' },
-    { id: 'finance-accounts', label: 'شجرة الحسابات', icon: Layers, desc: 'الدليل المحاسبي والمطابقة' },
-    { id: 'finance-ledger', label: 'القيود والأستاذ', icon: Scale, desc: 'قيود اليومية وميزان المراجعة' },
-  ];
+    { id: 'finance-boxes', label: 'الصناديق والخزائن', icon: Building2, desc: 'حسابات السيولة والخزن', module: 'finance' },
+    { id: 'finance-vouchers', label: 'السندات المالية', icon: Receipt, desc: 'سندات قبض وصرف وقيد', module: 'finance' },
+    { id: 'finance-journal', label: 'دفتر اليومية العام', icon: BookOpen, desc: 'كشف الحركات والتسويات', module: 'finance' },
+    { id: 'finance-expenses', label: 'المصاريف والتشغيل', icon: Coins, desc: 'مصاريف وإيجارات وطاقة', module: 'finance' },
+    { id: 'finance-accounts', label: 'شجرة الحسابات', icon: Layers, desc: 'الدليل المحاسبي والمطابقة', module: 'accounting' },
+    { id: 'finance-ledger', label: 'القيود والأستاذ', icon: Scale, desc: 'قيود اليومية وميزان المراجعة', module: 'accounting' },
+  ].filter(sub => allows(sub.module));
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
