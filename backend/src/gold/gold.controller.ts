@@ -11,6 +11,7 @@ export class GoldController {
 
   @Get('karats') @RequirePermissions('gold_accounts.view') karats() { return this.gold.karats(); }
   @Get('accounts') @RequirePermissions('gold_accounts.view') listAccounts(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.listAccounts(request.identity!, query); }
+  @Get('holdings') @RequirePermissions('gold_accounts.view') holdings(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.holdings(request.identity!, query); }
   @Get('partners') @RequirePermissions('gold_accounts.view') partnerBalances(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.partnerBalances(request.identity!, query); }
   @Get('partners/:id') @RequirePermissions('gold_accounts.view') partnerBalance(@Req() request: FastifyRequest, @Param('id') id: string) { return this.gold.partnerBalance(request.identity!, id); }
   @Get('partners/:id/statement') @RequirePermissions('gold_accounts.view') statement(@Req() request: FastifyRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) { return this.gold.partnerStatement(request.identity!, id, query); }

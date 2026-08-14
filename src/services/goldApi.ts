@@ -32,7 +32,21 @@ export type ApiGoldReconciliation = {
   karatsBalanced: boolean; netPureGoldGrams: number; pureGoldBalanced: boolean; notes: string[];
 };
 
+// The metal the shop physically holds, and the movements that put it there.
+export type ApiGoldHoldingBalance = ApiGoldBalance & { scrapGrams: number };
+export type ApiGoldHoldingMovement = {
+  id: string; date: string; accountId: string; accountName: string; transactionNumber: string; transactionType: string;
+  status: 'posted' | 'reversed'; source: string; sourceNumber: string | null; partnerId: string | null; warehouseId: string | null;
+  karat: string; inGrams: number; outGrams: number; pureGoldGrams: number; goldPricePerGramUSD: number | null; valuationUSD: number | null;
+  salesInvoiceId: string | null; salesGoldExchangeId: string | null; description: string;
+};
+export type ApiGoldHoldings = {
+  accounts: Array<{ id: string; name: string; warehouseId: string | null; balances: ApiGoldHoldingBalance[]; pureGoldTotalGrams: number }>;
+  totals: ApiGoldHoldingBalance[]; pureGoldTotalGrams: number; movements: ApiGoldHoldingMovement[];
+};
+
 export const goldApi = {
+  holdings: (filters: Record<string, string | number | undefined> = {}) => request<ApiGoldHoldings>(`/gold/holdings?${query(filters)}`),
   accounts: (filters: Record<string, string | undefined> = {}) => request<ApiGoldAccount[]>(`/gold/accounts?${query(filters)}`),
   partnerBalances: (filters: Record<string, string | undefined> = {}) => request<ApiGoldPartnerSummary[]>(`/gold/partners?${query(filters)}`),
   partnerBalance: (partnerId: string) => request<ApiGoldPartnerBalance>(`/gold/partners/${partnerId}`),

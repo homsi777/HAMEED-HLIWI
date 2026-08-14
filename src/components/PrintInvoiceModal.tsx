@@ -6,11 +6,14 @@ import { Diamond, Printer, X } from 'lucide-react';
 interface PrintInvoiceModalProps {
   invoice: Invoice;
   onClose: () => void;
+  /** On small screens the invoice's financial trail lives inside this preview rather than
+   *  in a second floating panel, so the phone shows one surface only. */
+  financialTrail?: React.ReactNode;
 }
 
 const invoiceTypeLabel = (type: Invoice['type']) => type === 'sale' ? 'فاتورة بيع' : type === 'purchase' ? 'فاتورة شراء' : 'فاتورة مرتجع';
 
-export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, onClose }) => {
+export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, onClose, financialTrail }) => {
   const { settings } = useStore();
   const isPurchaseInvoice = invoice.type === 'purchase';
   const blankRowCount = Math.max(0, (isPurchaseInvoice ? 10 : 6) - invoice.items.length - (invoice.scrapGoldItems?.length || 0));
@@ -32,11 +35,11 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
   }, [isPurchaseInvoice]);
 
   return (
-    <div className="invoice-print-overlay fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/80 p-4 backdrop-blur-sm">
-      <div className="invoice-print-preview my-6 w-full max-w-5xl bg-white p-4 shadow-2xl">
-        <div className="no-print mb-4 flex items-center justify-between border-b border-slate-200 pb-3" dir="rtl">
-          <div className="flex items-center gap-2"><Printer className="h-5 w-5 text-amber-600" /><h3 className="font-bold text-slate-900">معاينة {invoiceTypeLabel(invoice.type)} A5 {isPurchaseInvoice ? 'عامودي' : 'عرضي'}</h3></div>
-          <div className="flex items-center gap-2"><button onClick={() => window.print()} className="flex items-center gap-2 bg-amber-400 px-4 py-2 text-xs font-black text-slate-900"><Printer className="h-4 w-4" />طباعة أو تصدير PDF</button><button onClick={onClose} className="bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
+    <div className="invoice-print-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overflow-x-hidden bg-slate-950/80 p-2 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="invoice-print-preview my-3 w-full max-w-5xl bg-white p-2 shadow-2xl sm:my-6 sm:p-4">
+        <div className="no-print mb-3 flex items-center justify-between gap-2 border-b border-slate-200 pb-3 sm:mb-4" dir="rtl">
+          <div className="flex min-w-0 items-center gap-2"><Printer className="h-5 w-5 shrink-0 text-amber-600" /><h3 className="truncate text-xs font-bold text-slate-900 sm:text-base">معاينة {invoiceTypeLabel(invoice.type)} A5 {isPurchaseInvoice ? 'عامودي' : 'عرضي'}</h3></div>
+          <div className="flex shrink-0 items-center gap-2"><button onClick={() => window.print()} className="flex items-center gap-2 bg-amber-400 px-2 py-2 text-[11px] font-black text-slate-900 sm:px-4 sm:text-xs"><Printer className="h-4 w-4" /><span className="hidden sm:inline">طباعة أو تصدير PDF</span><span className="sm:hidden">طباعة</span></button><button onClick={onClose} aria-label="إغلاق" className="bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
         </div>
 
         <section className={`invoice-print-sheet${isPurchaseInvoice ? ' invoice-print-sheet-portrait' : ''}`} dir="rtl">
@@ -83,6 +86,11 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
           </div>
           <p className="invoice-paper-disclaimer">لسنا مسؤولين عن قياس الذهب بعد الاستعمال، تفقد القطعة صياغتها بعد الاستلام.</p>
         </section>
+
+        {/* Phone only: the financial trail as a stacked section of this same surface. */}
+        {financialTrail && (
+          <div className="no-print mt-3 border-t-2 border-slate-900 pt-3 text-right text-[11px]" dir="rtl">{financialTrail}</div>
+        )}
       </div>
     </div>
   );

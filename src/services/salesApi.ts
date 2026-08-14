@@ -4,4 +4,16 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 const query = (values: Record<string, string | number | undefined>) => new URLSearchParams(Object.entries(values).filter(([, value]) => value !== undefined && value !== '') as [string, string][]).toString();
 export type SalesInvoice = Invoice & { status: 'posted' | 'cancelled'; createdAt: string; cancelledAt: string | null; cancellationReason: string | null; payments?: unknown[]; itemCount?: number; customerOutstandingUSD?: number; };
 export type SaleInput = { warehouseId: string; customerId: string; items: InvoiceItem[]; scrapGoldItems: ScrapGoldItem[]; discountUSD: number; paidUSD: number; paidSYP: number; paymentMethod: PaymentMethod; exchangeRateSypPerUsd: number; notes?: string; itemPhotoUrl?: string; idempotencyKey: string; };
-export const salesApi = { list: (filters: Record<string, string | number | undefined>) => request<{ items: SalesInvoice[]; meta: { page: number; limit: number; total: number } }>(`/sales?${query(filters)}`), get: (id: string) => request<SalesInvoice>(`/sales/${id}`), create: (input: SaleInput) => request<SalesInvoice>('/sales', { method: 'POST', body: JSON.stringify(input) }), cancel: (id: string, reason: string) => request<SalesInvoice>(`/sales/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }) };
+/**
+ * The invoice screen works with `itemId`, the API with `inventoryItemId`. Mapping it here
+ * explicitly — rather than spreading the UI object — is what makes a stock sale actually
+ * deduct stock instead of being recorded as a manual line.
+ */
+const saleLine = (item: InvoiceItem) => ({
+  ...(item.itemId ? { inventoryItemId: item.itemId, soldWeightGrams: item.netWeightGrams, quantity: item.quantity ?? 1 } : {}),
+  itemName: item.itemName, category: item.category, karat: item.karat,
+  grossWeightGrams: item.grossWeightGrams, stoneWeightGrams: item.stoneWeightGrams,
+  pricePerGramUSD: item.pricePerGramUSD, laborFeeUSDPerGram: item.laborFeeUSDPerGram,
+});
+
+export const salesApi = { list: (filters: Record<string, string | number | undefined>) => request<{ items: SalesInvoice[]; meta: { page: number; limit: number; total: number } }>(`/sales?${query(filters)}`), get: (id: string) => request<SalesInvoice>(`/sales/${id}`), create: (input: SaleInput) => request<SalesInvoice>('/sales', { method: 'POST', body: JSON.stringify({ ...input, items: input.items.map(saleLine) }) }), cancel: (id: string, reason: string) => request<SalesInvoice>(`/sales/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }) };

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Coins, Plus, Printer, RotateCcw, Shuffle, X } from 'lucide-react';
-import { goldApi, equivalentWeight, GOLD_KARATS, type ApiGoldPartnerSummary, type ApiGoldReconciliation, type ApiGoldStatement } from '../services/goldApi';
+import { Coins, Package, Plus, Printer, RotateCcw, Shuffle, X } from 'lucide-react';
+import { goldApi, equivalentWeight, GOLD_KARATS, type ApiGoldHoldings, type ApiGoldPartnerSummary, type ApiGoldReconciliation, type ApiGoldStatement } from '../services/goldApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { inventoryApi } from '../services/inventoryApi';
 
@@ -13,6 +13,7 @@ export const GoldWeightAccountsView: React.FC = () => {
   const [partners, setPartners] = useState<ApiPartner[]>([]);
   const [warehouseId, setWarehouseId] = useState('');
   const [reconciliation, setReconciliation] = useState<ApiGoldReconciliation | null>(null);
+  const [holdings, setHoldings] = useState<ApiGoldHoldings | null>(null);
   const [statement, setStatement] = useState<ApiGoldStatement | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -28,12 +29,13 @@ export const GoldWeightAccountsView: React.FC = () => {
 
   const refresh = async () => {
     try {
-      const [balances, partnerList, reconcile] = await Promise.all([
+      const [balances, partnerList, reconcile, physical] = await Promise.all([
         goldApi.partnerBalances(),
         partnersApi.list({ page: 1, limit: 500 }),
         goldApi.reconciliation(),
+        goldApi.holdings({ limit: 50 }),
       ]);
-      setSummaries(balances); setPartners(partnerList.items); setReconciliation(reconcile);
+      setSummaries(balances); setPartners(partnerList.items); setReconciliation(reconcile); setHoldings(physical);
     } catch (reason: any) { setError(reason?.message || 'تعذر تحميل ذمم الأوزان من الخادم.'); }
   };
   useEffect(() => { void refresh(); void inventoryApi.warehouses().then(rows => setWarehouseId(current => current || rows[0]?.id || '')).catch(() => undefined); }, []);
@@ -96,6 +98,42 @@ export const GoldWeightAccountsView: React.FC = () => {
     </div>
 
     {error && <div className="border-r-4 border-rose-500 bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</div>}
+
+    {/* الذهب الموجود فعلاً في المحل — منفصل تماماً عن ذمم الأوزان: هذا معدن في الخزنة، لا التزام على أحد. */}
+    {holdings && holdings.totals.length > 0 && <div className="bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <b className="flex items-center gap-2 text-slate-900"><Package className="h-4 w-4 text-amber-600" />الذهب الموجود فعلياً في المحل</b>
+        <span className="text-[11px] text-slate-400">إجمالي {holdings.pureGoldTotalGrams.toFixed(3)} غ ذهب صافٍ</span>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {holdings.accounts.map(account => <div key={account.id} className="border-r-4 border-amber-400 bg-slate-50 p-3">
+          <b className="block text-xs text-slate-900">{account.name}</b>
+          {account.balances.map(row => <span key={row.karat} className="mt-1 block font-mono text-sm font-black text-amber-800">
+            {row.grams.toFixed(3)} غ <span className="font-sans text-xs font-bold text-slate-500">عيار {row.karat}</span>
+            {row.scrapGrams > 0 && <span className="mr-2 rounded-sm bg-amber-100 px-1.5 py-0.5 font-sans text-[10px] font-black text-amber-900">منها {row.scrapGrams.toFixed(3)} غ كسر مقايضة</span>}
+          </span>)}
+        </div>)}
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[640px] text-right text-xs">
+          <thead><tr className="bg-amber-50 text-slate-700"><th className="p-2">التاريخ</th><th className="p-2">المصدر</th><th className="p-2">البيان</th><th className="p-2">العيار</th><th className="p-2">وارد</th><th className="p-2">صادر</th></tr></thead>
+          <tbody>{holdings.movements.map(row => <tr key={row.id} className={row.status === 'reversed' ? 'border-b text-slate-400 line-through' : row.source === 'scrap_exchange' ? 'border-b bg-amber-50/40' : 'border-b'}>
+            <td className="p-2">{row.date}</td>
+            <td className="p-2">
+              {row.source === 'scrap_exchange'
+                ? <span className="rounded-sm bg-amber-200 px-1.5 py-0.5 text-[10px] font-black text-amber-900">كسر مقايضة</span>
+                : <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">حركة يدوية</span>}
+              {row.sourceNumber && <span className="mr-1 font-mono text-[10px] text-slate-500">{row.sourceNumber}</span>}
+            </td>
+            <td className="p-2">{row.description}</td>
+            <td className="p-2">{row.karat}</td>
+            <td className="p-2 font-bold text-emerald-700">{row.inGrams ? row.inGrams.toFixed(3) : '—'}</td>
+            <td className="p-2 font-bold text-rose-700">{row.outGrams ? row.outGrams.toFixed(3) : '—'}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] text-slate-400">الذهب المستلم مقايضةً يدخل خزنة الفرع ولا يُضاف كقطعة قابلة للبيع؛ تحويله إلى مخزون يحتاج قراراً صريحاً.</p>
+    </div>}
 
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {summaries.map(account => <button key={account.accountId} onClick={() => account.partnerId && openStatement(account.partnerId)} className="border-r-4 border-amber-400 bg-white p-4 text-right shadow-sm">

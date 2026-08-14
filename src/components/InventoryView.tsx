@@ -262,9 +262,12 @@ export const InventoryView: React.FC = () => {
     setActiveItemMenu({ item, top: rect.bottom + 6, left: Math.max(8, rect.left - 168) });
   };
 
-  // Filtered Inventory Items
+  // Filtered Inventory Items.
+  // Sellable stock plus the historical records a manual sale leaves behind: those carry a
+  // negative weight and are marked `sold`, but hiding them would make the legacy stock a
+  // manual sale represents invisible until a purchase reconciles it.
   const filteredInventory = inventory.filter(item => {
-    if (item.status !== 'in_stock') return false;
+    if (item.status !== 'in_stock' && !item.isManualSaleEntry) return false;
     if (selectedWarehouse !== 'all' && item.warehouseId !== selectedWarehouse) return false;
     if (selectedKarat !== 'all' && item.karat !== selectedKarat) return false;
     if (selectedCategory !== 'all' && item.category !== selectedCategory) return false;
@@ -311,7 +314,7 @@ export const InventoryView: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              قطع ومجوهرات الذهب ({inventory.filter(i => i.status === 'in_stock').length})
+              قطع ومجوهرات الذهب ({inventory.filter(i => i.status === 'in_stock' || i.isManualSaleEntry).length})
             </button>
 
             <button
@@ -461,6 +464,7 @@ export const InventoryView: React.FC = () => {
                             {item.code}
                           </span>
                           <span className="font-extrabold text-slate-900 text-sm">{item.name}</span>
+                          {item.isManualSaleEntry && <span className="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
                         </div>
                         <span className="bg-amber-400 text-slate-900 font-black px-2 py-0.5 rounded text-[10px]">
                           عيار {item.karat}
@@ -559,7 +563,7 @@ export const InventoryView: React.FC = () => {
                       const wh = warehouses.find(w => w.id === item.warehouseId);
 
                       return (
-                        <tr key={item.id} className="hover:bg-amber-50/50 transition">
+                        <tr key={item.id} className={item.isManualSaleEntry ? 'bg-slate-50/60 transition hover:bg-amber-50/50' : 'transition hover:bg-amber-50/50'}>
                           <td className="py-3 px-4 font-bold text-slate-900 font-sans">
                             <div className="flex items-center gap-2">
                               {item.imageUrl && <button type="button" onClick={() => setImagePreviewItem(item)} aria-label={`عرض صورة ${item.name}`} className="h-9 w-9 shrink-0 overflow-hidden rounded-sm border border-amber-300 bg-amber-50"><img src={item.imageUrl} alt="" className="h-full w-full object-cover" /></button>}
@@ -567,6 +571,7 @@ export const InventoryView: React.FC = () => {
                                 {item.code}
                               </span>
                               <span>{item.name}</span>
+                              {item.isManualSaleEntry && <span className="rounded-sm bg-slate-200 px-1.5 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
                             </div>
                           </td>
                           <td className="py-3 px-3 text-slate-600 font-sans font-medium">{item.category}</td>

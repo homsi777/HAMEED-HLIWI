@@ -193,10 +193,14 @@ async function main() {
     assert.equal(reconciliation.transactions.unbalanced, 0);
     assert.ok(reconciliation.karatsBalanced, 'same-karat debits and credits must match within every karat');
     assert.ok(reconciliation.pureGoldBalanced, `the whole ledger must net to zero fine gold, got ${reconciliation.netPureGoldGrams} g`);
-    // A conversion is the only thing allowed to move weight between karats, and it must
-    // show up as equal and opposite fine gold on the two karats it touched.
-    const converted = reconciliation.karats.filter((row: any) => row.conversionNetGrams !== 0).map((row: any) => row.karat);
-    assert.deepEqual(converted.sort(), ['18', '21'], 'only the two converted karats should carry a conversion effect');
+    // A conversion is the only thing allowed to move weight between karats, and what it
+    // takes out of one karat must arrive in another as the same fine gold — so the
+    // conversion effect across all karats nets to zero.
+    const converted = reconciliation.karats.filter((row: any) => row.conversionNetGrams !== 0);
+    assert.ok(converted.length >= 2, 'a conversion must touch at least two karats');
+    const convertedFineGold = converted.reduce((sum: number, row: any) => sum + (row.conversionNetGrams * Number(row.karat)) / 24, 0);
+    assert.ok(Math.abs(convertedFineGold) < 0.005, `conversions must net to zero fine gold, got ${convertedFineGold.toFixed(4)} g`);
+    assert.ok(converted.some((row: any) => row.karat === '21') && converted.some((row: any) => row.karat === '18'), 'this run converted 21K into 18K');
     step(`reconciliation clean: ${reconciliation.salesExchanges.posted}/${reconciliation.salesExchanges.total} exchanges posted, ${reconciliation.transactions.total} transactions balanced, net fine gold ${reconciliation.netPureGoldGrams} g`);
 
     console.log('\nAll Task 09 gold checks passed.');

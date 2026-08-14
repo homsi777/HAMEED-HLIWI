@@ -97,6 +97,69 @@ export class GoldService {
     return [...grouped.values()].map(entry => ({ ...entry, balances: entry.balances.sort((a: any, b: any) => Number(b.karat) - Number(a.karat)) }));
   }
 
+  /**
+   * The gold the shop physically holds, per branch and per karat, with the movements that
+   * put it there. Scrap taken in on a sale is metal in the safe — this is where it becomes
+   * visible as a holding rather than only as a ledger line.
+   *
+   * System accounts (the invoice settlement clearing account) are excluded: they are an
+   * accounting device, not metal on a shelf.
+   */
+  async holdings(user: AuthIdentity, query: Record<string, unknown>) {
+    const accountConditions: any[] = [eq(goldAccounts.kind, 'company'), isNull(goldAccounts.systemCode)];
+    if (query.warehouseId) { const warehouseId = uuid(query.warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); accountConditions.push(eq(goldAccounts.warehouseId, warehouseId)); }
+    else if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; accountConditions.push(ids.length ? or(inArray(goldAccounts.warehouseId, ids), isNull(goldAccounts.warehouseId))! : isNull(goldAccounts.warehouseId)); }
+    const accounts = await this.db.select().from(goldAccounts).where(and(...accountConditions)).orderBy(asc(goldAccounts.name));
+    if (!accounts.length) return { accounts: [], movements: [], totals: [], pureGoldTotalGrams: 0 };
+    const accountIds = accounts.map(account => account.id);
+
+    const [balances, movements] = await Promise.all([
+      this.db.select({
+        accountId: goldLedgerEntries.goldAccountId, karat: goldLedgerEntries.karat,
+        grams: sql<string>`coalesce(sum(${goldLedgerEntries.debitGrams} - ${goldLedgerEntries.creditGrams}), 0)`,
+        pure: sql<string>`coalesce(sum(case when ${goldLedgerEntries.debitGrams} > 0 then ${goldLedgerEntries.pureGoldGrams} else -${goldLedgerEntries.pureGoldGrams} end), 0)`,
+        // How much of this holding arrived as scrap taken in on an invoice.
+        scrapGrams: sql<string>`coalesce(sum(case when ${goldTransactions.type} = 'sale_exchange' then ${goldLedgerEntries.debitGrams} - ${goldLedgerEntries.creditGrams} else 0 end), 0)`,
+      }).from(goldLedgerEntries).innerJoin(goldTransactions, eq(goldTransactions.id, goldLedgerEntries.goldTransactionId))
+        .where(inArray(goldLedgerEntries.goldAccountId, accountIds)).groupBy(goldLedgerEntries.goldAccountId, goldLedgerEntries.karat),
+      this.db.select({ entry: goldLedgerEntries, transaction: goldTransactions, accountName: goldAccounts.name })
+        .from(goldLedgerEntries)
+        .innerJoin(goldTransactions, eq(goldTransactions.id, goldLedgerEntries.goldTransactionId))
+        .innerJoin(goldAccounts, eq(goldAccounts.id, goldLedgerEntries.goldAccountId))
+        .where(inArray(goldLedgerEntries.goldAccountId, accountIds))
+        .orderBy(desc(goldLedgerEntries.occurredAt), desc(goldLedgerEntries.createdAt)).limit(this.limit(query.limit)),
+    ]);
+
+    const totals = new Map<string, { karat: string; grams: number; pureGoldGrams: number; scrapGrams: number }>();
+    const accountRows = accounts.map(account => {
+      const rows = balances.filter(entry => entry.accountId === account.id)
+        .map(entry => ({ karat: entry.karat, grams: Number(Number(entry.grams).toFixed(3)), pureGoldGrams: Number(Number(entry.pure).toFixed(4)), scrapGrams: Number(Number(entry.scrapGrams).toFixed(3)) }))
+        .filter(entry => Math.abs(entry.grams) > 0.0005)
+        .sort((a, b) => Number(b.karat) - Number(a.karat));
+      for (const row of rows) {
+        const total = totals.get(row.karat) ?? { karat: row.karat, grams: 0, pureGoldGrams: 0, scrapGrams: 0 };
+        totals.set(row.karat, { karat: row.karat, grams: Number((total.grams + row.grams).toFixed(3)), pureGoldGrams: Number((total.pureGoldGrams + row.pureGoldGrams).toFixed(4)), scrapGrams: Number((total.scrapGrams + row.scrapGrams).toFixed(3)) });
+      }
+      return { id: account.id, name: account.name, warehouseId: account.warehouseId, balances: rows, pureGoldTotalGrams: Number(rows.reduce((sum, row) => sum + row.pureGoldGrams, 0).toFixed(4)) };
+    });
+
+    return {
+      accounts: accountRows,
+      totals: [...totals.values()].sort((a, b) => Number(b.karat) - Number(a.karat)),
+      pureGoldTotalGrams: Number([...totals.values()].reduce((sum, row) => sum + row.pureGoldGrams, 0).toFixed(4)),
+      movements: movements.map(row => ({
+        id: row.entry.id, date: row.entry.occurredAt.toISOString().slice(0, 10), accountId: row.entry.goldAccountId, accountName: row.accountName,
+        transactionNumber: row.transaction.transactionNumber, transactionType: row.transaction.type, status: row.transaction.status,
+        // `scrap_exchange` is what the screen badges as كسر مقايضة.
+        source: row.transaction.type === 'sale_exchange' ? 'scrap_exchange' : row.transaction.sourceType === 'manual' ? 'manual' : row.transaction.sourceType,
+        sourceNumber: row.transaction.sourceNumber, partnerId: row.transaction.partnerId, warehouseId: row.entry.warehouseId,
+        karat: row.entry.karat, inGrams: Number(row.entry.debitGrams), outGrams: Number(row.entry.creditGrams), pureGoldGrams: Number(row.entry.pureGoldGrams),
+        goldPricePerGramUSD: row.entry.goldPriceUsdPerGram ? Number(row.entry.goldPriceUsdPerGram) : null, valuationUSD: row.entry.valuationUsd ? Number(row.entry.valuationUsd) : null,
+        salesInvoiceId: row.entry.salesInvoiceId, salesGoldExchangeId: row.entry.salesGoldExchangeId, description: row.entry.description,
+      })),
+    };
+  }
+
   // ------------------------------------------------------------------ statement
   async partnerStatement(user: AuthIdentity, partnerId: string, query: Record<string, unknown>) {
     partnerId = uuid(partnerId, 'id');

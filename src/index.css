@@ -154,6 +154,36 @@
 .invoice-print-sheet-portrait .invoice-paper-footer { font-size: 2.2mm; }
 .invoice-print-sheet-portrait .invoice-paper-disclaimer { bottom: 5mm; font-size: 2.35mm; }
 
+/* Preview on a phone or small tablet — screen only, so the printed A5 sheet is untouched.
+   The paper is a fixed 210mm wide, which is roughly twice a phone viewport; letting it keep
+   that width is what pushed the preview off-screen. Here it fills the available width and
+   its internal type scales with it, so nothing is clipped and the page never scrolls
+   sideways. */
+@media screen and (max-width: 1023px) {
+  .invoice-print-sheet,
+  .invoice-print-sheet-portrait {
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 3mm;
+  }
+
+  .invoice-print-sheet::before { font-size: 22mm; }
+
+  .invoice-print-sheet .invoice-paper-header { min-height: 0; gap: 2mm; }
+  .invoice-print-sheet .invoice-brand strong { font-size: 8mm; }
+  .invoice-print-sheet .invoice-logo-mark svg { width: 8mm; height: 8mm; }
+  .invoice-print-sheet .invoice-paper-meta { grid-template-columns: 1fr 1fr; gap: 1.5mm; font-size: 2.8mm; }
+  .invoice-print-sheet .invoice-paper-table { font-size: 2.7mm; table-layout: fixed; }
+  .invoice-print-sheet .invoice-paper-table th,
+  .invoice-print-sheet .invoice-paper-table td { overflow-wrap: anywhere; padding: 1.2mm .6mm; }
+  .invoice-print-sheet .invoice-paper-table td { height: auto; }
+  /* Empty ruled rows are there to fill a printed page; on a phone they only add scrolling. */
+  .invoice-print-sheet .invoice-paper-blank { display: none; }
+  .invoice-print-sheet .invoice-paper-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 1mm 3mm; font-size: 2.9mm; }
+  .invoice-print-sheet .invoice-paper-disclaimer { position: static; margin-top: 2mm; font-size: 2.5mm; }
+}
+
 @media print {
   html,
   body.invoice-a5-print-active {

@@ -37,6 +37,7 @@ import {
   PaymentMethod 
 } from '../types';
 import { PrintInvoiceModal } from './PrintInvoiceModal';
+import { useIsLargeScreen } from '../hooks/useMediaQuery';
 import { salesApi, type SalesInvoice } from '../services/salesApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { purchasesApi, type PurchaseInvoice } from '../services/purchasesApi';
@@ -237,6 +238,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
 
   // Printable Invoice Modal State
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<Invoice | null>(null);
+  const isLargeScreen = useIsLargeScreen();
   const [invoiceFinancials, setInvoiceFinancials] = useState<{ invoiceId: string; vouchers: any[]; outstandingUSD: number } | null>(null);
   const [invoiceJournals, setInvoiceJournals] = useState<ApiJournal[]>([]);
 
@@ -272,6 +274,36 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     .filter(entry => entry.weightGrams > 0);
   const returnRefundApplied = money((parseFloat(returnRefundUSD) || 0) + (parseFloat(returnRefundSYP) || 0) / (returnDocument?.exchangeRateSypPerUsd || settings.usdToSypRate));
   const returnOutstandingUSD = money(Math.max(0, returnFinalTotalUSD - returnRefundApplied));
+
+  // Built once and placed in exactly one surface — the desktop corner panel or, on a
+  // phone, a stacked section inside the invoice preview itself.
+  const invoiceTrail = selectedInvoiceForPrint && invoiceFinancials?.invoiceId === selectedInvoiceForPrint.id ? (
+    <>
+      <p className="mb-2 border-b border-slate-200 pb-1.5 font-black text-slate-900">الأثر المالي للفاتورة</p>
+      <div className="space-y-1 font-mono">
+        <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">إجمالي الفاتورة</span><span>$ {selectedInvoiceForPrint.finalTotalUSD.toFixed(2)}</span></div>
+        <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">المدفوع</span><span>$ {selectedInvoiceForPrint.paidUSD.toFixed(2)}</span></div>
+        <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">المتبقي على الفاتورة</span><span>$ {selectedInvoiceForPrint.remainingDebtUSD.toFixed(2)}</span></div>
+        <div className="flex justify-between border-t border-slate-200 pt-1"><span className="font-sans font-bold text-slate-600">رصيد الطرف الإجمالي</span><span>$ {invoiceFinancials.outstandingUSD.toFixed(2)}</span></div>
+      </div>
+      {invoiceFinancials.vouchers.length > 0 ? (
+        <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
+          {invoiceFinancials.vouchers.map(voucher => (
+            <div key={voucher.id} className={voucher.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800'}>
+              <p className="font-bold">{voucher.type === 'receipt' ? 'سند قبض' : 'سند صرف'}: {voucher.voucherNumber}</p>
+              <p className="font-mono text-[10px]">{voucher.amount.toLocaleString('en-US')} {voucher.currency} — {voucher.cashboxName}</p>
+            </div>
+          ))}
+        </div>
+      ) : <p className="mt-2 border-t border-slate-200 pt-2 text-slate-500">لا توجد حركة نقدية — الفاتورة على الحساب.</p>}
+      <div className="mt-2 border-t border-slate-200 pt-2">
+        <p className="font-bold text-slate-900">الحالة المحاسبية: {invoiceJournals.length ? <span className="text-emerald-700">مرحّلة</span> : <span className="text-amber-700">غير مرحّلة</span>}</p>
+        {invoiceJournals.map(journal => (
+          <p key={journal.id} className={journal.status === 'reversed' ? 'font-mono text-[10px] text-slate-400 line-through' : 'font-mono text-[10px] text-slate-700'}>القيد: {journal.journalNumber}</p>
+        ))}
+      </div>
+    </>
+  ) : null;
 
   const handleSelectReturnLine = (line: ReturnableDocument['lines'][number], checked: boolean) => {
     setReturnQuantities(previous => ({ ...previous, [line.sourceLineId]: checked ? line.remainingQuantity.toFixed(3) : '' }));
@@ -604,7 +636,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
       try {
         let customerId = invPartnerId;
         if (!customerId) { const partner = await partnersApi.create({ name: partnerName, type: 'customer', phone: invCustomerPhone, address: 'حلب - سوريا' }); customerId = partner.id; setInvPartnerId(partner.id); }
-        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId, items: invItems.map(item => ({ ...item, soldWeightGrams: item.itemId ? item.netWeightGrams : undefined })), scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
         await refreshServerSales(); setShowCreateModal(false); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setSalesError(error?.message || 'تعذر حفظ فاتورة البيع.'); return; }
     }
@@ -1796,33 +1828,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         </div>
       )}
 
-      {/* Financial trail of the opened invoice: vouchers, cashboxes and outstanding */}
-      {selectedInvoiceForPrint && invoiceFinancials?.invoiceId === selectedInvoiceForPrint.id && (
-        <div className="no-print fixed bottom-4 left-4 z-[60] w-72 rounded-sm border-2 border-slate-900 bg-white p-3 text-right text-[11px] shadow-2xl">
-          <p className="mb-2 border-b border-slate-200 pb-1.5 font-black text-slate-900">الأثر المالي للفاتورة</p>
-          <div className="space-y-1 font-mono">
-            <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">إجمالي الفاتورة</span><span>$ {selectedInvoiceForPrint.finalTotalUSD.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">المدفوع</span><span>$ {selectedInvoiceForPrint.paidUSD.toFixed(2)}</span></div>
-            <div className="flex justify-between"><span className="font-sans font-bold text-slate-600">المتبقي على الفاتورة</span><span>$ {selectedInvoiceForPrint.remainingDebtUSD.toFixed(2)}</span></div>
-            <div className="flex justify-between border-t border-slate-200 pt-1"><span className="font-sans font-bold text-slate-600">رصيد الطرف الإجمالي</span><span>$ {invoiceFinancials.outstandingUSD.toFixed(2)}</span></div>
-          </div>
-          {invoiceFinancials.vouchers.length > 0 ? (
-            <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
-              {invoiceFinancials.vouchers.map(voucher => (
-                <div key={voucher.id} className={voucher.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800'}>
-                  <p className="font-bold">{voucher.type === 'receipt' ? 'سند قبض' : 'سند صرف'}: {voucher.voucherNumber}</p>
-                  <p className="font-mono text-[10px]">{voucher.amount.toLocaleString('en-US')} {voucher.currency} — {voucher.cashboxName}</p>
-                </div>
-              ))}
-            </div>
-          ) : <p className="mt-2 border-t border-slate-200 pt-2 text-slate-500">لا توجد حركة نقدية — الفاتورة على الحساب.</p>}
-          <div className="mt-2 border-t border-slate-200 pt-2">
-            <p className="font-bold text-slate-900">الحالة المحاسبية: {invoiceJournals.length ? <span className="text-emerald-700">مرحّلة</span> : <span className="text-amber-700">غير مرحّلة</span>}</p>
-            {invoiceJournals.map(journal => (
-              <p key={journal.id} className={journal.status === 'reversed' ? 'font-mono text-[10px] text-slate-400 line-through' : 'font-mono text-[10px] text-slate-700'}>القيد: {journal.journalNumber}</p>
-            ))}
-          </div>
-        </div>
+      {/* Financial trail of the opened invoice: vouchers, cashboxes and outstanding.
+          It is a corner panel beside the preview on large screens; on a phone the very same
+          component travels inside the preview instead, because a second fixed layer over
+          the preview is what read as two stacked previews. Exactly one copy is mounted. */}
+      {invoiceTrail && isLargeScreen && (
+        <div className="no-print fixed bottom-4 left-4 z-[60] w-72 rounded-sm border-2 border-slate-900 bg-white p-3 text-right text-[11px] shadow-2xl">{invoiceTrail}</div>
       )}
 
       {/* Printable Invoice Modal */}
@@ -1830,6 +1841,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
         <PrintInvoiceModal
           invoice={selectedInvoiceForPrint}
           onClose={() => { setSelectedInvoiceForPrint(null); setInvoiceFinancials(null); setInvoiceJournals([]); }}
+          financialTrail={!isLargeScreen && invoiceTrail ? invoiceTrail : undefined}
         />
       )}
     </div>
