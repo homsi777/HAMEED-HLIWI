@@ -23,7 +23,9 @@ export const ALL_PERMISSION_CODES = [
   'reports.view', 'users.view', 'users.manage',
   'warehouses.view', 'warehouses.manage', GLOBAL_SCOPE_PERMISSION,
   'finance.view', 'finance.cashbox.manage', 'finance.voucher.create', 'finance.voucher.cancel', 'finance.transfer',
-  'accounting.view', 'accounting.accounts.manage', 'accounting.journal.create', 'accounting.journal.reverse',
+  // `accounting.journal.post` is seeded but not yet required by any endpoint; it is listed so
+  // the General Manager holds everything the internal technical role holds.
+  'accounting.view', 'accounting.accounts.manage', 'accounting.journal.create', 'accounting.journal.post', 'accounting.journal.reverse',
   'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.adjust', 'gold_accounts.convert', 'gold_accounts.reverse',
   OWN_SCOPE_PERMISSION,
 ] as const;

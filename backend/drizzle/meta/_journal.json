@@ -92,6 +92,13 @@
       "when": 1786730961333,
       "tag": "0012_task10_authorization",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786730962333,
+      "tag": "0013_task10_general_manager_parity",
+      "breakpoints": true
     }
   ]
 }
