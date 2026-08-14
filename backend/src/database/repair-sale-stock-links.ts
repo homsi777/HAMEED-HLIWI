@@ -86,11 +86,16 @@ async function main() {
           returning quantity, net_weight_grams`);
         const after = (updated.rows ?? updated)[0];
         if (!after) throw new Error(`${row.invoice_number}: stock ${row.stock_code} no longer holds ${soldWeight} g — not repaired.`);
+        // The before-values are derived from what the update actually returned, not from
+        // the candidate snapshot: several lines can hit the same stock item in one run, and
+        // the snapshot would report the original weight for every one of them.
+        const beforeWeight = (Number(after.net_weight_grams) + Number(soldWeight)).toFixed(3);
+        const beforeQuantity = (Number(after.quantity) + Number(soldQuantity)).toFixed(3);
         await tx.execute(sql`
           insert into inventory_movements (inventory_item_id, sales_invoice_id, type, from_warehouse_id, actor_user_id, note, metadata)
           values (${row.stock_id}, ${row.sale_id}, 'sale', ${row.warehouse_id}, ${actorId},
                   ${`Task 09.1 repair of ${row.invoice_number}`},
-                  ${JSON.stringify({ quantityDelta: `-${soldQuantity}`, netWeightDeltaGrams: `-${soldWeight}`, beforeNetWeightGrams: Number(row.stock_weight).toFixed(3), beforeQuantity: Number(row.stock_quantity).toFixed(3), afterNetWeightGrams: Number(after.net_weight_grams).toFixed(3), afterQuantity: Number(after.quantity).toFixed(3), repairedBy: 'task-09.1' })}::jsonb)`);
+                  ${JSON.stringify({ quantityDelta: `-${soldQuantity}`, netWeightDeltaGrams: `-${soldWeight}`, beforeNetWeightGrams: beforeWeight, beforeQuantity, afterNetWeightGrams: Number(after.net_weight_grams).toFixed(3), afterQuantity: Number(after.quantity).toFixed(3), repairedBy: 'task-09.1' })}::jsonb)`);
         await tx.execute(sql`update sales_invoice_items set line_type = 'stock', inventory_item_id = ${row.stock_id}, item_code_snapshot = ${row.stock_code} where id = ${row.line_id}`);
         if (row.phantom_id && !row.phantom_archived) {
           await tx.execute(sql`update inventory_items set archived_at = now(), archived_by_user_id = ${actorId}, updated_at = now(), version = version + 1, notes = coalesce(notes, '') || ' — أُلغي بعد ربط البند بالمخزون الفعلي (إصلاح 09.1)' where id = ${row.phantom_id}`);

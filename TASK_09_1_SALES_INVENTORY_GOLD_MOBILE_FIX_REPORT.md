@@ -180,7 +180,77 @@ needs your eyes.**
 
 ---
 
-## Historical production records — reported, not rewritten
+## Historical production records — repaired on your instruction
+
+`npm run db:repair:sale-stock-links`. I first ran it in dry-run only and asked you to
+decide, because a saved manual line carries no inventory reference and the match is a
+strong hint rather than a recorded fact. **You instructed me to apply it, so I did**, after
+a fresh backup (`backup_pre_repair_20260814_175257.sql`).
+
+### Applied — 5 lines across 4 invoices
+
+```
+INV-2026-001 line 1 → stock 12345 −19.240 g   (1250.000 → 1230.760)
+INV-2026-003 line 2 → stock 12345 −12.000 g   (1230.760 → 1218.760)
+INV-2026-004 line 1 → stock 12345 −12.000 g   (1218.760 → 1206.760)
+INV-2026-002 line 1 → stock 12346  −5.600 g   ( 400.000 →  394.400)
+INV-2026-003 line 1 → stock 12346 −12.000 g   ( 394.400 →  382.400)
+```
+
+Final state:
+
+| صنف | قبل | بعد | الكمية |
+| --- | --- | --- | --- |
+| 12345 «اسوارة برم حلبية» | 1250.000 g | **1206.760 g** | −3 |
+| 12346 «محبس خطوبة» | 400.000 g | **382.400 g** | −2 |
+
+Each repair: deducted under the same `net_weight_grams >= sold` guard the live sale path
+uses, wrote a `sale` movement with before/after values, repointed the sale line to the real
+stock item (`line_type` manual → stock, with the real item code), archived the phantom
+record rather than deleting it, and wrote an audit row. Five audit rows exist
+(`sales.repair_stock_link`).
+
+The three genuinely manual lines were correctly left alone — «خاتم محبس», «خاتم سهرة» and
+«123» have no matching stock item, so their historical records stay live and now display
+with the `مخزون تاريخي` badge.
+
+### A defect in my own repair, found and fixed
+
+Verification showed three of the five movements carried a stale `beforeNetWeightGrams`: the
+script read the before-value from the candidate query, which was snapshotted before any
+repair ran, so the second and third deduction against the same stock item both reported the
+original 1250.000 g. The deltas and after-values were correct (they came from the
+`UPDATE … RETURNING`), and the inventory rows were correct — but §4 requires the movement
+and the row to agree, and they did not.
+
+Both were corrected: the script now derives the before-value from what the update actually
+returned, and the three affected rows were repaired in place from their own delta and
+after-value (`before = after − delta`), which is exact. Re-verified:
+
+```
+every repair movement: before + delta = after   ✓ (5/5)
+each item's row weight = its last movement's after value ✓ (12345, 12346)
+```
+
+### Idempotency confirmed
+
+A second dry run reports **0 candidates** — the repaired lines are now `stock`, so they can
+never be deducted twice. The tool also refuses a line whose phantom is already archived or
+that already has a repair movement for that item+invoice.
+
+### Nothing financial moved
+
+```
+trial balance 14,046.00 = 14,046.00 balanced ✓   journals 9 (unchanged)
+gold net fine 0.000 g ✓   sales 5 · lines 8 · vouchers 4 · cash movements 4 (all unchanged)
+invoice totals, paid and remaining amounts: unchanged
+```
+
+This is correct — the repair moves metal between records, not money.
+
+---
+
+## Original decision record — why it was not applied automatically
 
 `npm run db:repair:sale-stock-links` (dry run by default). Production dry run:
 
@@ -267,16 +337,19 @@ both processes online, zero errors since restart
 
 1. **The mobile preview needs your visual confirmation** at 390 px and 430 px — I could not
    run a real browser here.
-2. **The five historical lines are still unrepaired** and are waiting on your judgement.
-   Until then, stock 12345 and 12346 read higher than the metal actually in the drawer by
-   the weight of those sales.
+2. **The repaired weights rest on a name match, not a recorded fact.** 12345 and 12346 now
+   read 1206.760 g and 382.400 g. If any of those five lines was actually a different piece,
+   the correction is wrong for that line — worth comparing against the physical drawer once.
+   The phantom records were archived rather than deleted and every step is in `audit_logs`,
+   so any line can be traced, and `backup_pre_repair_20260814_175257.sql` predates all of it.
 3. **A cached browser bundle** on a device that has not reloaded will still send the old
    payload shape — harmless now, because the API accepts both names, but that device will
    not show the new screens until it reloads.
-4. Sales made before this fix remain recorded as manual lines. That is a faithful record of
-   what was saved; correcting it is the repair decision above, not something to do silently.
+4. **The negative quantities** (−3 and −2) are the approved transitional rule: these
+   aggregate items were created with a starting quantity of 0 while their weight was known.
+   A purchase or an explicit reconciliation is what brings the piece count back to reality.
 
 ---
 
-**TASK 09.1 = CLOSED / PASSED** for the four code defects; the historical repair and the
-mobile visual check are open items awaiting your decision.
+**TASK 09.1 = CLOSED / PASSED** — the four code defects are fixed and deployed, and the five
+historical lines were repaired on your instruction. The mobile visual check remains yours.
