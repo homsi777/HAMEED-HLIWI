@@ -9,6 +9,7 @@ import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js'
 import { FinancePostingService, type CashCurrency } from './finance-posting.service.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { AccountingPostingService } from '../accounting/accounting-posting.service.js';
+import { DocumentNumberService } from '../common/document-number.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CURRENCIES = new Set(['USD', 'SYP']);
@@ -45,6 +46,7 @@ export class FinanceService {
     @Inject(FinancePostingService) private readonly posting: FinancePostingService,
     @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService,
     @Inject(AccountingPostingService) private readonly accountingPosting: AccountingPostingService,
+    @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService,
   ) {}
 
   // ---------------------------------------------------------------- cashboxes
@@ -265,8 +267,8 @@ export class FinanceService {
       const available = await this.posting.cashboxBalance(fromCashboxId, tx);
       if (available === null || available < Number(amountFrom) - 0.0001) throw new ConflictException('The source cashbox does not hold enough cash for this transfer.');
       const year = new Date().getUTCFullYear();
-      const sequence = (await tx.insert(cashboxTransferSequences).values({ year, lastNumber: 1 }).onConflictDoUpdate({ target: cashboxTransferSequences.year, set: { lastNumber: sql`${cashboxTransferSequences.lastNumber} + 1`, updatedAt: new Date() } }).returning())[0]!.lastNumber;
-      const transfer = (await tx.insert(cashboxTransfers).values({ transferNumber: `TRF-${year}-${String(sequence).padStart(3, '0')}`, transferYear: year, sequenceNumber: sequence, fromCashboxId, toCashboxId, amountFrom, amountTo, exchangeRateSypPerUsd: exchangeRate, note, idempotencyKey, createdByUserId: user.id }).returning())[0]!;
+      const { sequence, number: generatedTransferNumber } = await this.numbers.next(tx, 'transfer');
+      const transfer = (await tx.insert(cashboxTransfers).values({ transferNumber: generatedTransferNumber, transferYear: year, sequenceNumber: sequence, fromCashboxId, toCashboxId, amountFrom, amountTo, exchangeRateSypPerUsd: exchangeRate, note, idempotencyKey, createdByUserId: user.id }).returning())[0]!;
       const label = note ? ` — ${note}` : '';
       await this.posting.postVoucher(tx, user, { type: 'payment', sourceType: 'cashbox_transfer', cashboxTransferId: transfer.id, sourceDocumentNumber: transfer.transferNumber, cashboxId: fromCashboxId, warehouseId: source.warehouseId ?? undefined, currency: source.currency as CashCurrency, amount: amountFrom, exchangeRateSypPerUsd: exchangeRate, systemNote: `مناقلة ${transfer.transferNumber} إلى ${target.name}${label}`, idempotencyKey: `${idempotencyKey}:out` });
       await this.posting.postVoucher(tx, user, { type: 'receipt', sourceType: 'cashbox_transfer', cashboxTransferId: transfer.id, sourceDocumentNumber: transfer.transferNumber, cashboxId: toCashboxId, warehouseId: target.warehouseId, currency: target.currency as CashCurrency, amount: amountTo, exchangeRateSypPerUsd: exchangeRate, systemNote: `مناقلة ${transfer.transferNumber} من ${source.name}${label}`, idempotencyKey: `${idempotencyKey}:in` });

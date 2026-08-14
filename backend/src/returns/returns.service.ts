@@ -9,6 +9,7 @@ import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js'
 import { FinancePostingService } from '../finance/finance-posting.service.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { GoldDocumentsService } from '../gold/gold-documents.service.js';
+import { DocumentNumberService } from '../common/document-number.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TYPES = new Set(['sales_return', 'purchase_return']);
@@ -43,7 +44,7 @@ const dto = (invoice: any, items: any[] = [], payments: any[] = []) => ({
 
 @Injectable()
 export class ReturnsService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(GoldDocumentsService) private readonly gold: GoldDocumentsService) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(GoldDocumentsService) private readonly gold: GoldDocumentsService, @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService) {}
 
   async list(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit); const conditions: any[] = [];
@@ -150,9 +151,9 @@ export class ReturnsService {
         const returnedSoFar = await this.returnedByLine(type, sourceLines.map(line => line.id), tx);
 
         const year = new Date().getUTCFullYear();
-        const sequence = (await tx.insert(returnInvoiceSequences).values({ year, lastNumber: 1 }).onConflictDoUpdate({ target: returnInvoiceSequences.year, set: { lastNumber: sql`${returnInvoiceSequences.lastNumber} + 1`, updatedAt: new Date() } }).returning())[0]!.lastNumber;
+        const { sequence, number: generatedReturnNumber } = await this.numbers.next(tx, 'return');
         const header = (await tx.insert(returnInvoices).values({
-          returnNumber: `RET-${year}-${String(sequence).padStart(3, '0')}`, returnYear: year, sequenceNumber: sequence, type, warehouseId, partnerId, partnerNameSnapshot: partner.name, partnerPhoneSnapshot: partner.phone, reason,
+          returnNumber: generatedReturnNumber, returnYear: year, sequenceNumber: sequence, type, warehouseId, partnerId, partnerNameSnapshot: partner.name, partnerPhoneSnapshot: partner.phone, reason,
           originalSalesInvoiceId: type === 'sales_return' ? original.id : null, originalPurchaseInvoiceId: type === 'purchase_return' ? original.id : null,
           exchangeRateSypPerUsd: exchangeRate, notes, idempotencyKey, createdByUserId: user.id, updatedByUserId: user.id,
         }).returning())[0]!;

@@ -4,6 +4,7 @@ import type { AuthIdentity } from '../auth/auth.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { cashMovements, cashboxes, partnerLedgerEntries, voucherSequences, vouchers } from '../database/schema.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
+import { DocumentNumberService } from '../common/document-number.service.js';
 
 export type CashCurrency = 'USD' | 'SYP';
 export type VoucherKind = 'receipt' | 'payment' | 'expense';
@@ -41,7 +42,7 @@ export type PostVoucherInput = {
 // moved because a sale was posted or because a cashier recorded a manual receipt.
 @Injectable()
 export class FinancePostingService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService) {}
 
   usdEquivalent(currency: CashCurrency, amount: string, exchangeRate: string) {
     return currency === 'USD' ? Number(amount).toFixed(4) : (Number(amount) / Number(exchangeRate)).toFixed(4);
@@ -69,11 +70,13 @@ export class FinancePostingService {
   async postVoucher(tx: any, user: AuthIdentity, input: PostVoucherInput) {
     const cashbox = await this.resolveCashbox(tx, input.currency, input.warehouseId, input.cashboxId);
     const year = new Date().getUTCFullYear();
-    const sequence = (await tx.insert(voucherSequences).values({ year, type: input.type, lastNumber: 1 }).onConflictDoUpdate({ target: [voucherSequences.year, voucherSequences.type], set: { lastNumber: sql`${voucherSequences.lastNumber} + 1`, updatedAt: new Date() } }).returning())[0]!.lastNumber;
+    // Receipts, payments and expenses all read `HH####`, so they share one counter: three
+    // separate ones would eventually print the same voucher number on two documents.
+    const { sequence, number: voucherNumber } = await this.numbers.next(tx, 'voucher');
     const amountUsdEquivalent = this.usdEquivalent(input.currency, input.amount, input.exchangeRateSypPerUsd);
 
     const voucher = (await tx.insert(vouchers).values({
-      voucherNumber: `${PREFIX[input.type]}-${year}-${String(sequence).padStart(3, '0')}`, voucherYear: year, sequenceNumber: sequence, type: input.type,
+      voucherNumber, voucherYear: year, sequenceNumber: sequence, type: input.type,
       sourceType: input.sourceType, sourcePaymentId: input.sourcePaymentId ?? null, sourceDocumentNumber: input.sourceDocumentNumber ?? null,
       salesInvoiceId: input.salesInvoiceId ?? null, purchaseInvoiceId: input.purchaseInvoiceId ?? null, returnInvoiceId: input.returnInvoiceId ?? null, cashboxTransferId: input.cashboxTransferId ?? null,
       partnerId: input.partnerId ?? null, partnerNameSnapshot: input.partnerName ?? null, cashboxId: cashbox.id, warehouseId: input.warehouseId ?? cashbox.warehouseId ?? null,

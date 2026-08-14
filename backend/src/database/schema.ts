@@ -159,6 +159,17 @@ export const partners = pgTable('partners', {
   index('partners_created_idx').on(table.createdAt),
 ]);
 
+/**
+ * Document numbers the owner reads on screen are plain numbers, not codes, and they run
+ * continuously for the life of the business rather than restarting each year — a per-year
+ * sequence would hand out the same number again next January. One row per document kind.
+ */
+export const documentSequences = pgTable('document_sequences', {
+  key: text('key').primaryKey(),
+  lastNumber: integer('last_number').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Sales are immutable posted facts. Amounts are stored as PostgreSQL numerics;
 // the service calculates them in SQL and never accepts client totals as truth.
 export const salesInvoiceSequences = pgTable('sales_invoice_sequences', { year: integer('year').primaryKey(), lastNumber: integer('last_number').notNull().default(0), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow() });

@@ -22,6 +22,7 @@
     "db:backfill:accounting": "tsx src/database/backfill-accounting.ts",
     "db:backfill:gold": "tsx src/database/backfill-gold.ts",
     "db:repair:sale-stock-links": "tsx src/database/repair-sale-stock-links.ts",
+    "db:renumber": "tsx src/database/renumber-documents.ts",
     "test:accounting": "tsx test/accounting-core.spec.ts",
     "test:task08": "tsx test/task08-verification.ts",
     "test:gold": "tsx test/gold-accounts.spec.ts",

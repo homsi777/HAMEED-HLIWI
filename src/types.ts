@@ -82,7 +82,7 @@ export type PaymentMethod = 'cash_usd' | 'cash_syp' | 'gold_exchange' | 'debt' |
 
 export interface Invoice {
   id: string;
-  invoiceNumber: string; // رقم الفاتورة (مثلاً INV-2026-001)
+  invoiceNumber: string; // رقم الفاتورة: بيع 100001 · شراء 1000001 · مرتجع 200001
   type: InvoiceType;
   date: string;
   customerOrSupplierId: string;

@@ -74,7 +74,7 @@ async function main() {
     assert.equal(cashSaleDetail.vouchers.length, 1);
     const receipt = cashSaleDetail.vouchers[0];
     assert.equal(receipt.type, 'receipt'); assert.equal(receipt.sourceType, 'sale'); assert.equal(receipt.amountUSD, 1000); assert.equal(receipt.currency, 'USD'); assert.equal(receipt.cashBoxId, usdBox.id);
-    assert.match(receipt.voucherNumber, /^RCV-\d{4}-\d{3}$/);
+    assert.match(receipt.voucherNumber, /^HH\d{4}$/);
     assert.equal(receipt.systemNote, `قبض آلي عن فاتورة بيع ${cashSale.invoiceNumber}`);
     assert.equal(await cashboxBalance(usdBox.id), Number((usdBefore + 1000).toFixed(4)));
     const cashVoucher = await json(await api(`/finance/vouchers/${receipt.id}`));
@@ -128,7 +128,7 @@ async function main() {
     const purchaseDetail = await json(await api(`/purchases/${purchase.id}`));
     assert.equal(purchaseDetail.vouchers.length, 1);
     assert.equal(purchaseDetail.vouchers[0].type, 'payment'); assert.equal(purchaseDetail.vouchers[0].amountUSD, 2000);
-    assert.match(purchaseDetail.vouchers[0].voucherNumber, /^PAY-\d{4}-\d{3}$/);
+    assert.match(purchaseDetail.vouchers[0].voucherNumber, /^HH\d{4}$/);
     assert.equal(purchaseDetail.vouchers[0].systemNote, `صرف آلي عن فاتورة شراء ${purchase.invoiceNumber}`);
     assert.equal(await cashboxBalance(usdBox.id), Number((usdBeforePurchase - 2000).toFixed(4)));
     assert.equal(purchaseDetail.supplierOutstandingUSD, 3000);
@@ -159,14 +159,14 @@ async function main() {
     console.log('\n— expense and cashbox transfer —');
     const usdBeforeExpense = await cashboxBalance(usdBox.id);
     const expense = await ok(await api('/finance/vouchers', 'POST', { type: 'expense', currency: 'USD', amount: '75.0000', exchangeRateSypPerUsd: RATE, warehouseId, category: 'كهرباء', userNote: 'اشتراك أمبيرات', idempotencyKey: crypto.randomUUID() }));
-    assert.match(expense.voucherNumber, /^EXP-\d{4}-\d{3}$/); assert.equal(expense.category, 'كهرباء');
+    assert.match(expense.voucherNumber, /^HH\d{4}$/); assert.equal(expense.category, 'كهرباء');
     assert.equal(await cashboxBalance(usdBox.id), Number((usdBeforeExpense - 75).toFixed(4)));
     assert.equal((await api('/finance/vouchers', 'POST', { type: 'expense', partnerId: customerId, currency: 'USD', amount: '10.0000', exchangeRateSypPerUsd: RATE, category: 'كهرباء', idempotencyKey: crypto.randomUUID() })).status, 409);
     step(`expense ${expense.voucherNumber} → cash -$75; expense with a partner rejected`);
 
     const transferFrom = await cashboxBalance(extraBox.id); const transferTo = await cashboxBalance(usdBox.id);
     const transfer = await ok(await api('/finance/transfers', 'POST', { fromCashboxId: extraBox.id, toCashboxId: usdBox.id, amountFrom: '100.0000', amountTo: '100.0000', exchangeRateSypPerUsd: RATE, note: 'تعزيز الصندوق الإضافي', idempotencyKey: crypto.randomUUID() }));
-    assert.match(transfer.transferNumber, /^TRF-\d{4}-\d{3}$/);
+    assert.match(transfer.transferNumber, /^\d{4}$/);
     assert.equal(await cashboxBalance(extraBox.id), Number((transferFrom - 100).toFixed(4)));
     assert.equal(await cashboxBalance(usdBox.id), Number((transferTo + 100).toFixed(4)));
     assert.equal((await api('/finance/transfers', 'POST', { fromCashboxId: extraBox.id, toCashboxId: usdBox.id, amountFrom: '999999.0000', amountTo: '999999.0000', exchangeRateSypPerUsd: RATE, idempotencyKey: crypto.randomUUID() })).status, 409);
