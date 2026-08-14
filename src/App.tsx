@@ -8,6 +8,7 @@ import { InvoicesView } from './components/InvoicesView';
 import { PartnersView } from './components/PartnersView';
 import { GoldWeightAccountsView } from './components/GoldWeightAccountsView';
 import { FinanceView } from './components/FinanceView';
+import { AccountingView } from './components/AccountingView';
 import { ReportsView } from './components/ReportsView';
 import { UsersView } from './components/UsersView';
 import { ShiftsView } from './components/ShiftsView';
@@ -86,7 +87,9 @@ function MainAppContent({ authenticatedUser, onLogout }: { authenticatedUser?: I
           {activeTab === 'partners' && <PartnersView />}
           {activeTab === 'gold-weight-accounts' && <GoldWeightAccountsView />}
 
-          {activeTab.startsWith('finance') && (
+          {(activeTab === 'finance-accounts' || activeTab === 'finance-ledger') && <AccountingView activeTab={activeTab} />}
+
+          {activeTab.startsWith('finance') && activeTab !== 'finance-accounts' && activeTab !== 'finance-ledger' && (
             <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} />
           )}
 

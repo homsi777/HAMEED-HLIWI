@@ -348,7 +348,7 @@ export class AccountingService {
     }
     if (!conditions.length) throw new ConflictException('A source document reference is required.');
     const rows = await this.db.selectDistinctOn([journalEntries.id], { entry: journalEntries }).from(journalEntryLines).innerJoin(journalEntries, eq(journalEntries.id, journalEntryLines.journalEntryId)).where(or(...conditions));
-    return rows.map(row => ({ id: row.entry.id, journalNumber: row.entry.journalNumber, status: row.entry.status, sourceType: row.entry.sourceType, sourceNumber: row.entry.sourceNumber, description: row.entry.description, totalDebitUSD: Number(row.entry.totalDebitUsd), date: row.entry.entryDate.toISOString().slice(0, 10) }));
+    return rows.map(row => ({ id: row.entry.id, journalNumber: row.entry.journalNumber, status: row.entry.status, sourceType: row.entry.sourceType, sourceNumber: row.entry.sourceNumber, description: row.entry.description, totalDebitUSD: Number(row.entry.totalDebitUsd), totalCreditUSD: Number(row.entry.totalCreditUsd), date: row.entry.entryDate.toISOString().slice(0, 10) }));
   }
 
   private text(value: unknown, field: string, max: number) { if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new ConflictException(`${field} is invalid.`); return value.trim(); }

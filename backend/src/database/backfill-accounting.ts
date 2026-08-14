@@ -36,7 +36,8 @@ async function main() {
     const returns = await rows(sql`select r.id, r.return_number, r.type, r.partner_id, r.warehouse_id, r.final_total_usd, r.exchange_rate_syp_per_usd, r.status, r.cancellation_reason from return_invoices r order by r.created_at`);
     const voucherRows = await rows(sql`select v.id, v.voucher_number, v.type, v.source_type, v.partner_id, v.warehouse_id, v.cashbox_id, v.expense_category, v.currency, v.amount, v.amount_usd_equivalent, v.exchange_rate_syp_per_usd, v.system_note, v.status, v.cancellation_reason from vouchers v where v.source_type <> 'cashbox_transfer' order by v.created_at`);
     const transfers = await rows(sql`select t.id, t.transfer_number, t.note, t.from_cashbox_id, t.to_cashbox_id, t.amount_from, t.amount_to, t.exchange_rate_syp_per_usd, fc.currency as from_currency, fc.warehouse_id as from_warehouse, tc.currency as to_currency, tc.warehouse_id as to_warehouse from cashbox_transfers t join cashboxes fc on fc.id = t.from_cashbox_id join cashboxes tc on tc.id = t.to_cashbox_id order by t.created_at`);
-    const partnerRows = await rows(sql`select id, name, type, opening_balance_usd from partners where opening_balance_usd <> 0 and archived_at is null order by created_at`);
+    // An archived partner's opening balance is still part of the books, so it is posted too.
+    const partnerRows = await rows(sql`select id, name, type, opening_balance_usd from partners where opening_balance_usd <> 0 order by created_at`);
     const cashboxRows = await rows(sql`select id, name, currency, warehouse_id, opening_balance from cashboxes where opening_balance <> 0 and archived_at is null order by created_at`);
 
     console.log('Eligible sources:');

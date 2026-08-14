@@ -225,7 +225,8 @@ export class FinanceService {
       if (voucher.sourceType !== 'manual' && voucher.sourceType !== 'expense') throw new ConflictException('Automatic vouchers are reversed by cancelling their source document, not on their own.');
       const reversal = await this.posting.reverseVoucher(tx, user, voucher, reason);
       if (!reversal) throw new ConflictException('Voucher is already cancelled.');
-      await this.accounting.reverseDocument(tx, user, 'voucher', voucherId, reason);
+      // The compensating voucher created above posts its own opposite journal, so the
+      // original journal must NOT also be reversed or the cash would be removed twice.
       await this.audit.record({ actorUserId: user.id, action: 'finance.voucher.cancel', module: 'finance', entityId: voucherId, warehouseId: voucher.warehouseId ?? undefined, metadata: { voucherNumber: voucher.voucherNumber, reversalVoucherNumber: reversal.voucherNumber, reason } }, tx);
     });
     const result = await this.getVoucher(user, voucherId);

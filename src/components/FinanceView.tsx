@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { VoucherType, GoldKarat } from '../types';
 import { financeApi, type ApiCashbox, type ApiCashMovement, type ApiPartnerBalance, type ApiVoucher } from '../services/financeApi';
+import { accountingApi, type ApiJournal } from '../services/accountingApi';
 
 interface FinanceViewProps {
   activeTab?: string;
@@ -50,6 +51,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const [vouchers, setVouchers] = useState<ApiVoucher[]>([]);
   const [movements, setMovements] = useState<ApiCashMovement[]>([]);
   const [partnerBalances, setPartnerBalances] = useState<ApiPartnerBalance[]>([]);
+  const [voucherJournals, setVoucherJournals] = useState<ApiJournal[]>([]);
   const [financeError, setFinanceError] = useState('');
   const [financeBusy, setFinanceBusy] = useState(false);
 
@@ -71,6 +73,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     }
   };
   useEffect(() => { void refreshFinance(); }, []);
+
   // The cashbox pickers are seeded from the backend once, never from a hardcoded id.
   useEffect(() => {
     if (!cashBoxes.length) return;
@@ -107,6 +110,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   // ------------------ MODALS & FORMS ------------------
   // 1. Voucher Modal State (Print / Detailed View)
   const [selectedVoucherForPrint, setSelectedVoucherForPrint] = useState<ApiVoucher | null>(null);
+  useEffect(() => {
+    if (!selectedVoucherForPrint) { setVoucherJournals([]); return; }
+    accountingApi.journalsBySource({ voucherId: selectedVoucherForPrint.id }).then(setVoucherJournals).catch(() => setVoucherJournals([]));
+  }, [selectedVoucherForPrint]);
 
   // 2. Embedded / Modal Voucher Creation Form State
   const [showVoucherForm, setShowVoucherForm] = useState(false);

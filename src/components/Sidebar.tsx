@@ -17,7 +17,9 @@ import {
   Coins,
   Menu,
   X,
-  Clock3
+  Clock3,
+  Layers,
+  Scale
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 
@@ -106,6 +108,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     { id: 'finance-vouchers', label: 'السندات المالية', icon: Receipt, desc: 'سندات قبض وصرف وقيد' },
     { id: 'finance-journal', label: 'دفتر اليومية العام', icon: BookOpen, desc: 'كشف الحركات والتسويات' },
     { id: 'finance-expenses', label: 'المصاريف والتشغيل', icon: Coins, desc: 'مصاريف وإيجارات وطاقة' },
+    { id: 'finance-accounts', label: 'شجرة الحسابات', icon: Layers, desc: 'الدليل المحاسبي والمطابقة' },
+    { id: 'finance-ledger', label: 'القيود والأستاذ', icon: Scale, desc: 'قيود اليومية وميزان المراجعة' },
   ];
 
   const scroll = (direction: 'left' | 'right') => {
@@ -386,6 +390,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             {activeTab === 'finance-vouchers' && 'السندات المالية'}
             {activeTab === 'finance-journal' && 'دفتر اليومية العام'}
             {activeTab === 'finance-expenses' && 'المصاريف والتشغيل'}
+            {activeTab === 'finance-accounts' && 'شجرة الحسابات'}
+            {activeTab === 'finance-ledger' && 'القيود ودفتر الأستاذ'}
             {activeTab === 'dashboard' && 'الرئيسية'}
             {activeTab === 'inventory' && 'المخزون والعيارات'}
             {activeTab === 'invoices' && 'الفواتير والمبيعات'}

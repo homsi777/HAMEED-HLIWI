@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { partners, type PartnerRow } from '../database/schema.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
@@ -12,7 +13,7 @@ const kinds = new Set<PartnerKind>(['customer', 'supplier', 'both']);
 
 @Injectable()
 export class PartnersService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService) {}
 
   async list(user: AuthIdentity, query: Record<string, unknown>) {
     const type = this.queryKind(query.type);
@@ -47,7 +48,13 @@ export class PartnersService {
     const values = this.values(input, true); this.assert(user, values.type, 'create');
     await this.assertNoDuplicate(values);
     try {
-      const created = (await this.db.insert(partners).values({ ...values, createdByUserId: user.id, updatedByUserId: user.id }).returning())[0]!;
+      // An opening balance is money the books must know about immediately, so the
+      // partner and its opening journal are written in one transaction.
+      const created = await this.db.transaction(async tx => {
+        const row = (await tx.insert(partners).values({ ...values, createdByUserId: user.id, updatedByUserId: user.id }).returning())[0]!;
+        await this.accounting.postPartnerOpening(tx, user, { id: row.id, name: row.name, type: row.type, openingBalanceUsd: Number(row.openingBalanceUsd), rate: 1 });
+        return row;
+      });
       await this.audit.record({ actorUserId: user.id, action: 'partners.create', module: 'partners', entityId: created.id, metadata: { type: created.type } });
       this.emit(created, 'partners.created');
       return partnerDto(created);

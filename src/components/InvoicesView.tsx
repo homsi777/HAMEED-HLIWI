@@ -41,6 +41,7 @@ import { salesApi, type SalesInvoice } from '../services/salesApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { purchasesApi, type PurchaseInvoice } from '../services/purchasesApi';
 import { returnsApi, type ReturnInvoice, type ReturnableDocument } from '../services/returnsApi';
+import { accountingApi, type ApiJournal } from '../services/accountingApi';
 import { inventoryApi } from '../services/inventoryApi';
 
 interface InvoicesViewProps {
@@ -158,6 +159,9 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
     const detail: any = inv.type === 'sale' ? await salesApi.get(inv.id) : inv.type === 'purchase' ? await purchasesApi.get(inv.id) : await returnsApi.get(inv.id);
     setSelectedInvoiceForPrint(detail);
     if (inv.type !== 'return') setInvoiceFinancials({ invoiceId: inv.id, vouchers: detail.vouchers ?? [], outstandingUSD: detail.customerOutstandingUSD ?? detail.supplierOutstandingUSD ?? 0 });
+    // The accounting trail is informational: a document still prints if it is unreadable.
+    const reference = inv.type === 'sale' ? { salesInvoiceId: inv.id } : inv.type === 'purchase' ? { purchaseInvoiceId: inv.id } : { returnInvoiceId: inv.id };
+    accountingApi.journalsBySource(reference).then(setInvoiceJournals).catch(() => setInvoiceJournals([]));
     return detail as Invoice;
   };
 
@@ -234,6 +238,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
   // Printable Invoice Modal State
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<Invoice | null>(null);
   const [invoiceFinancials, setInvoiceFinancials] = useState<{ invoiceId: string; vouchers: any[]; outstandingUSD: number } | null>(null);
+  const [invoiceJournals, setInvoiceJournals] = useState<ApiJournal[]>([]);
 
   // Return Wizard Modal State (PostgreSQL-backed, one original document at a time)
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -1805,6 +1810,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
               ))}
             </div>
           ) : <p className="mt-2 border-t border-slate-200 pt-2 text-slate-500">لا توجد حركة نقدية — الفاتورة على الحساب.</p>}
+          <div className="mt-2 border-t border-slate-200 pt-2">
+            <p className="font-bold text-slate-900">الحالة المحاسبية: {invoiceJournals.length ? <span className="text-emerald-700">مرحّلة</span> : <span className="text-amber-700">غير مرحّلة</span>}</p>
+            {invoiceJournals.map(journal => (
+              <p key={journal.id} className={journal.status === 'reversed' ? 'font-mono text-[10px] text-slate-400 line-through' : 'font-mono text-[10px] text-slate-700'}>القيد: {journal.journalNumber}</p>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1812,7 +1823,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType }) => {
       {selectedInvoiceForPrint && (
         <PrintInvoiceModal
           invoice={selectedInvoiceForPrint}
-          onClose={() => { setSelectedInvoiceForPrint(null); setInvoiceFinancials(null); }}
+          onClose={() => { setSelectedInvoiceForPrint(null); setInvoiceFinancials(null); setInvoiceJournals([]); }}
         />
       )}
     </div>
