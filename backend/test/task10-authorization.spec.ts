@@ -113,6 +113,9 @@ async function main() {
       items: [{ itemName: `قطعة ${note}`, category: 'خواتم ومحابس', karat: '21', grossWeightGrams: '5.000', stoneWeightGrams: '0.000', pricePerGramUSD: '70.0000', laborFeeUSDPerGram: '2.0000' }],
       scrapGoldItems: [], discountUSD: '0', paidUSD: '0', paidSYP: '0', paymentMethod: 'debt', exchangeRateSypPerUsd: RATE, notes: note, idempotencyKey: crypto.randomUUID(),
     }, auth);
+    // Since Task 11 a seller must be inside an open shift to trade at all.
+    await ok(await api('/shifts', 'POST', { openingCustodyUSD: '0', openingCustodySYP: '0', idempotencyKey: crypto.randomUUID() }, cookieA));
+    await ok(await api('/shifts', 'POST', { openingCustodyUSD: '0', openingCustodySYP: '0', idempotencyKey: crypto.randomUUID() }, cookieB));
     const invoiceA = await ok(await sell(cookieA, `A-${token}`));
     const invoiceB = await ok(await sell(cookieB, `B-${token}`));
     assert.notEqual(invoiceA.id, invoiceB.id);

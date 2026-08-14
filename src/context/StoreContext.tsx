@@ -9,7 +9,6 @@ import {
   Voucher,
   CashBox,
   User,
-  WorkShift,
   ActivityLog,
   GoldKarat
   , GoldWeightAccount, GoldDebtEntry
@@ -38,8 +37,6 @@ interface StoreContextType {
   vouchers: Voucher[];
   cashBoxes: CashBox[];
   currentUser: User;
-  shifts: WorkShift[];
-  activeShift: WorkShift | null;
   activityLogs: ActivityLog[];
   activeCurrency: 'USD' | 'SYP';
   
@@ -78,8 +75,6 @@ interface StoreContextType {
   
   // Users
   // Users are administered through the backend users API; the store no longer owns identity.
-  startShift: () => WorkShift | null;
-  closeShift: () => void;
   
   // Currency & System
   setActiveCurrency: (curr: 'USD' | 'SYP') => void;
@@ -143,7 +138,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
     active: true,
     permissions: { dashboard: true, inventory: true, invoices: true, partners: true, finance: true, reports: true, users: true, settings: true },
   }), [identity]);
-  const [shifts, setShifts] = useState<WorkShift[]>(savedData?.shifts || []);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(savedData?.activityLogs || initialActivityLogs);
   const [activeCurrency, setActiveCurrency] = useState<'USD' | 'SYP'>(savedData?.activeCurrency || 'USD');
 
@@ -159,7 +153,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
       invoices,
       vouchers,
       cashBoxes,
-      shifts,
       activityLogs,
       activeCurrency
     };
@@ -179,7 +172,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
     vouchers,
     cashBoxes,
     currentUser,
-    shifts,
     activityLogs,
     activeCurrency
   ]);
@@ -306,26 +298,8 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
     }
   };
 
-  const activeShift = shifts.find(shift => shift.userId === currentUser.id && !shift.endedAt) || null;
-
-  const startShift = (): WorkShift | null => {
-    if (activeShift) return activeShift;
-    const shift: WorkShift = { id: `shift-${Date.now()}`, userId: currentUser.id, userName: currentUser.fullName, startedAt: new Date().toISOString() };
-    setShifts(previous => [shift, ...previous]);
-    logActivity('بدء وردية', `بدأ الموظف ${currentUser.fullName} وردية جديدة`, 'user');
-    if ('Notification' in window && Notification.permission === 'granted') new Notification(settings.storeName, { body: `بدء وردية جديدة\nالموظف: ${currentUser.fullName}\n${new Date().toLocaleString('ar-SY')}`, tag: shift.id });
-    return shift;
-  };
-
-  const closeShift = () => {
-    if (!activeShift) return;
-    const relatedInvoices = invoices.filter(invoice => invoice.shiftId === activeShift.id && invoice.type === 'sale');
-    const summary = { invoiceCount: relatedInvoices.length, salesTotalUSD: relatedInvoices.reduce((sum, invoice) => sum + invoice.finalTotalUSD, 0), soldWeightGrams: relatedInvoices.reduce((sum, invoice) => sum + invoice.items.reduce((weight, item) => weight + item.netWeightGrams, 0), 0) };
-    setShifts(previous => previous.map(shift => shift.id === activeShift.id ? { ...shift, endedAt: new Date().toISOString(), ...summary } : shift));
-    logActivity('إغلاق وردية', `أنهى الموظف ${currentUser.fullName} ورديته: ${summary.invoiceCount} فاتورة بيع`, 'user');
-    if ('Notification' in window && Notification.permission === 'granted') new Notification(settings.storeName, { body: `إغلاق وردية\nالموظف: ${currentUser.fullName}\nمبيعات: $ ${summary.salesTotalUSD.toFixed(2)} • فواتير: ${summary.invoiceCount}`, tag: activeShift.id });
-  };
-
+  // Shifts are server records since Task 11. The store no longer tracks them: the seller's
+  // shift bar and the manager's الورديات module both read the shifts API directly.
   const addInvoice = (invData: Omit<Invoice, 'id' | 'invoiceNumber'>): Invoice => {
     // Returns are posted by the backend returns module; they are never written locally.
     if (invData.type === 'return') throw new Error('Returns are created through the backend returns API.');
@@ -335,7 +309,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
       ...invData,
       id: 'inv-' + Date.now(),
       invoiceNumber: invNumber,
-      shiftId: activeShift?.id
     };
 
     setInvoices(prev => [newInvoice, ...prev]);
@@ -645,7 +618,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
     setInvoices(initialInvoices);
     setVouchers(initialVouchers);
     setCashBoxes(initialCashBoxes);
-    setShifts([]);
     setActivityLogs(initialActivityLogs);
     setActiveCurrency('USD');
     localStorage.removeItem(LOCAL_STORAGE_KEY);
@@ -684,8 +656,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
         vouchers,
         cashBoxes,
         currentUser,
-        shifts,
-        activeShift,
         activityLogs,
         activeCurrency,
         updateSettings,
@@ -709,8 +679,6 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
         cancelVoucher,
         addCashBox,
         transferBetweenCashBoxes,
-        startShift,
-        closeShift,
         setActiveCurrency,
         logActivity,
         resetToDefaultData,

@@ -88,9 +88,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
     },
     {
       id: 'shifts',
-      label: 'سجل الورديات',
+      label: 'الورديات',
       icon: Clock3,
-      allowed: allows('users'),
+      allowed: allows('shifts'),
       badge: null
     },
     {
@@ -398,6 +398,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
             {activeTab === 'partners' && 'العملاء والموردين'}
             {activeTab === 'reports' && 'التقارير والتحليلات'}
             {activeTab === 'users' && 'الصلاحيات والمستخدمين'}
+            {activeTab === 'shifts' && 'الورديات'}
             {activeTab === 'settings' && 'الإعدادات العامة'}
           </span>
         </div>

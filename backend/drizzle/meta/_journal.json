@@ -99,6 +99,13 @@
       "when": 1786730962333,
       "tag": "0013_task10_general_manager_parity",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786730963333,
+      "tag": "0014_task11_shifts",
+      "breakpoints": true
     }
   ]
 }

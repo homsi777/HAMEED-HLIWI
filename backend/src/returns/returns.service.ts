@@ -11,6 +11,7 @@ import { AccountingDocumentsService } from '../accounting/accounting-documents.s
 import { GoldDocumentsService } from '../gold/gold-documents.service.js';
 import { DocumentNumberService } from '../common/document-number.service.js';
 import { AuthorizationScopeService } from '../authorization/authorization-scope.service.js';
+import { ShiftsService } from '../shifts/shifts.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TYPES = new Set(['sales_return', 'purchase_return']);
@@ -45,7 +46,7 @@ const dto = (invoice: any, items: any[] = [], payments: any[] = []) => ({
 
 @Injectable()
 export class ReturnsService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(GoldDocumentsService) private readonly gold: GoldDocumentsService, @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService, @Inject(AuthorizationScopeService) private readonly authorization: AuthorizationScopeService) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(WarehouseScopeService) private readonly scope: WarehouseScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(RealtimeGateway) private readonly realtime: RealtimeGateway, @Inject(FinancePostingService) private readonly finance: FinancePostingService, @Inject(AccountingDocumentsService) private readonly accounting: AccountingDocumentsService, @Inject(GoldDocumentsService) private readonly gold: GoldDocumentsService, @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService, @Inject(AuthorizationScopeService) private readonly authorization: AuthorizationScopeService, @Inject(ShiftsService) private readonly shifts: ShiftsService) {}
 
   async list(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit); const conditions: any[] = [];
@@ -146,6 +147,9 @@ export class ReturnsService {
         const warehouseId = original.warehouseId;
         // Raising a return is a read of the source document, so it obeys the same ownership rule.
         this.authorization.assertDocumentAccess(user, original);
+        // A seller's return belongs to the shift they are standing in, so the manager reads the
+        // real net activity of that shift rather than sales alone.
+        const shiftId = await this.shifts.resolveShiftForDocument(tx, user, warehouseId);
         const partnerId = type === 'sales_return' ? (original as any).customerPartnerId : (original as any).supplierPartnerId;
         if (expectedPartnerId && expectedPartnerId !== partnerId) throw new ConflictException(type === 'sales_return' ? 'The selected customer does not match the original sale.' : 'The selected supplier does not match the original purchase.');
         const partner = (await tx.select().from(partners).where(eq(partners.id, partnerId)).limit(1))[0];
@@ -161,7 +165,7 @@ export class ReturnsService {
         const header = (await tx.insert(returnInvoices).values({
           returnNumber: generatedReturnNumber, returnYear: year, sequenceNumber: sequence, type, warehouseId, partnerId, partnerNameSnapshot: partner.name, partnerPhoneSnapshot: partner.phone, reason,
           originalSalesInvoiceId: type === 'sales_return' ? original.id : null, originalPurchaseInvoiceId: type === 'purchase_return' ? original.id : null,
-          exchangeRateSypPerUsd: exchangeRate, notes, idempotencyKey, createdByUserId: user.id, updatedByUserId: user.id,
+          exchangeRateSypPerUsd: exchangeRate, notes, idempotencyKey, shiftId, createdByUserId: user.id, updatedByUserId: user.id,
         }).returning())[0]!;
 
         const originalGrossTotal = Number(original.goldSubtotalUsd) + Number(original.workmanshipSubtotalUsd);
@@ -230,6 +234,7 @@ export class ReturnsService {
         // Returning a sale that was paid with scrap leaves the shop owing that weight back,
         // in the original karat, until it is handed over by an explicit gold payment.
         if (type === 'sales_return') await this.gold.postSalesReturnGoldObligation(tx, user, { id: header.id, returnNumber: header.returnNumber, partnerId, warehouseId, originalSalesInvoiceId: original.id, scrapCreditAllocatedUsd: scrapTotal });
+        if (shiftId) await this.shifts.recordActivity(tx, { shiftId, type: 'return.created', actorUserId: user.id, description: `مرتجع ${header.returnNumber} — ${partner.name}`, referenceNumber: header.returnNumber, amountUsd: finalTotal.toFixed(4), returnInvoiceId: header.id });
         await this.audit.record({ actorUserId: user.id, action: 'returns.create', module: 'returns', entityId: header.id, warehouseId, metadata: { returnNumber: header.returnNumber, type, partnerId, originalInvoiceId: original.id, originalInvoiceNumber: (original as any).invoiceNumber ?? (original as any).purchaseNumber, lineCount: requested.length, finalTotalUsd: finalTotal.toFixed(4) } }, tx);
         return { id: header.id, warehouseId };
       });

@@ -39,6 +39,7 @@ import {
 import { PrintInvoiceModal } from './PrintInvoiceModal';
 import { useIsLargeScreen } from '../hooks/useMediaQuery';
 import { salesApi, type SalesInvoice } from '../services/salesApi';
+import { SellerShiftBar } from './SellerShiftBar';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { purchasesApi, type PurchaseInvoice } from '../services/purchasesApi';
 import { returnsApi, type ReturnInvoice, type ReturnableDocument } from '../services/returnsApi';
@@ -87,9 +88,6 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, canPurc
     addPartner,
     formatMoney,
     currentUser,
-    activeShift,
-    startShift,
-    closeShift
   } = useStore();
 
   const [filterType, setFilterType] = useState<'all' | 'sale' | 'purchase' | 'return'>('all');
@@ -755,10 +753,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, canPurc
         </div>
       </div>
 
-      <div className={`flex flex-col gap-2 rounded-sm border p-3 text-xs sm:flex-row sm:items-center sm:justify-between ${activeShift ? 'border-emerald-300 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
-        <div><p className="font-black text-slate-900">{activeShift ? `وردية مفتوحة: ${currentUser.fullName}` : 'لا توجد وردية مفتوحة'}</p><p className="mt-0.5 text-[10px] text-slate-600">{activeShift ? `بدأت: ${new Date(activeShift.startedAt).toLocaleString('ar-SY')}` : 'ابدأ ورديتك قبل تنفيذ المبيعات لتسجيل نشاطك باسمك.'}</p></div>
-        {activeShift ? <button onClick={() => { if (window.confirm('إغلاق الوردية الحالية؟')) closeShift(); }} className="bg-rose-600 px-4 py-2 text-xs font-black text-white">إنهاء الوردية</button> : <button onClick={() => startShift()} className="bg-emerald-600 px-4 py-2 text-xs font-black text-white">بدء وردية</button>}
-      </div>
+      {/* The seller's shift, read from the server. Managers who cannot run shifts see nothing. */}
+      <SellerShiftBar onShiftChanged={() => { void refreshServerSales(); }} />
 
       {(salesLoading || salesError || purchasesError) && <div className={`rounded-sm border px-3 py-2 text-xs font-bold ${(salesError || purchasesError) ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{salesError || purchasesError || 'جار تحميل فواتير البيع من الخادم...'}</div>}
 

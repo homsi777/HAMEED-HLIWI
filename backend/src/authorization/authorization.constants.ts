@@ -27,6 +27,7 @@ export const ALL_PERMISSION_CODES = [
   // the General Manager holds everything the internal technical role holds.
   'accounting.view', 'accounting.accounts.manage', 'accounting.journal.create', 'accounting.journal.post', 'accounting.journal.reverse',
   'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.adjust', 'gold_accounts.convert', 'gold_accounts.reverse',
+  'shifts.view', 'shifts.open', 'shifts.close.request', 'shifts.approve', 'shifts.manage',
   OWN_SCOPE_PERMISSION,
 ] as const;
 
@@ -47,6 +48,7 @@ export const WAREHOUSE_MANAGER_PERMISSIONS = [
   'finance.view', 'finance.voucher.create',
   'accounting.view',
   'gold_accounts.view', 'gold_accounts.transaction.create',
+  'shifts.view', 'shifts.approve', 'shifts.manage',
 ];
 
 // A seller sells. `data.scope.own` is what keeps two sellers standing at the same counter
@@ -56,6 +58,7 @@ export const SELLER_PERMISSIONS = [
   'returns.view', 'returns.create',
   'customers.view', 'customers.create',
   'warehouses.view',
+  'shifts.view', 'shifts.open', 'shifts.close.request',
   OWN_SCOPE_PERMISSION,
 ];
 
@@ -110,7 +113,7 @@ export const MODULE_PERMISSIONS: Record<string, string[]> = {
   accounting: ['accounting.view'],
   reports: ['reports.view'],
   users: ['users.view'],
-  shifts: ['users.view'],
+  shifts: ['shifts.manage'],
   settings: ['warehouses.manage'],
 };
 

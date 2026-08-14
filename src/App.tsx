@@ -23,7 +23,7 @@ import { infrastructureApi, type InfrastructureUser, type SessionScope } from '.
 // backend from real permission codes, so nothing here can widen access on its own.
 const TAB_MODULE: Record<string, string> = {
   dashboard: 'dashboard', inventory: 'inventory', invoices: 'invoices', partners: 'partners',
-  'gold-weight-accounts': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'users', settings: 'settings',
+  'gold-weight-accounts': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'shifts', settings: 'settings',
   'finance-accounts': 'accounting', 'finance-ledger': 'accounting',
 };
 // The order a user lands in: the most senior screen they are actually allowed to open.
