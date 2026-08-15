@@ -1,11 +1,11 @@
 # TASK 17 — Final Operational Completion
 
-**Hameed Hliwi Jewelry** · commits `3d76793`, `b40c2c9`
-**Status: PARTIALLY COMPLETE — deployed and verified on `https://hameed-hliwi.org/`.**
+**Hameed Hliwi Jewelry** · commits `3d76793`, `b40c2c9`, `b044684`, `1b31cde`
+**Status: COMPLETE on all five sections — deployed and verified on `https://hameed-hliwi.org/`.**
 
-Sections **G**, **H** and the substance of **C** are done, tested and live.
-Sections **A** and **B**, and the Customer Detail workspace inside C, are **not built**. They are
-listed exactly in §12 below rather than dressed up as finished.
+Sections **G**, **H**, **C**, **A** and **B** are built, tested and live. Two acceptance items
+were not performed and are named plainly in §12: the 390/430 device sweep and the browser console
+walk-through. Nothing else is outstanding.
 
 TASK 16 Costing/COGS remains **deferred** — nothing was built. No database migration.
 
@@ -169,7 +169,87 @@ No N+1. The balance and last-activity date for a whole page come from **one grou
 the page's partner ids, merged in memory — two queries per page in total, unchanged as the
 partner list grows. Search (name/phone/address) and pagination were already server-side.
 
-## 9. The corrupted `????` names — deleted (4 records)
+## 9. Customer workspace (§31–§38)
+
+`GET /partners/:id/workspace` — one request behind a tap on a card. It returns the authoritative
+balance, the most recent sales, purchases, vouchers, returns and account movements.
+
+§32 draws the boundary deliberately: this is a workspace, not TASK 18 Reports. Each list is the
+latest eight documents, and **the headline figure is the subledger balance, not a sum of the rows
+shown** — adding up only the visible few would understate an older account.
+
+Weight custody is deliberately *not* re-fetched here. The screen already loads every partner's
+custody balance in one grouped call, so asking again would be a second request for data the caller
+is already holding.
+
+Tapping a card now opens this; printing the statement stays where it already was, in the three-dot
+menu. The card had **always** been fully tappable with the menu correctly stopping propagation, so
+§27 needed an affordance rather than a rewrite — a `التفاصيل ›` hint and a last-activity line.
+
+The suite asserts the workspace carries no `cost`, `profit` or `margin` field, and that it refuses
+unauthenticated callers.
+
+## 10. Seller stock sales (§A)
+
+`GET /sales/available-items`, gated by **`sales.create`** — never by `inventory.view`. Selling
+stock is not managing it.
+
+* **§3 scope.** The warehouse comes from the caller's own authorization. A `warehouseId` in the
+  query can narrow a manager to a branch they already hold; anything outside the caller's scope is
+  refused outright rather than silently ignored. A browser value can never widen a seller's reach.
+* **§4 what is withheld.** The suite asserts the response contains no `cost`, `valuation`,
+  `acquisition`, `profit`, `margin`, `stocktake`, `archivedAt`, `createdByUserId` or `version`,
+  and no row from another warehouse.
+* **§9 manual sale is untouched.** Historical negative rows are excluded from the sellable list —
+  a piece that left the shop before it was digitised cannot be sold again — while the manual
+  workflow itself still produces the approved `-1` / `-8.250 g` record.
+
+Proven with a real seller account created for the run and removed afterwards:
+
+```
+seller holds sales.create, not inventory.view
+/inventory /purchases /finance /accounting /gold /users  -> all 403
+browse    20 of 321 sellable items (paginated, not downloaded whole)
+search    by code (exact first) and by name
+sell      12.000 g of 100.000 g  ->  88.000 g remains
+manual    still writes the approved negative historical record
+```
+
+The sales screen feeds its **existing** picker from this endpoint when the user has no
+`inventory.view`, mapping the response into the shape the form already renders. A manager keeps
+reading `/inventory`, which also carries the negative rows the purchase reconciliation dropdown
+needs. No visual change either way.
+
+## 11. Inventory provenance (§B)
+
+Every item now carries a derived `origin` — `purchase`, `direct`, `historical` or `used_gold` —
+with the document behind it and a ready-made `sourceDescription`.
+
+**No migration (§12).** The authoritative records already held everything required:
+`is_manual_sale_entry`, `condition` + `source_type`, and the item's movement history.
+
+**§14 — origin is the *first* movement.** A piece bought and later transferred between branches is
+still a purchase; transfer is movement history, not provenance. The suite proves this by inserting
+a transfer after a purchase and asserting the origin and the purchase number both survive.
+
+**§15/§16 — how it is shown.** A thin RTL edge (`border-r-4`) plus the badge already in use and a
+small source line. The whole card is never coloured, and **red stays reserved for negative stock**,
+which is the more urgent signal during the transition.
+
+```
+amber   شراء          من فاتورة شراء 1000004
+slate   إدخال مباشر    إدخال مباشر للمخزون
+slate   تاريخي         من فاتورة بيع 100002
+violet  مستعمل         ذهب مستعمل — من كسر مقايضة
+```
+
+**§17 terminology.** What sits in inventory is the *converted* metal, never unconverted scrap,
+which stays in the gold domain and is not stock at all.
+
+**§18 the filter is server-side**, so the choice survives pagination instead of narrowing only the
+loaded page.
+
+## 12. The corrupted `????` names — deleted (4 records)
 
 Proven before deletion, not assumed:
 
@@ -196,7 +276,7 @@ books after    14,046.0000 = 14,046.0000
 
 Your five real partners are untouched.
 
-## 10. Production deployment
+## 13. Production deployment
 
 ```
 backup    /home/ubuntu/backups/pre-task17-20260815-151413.sql   (383 KB, taken first)
@@ -208,7 +288,7 @@ untouched abooerp-backend, clotexerp-server, obada-server — all still online
 
 `drizzle-kit push` was not used.
 
-## 11. Public-site verification (§72–§75)
+## 14. Public-site verification (§72–§75)
 
 Against `https://hameed-hliwi.org/`, not localhost, using a temporary general-manager account
 created for the run and **deleted afterwards** (only `admin`, `hameed`, `nabil` remain):
@@ -232,33 +312,68 @@ Deployed bundle `index-DcXrwEkQ.js` contains `لنا عليه`, `له علينا
 `آخر حركة`. Unauthenticated `/partners`, `/accounting/reconciliation`, `/inventory`,
 `/purchases` all return `401`.
 
-## 12. What is NOT done
+### Second deployment — sections C, A and B verified live
 
-Stated plainly so nothing is assumed finished.
+A fresh temporary general-manager account was created for this pass and deleted afterwards; only
+`admin`, `hameed`, `nabil` remain, and the books read `14,046.0000 = 14,046.0000` before and after.
 
-* **§A — Seller digitized-stock sales.** Not built. No `/sales/available-items` endpoint exists;
-  a seller still has only Manual Sale. No permission was granted, so nothing regressed — the
-  capability simply is not there yet.
-* **§B — Inventory provenance.** Not built. No source derivation, badge, edge indicator or
-  filter. The design agreed in discussion (edge indicator + badge + source line, red reserved for
-  negative stock, no migration) still stands.
-* **§C Customer Detail (§31–§38).** Not built. Tapping a card still opens the existing account
-  statement, not the workspace with recent sales, vouchers, returns and custody drill-down. The
-  card itself was **already** fully tappable with the three-dot menu correctly stopping
-  propagation, so §27 needed only an affordance — a `التفاصيل ›` hint and the last-activity line
-  were added.
-* **Mobile 390/430 (§54)** was not re-verified on a device. The changes are text and one added
-  line inside existing containers, but I did not measure it and will not claim it.
-* **Console journey (§53)** was not re-walked in a browser. The already-deployed TASK 17 fixes
-  (no seller `403`s, no chart warnings, TASK 16A logout/refresh) are untouched by this work.
+```
+customer workspace   زبون نقدي عام  balance 195 (stored opening 0)
+                     1 sale · 1 voucher · 2 movements · last activity 2026-08-13
+                     newest sale 100001  total 3195  remaining 195  posted
+                     no cost / profit / margin / valuation field present
 
-## 13. Regression — ten suites, all green
+sellable stock       2 items returned, meta.total = 2
+                     no cost / valuation / acquisition / profit / margin field present
+
+provenance           page origins: 3 historical, 2 direct — every item described
+                     MANUAL-SALE-100005-1  historical  من فاتورة بيع 100005
+                     12346                 direct      إدخال مباشر للمخزون
+origin filter        purchase 0 · direct 2 · historical 3 · used_gold 0  — every row matched
+
+books                trial balance balanced · AR matches · AP matches
+```
+
+Deployed bundle `index-Bw_UeNyG.js` contains `كل المصادر`, `لا توجد ذمة أوزان`,
+`أحدث المبيعات`, `آخر حركات الحساب` and `لنا عليه`.
+
+A second backup was taken before this deployment: `/home/ubuntu/backups/pre-task17b-*.sql`. No
+migration was required for any of C, A or B.
+
+## 15. What is NOT done
+
+Two acceptance items, stated plainly rather than assumed.
+
+* **Mobile 390/430 (§54)** was not measured on a device. Every change sits inside containers that
+  already existed — a source line, an edge border, one extra `<select>`, and a bottom-sheet panel
+  that is `max-w-lg` with its own `overflow-y-auto`. I have no reason to expect overflow, but I
+  did not verify it and will not claim it.
+* **Console journey (§53)** was not walked in a browser. The endpoints behind every screen were
+  exercised directly against production and returned `200`/`403`/`401` as intended, and the
+  already-deployed fixes (no seller `403`s, no chart warnings, TASK 16A logout/refresh) were not
+  touched by this work.
+
+**One pre-existing test failure, verified as not mine.** `task091-regression` fails at
+`the holding movement must be traceable to the sale`. I checked out the pre-session backend source
+(`bc36012`) and ran it again: **it fails identically**, so it predates this work. It is the shared
+development database — `/gold/holdings` returns a capped movement window that hundreds of
+accumulated test movements now push the target row out of. Production is unaffected; the gold
+ledger balances there.
+
+**`used_gold` provenance has no live example.** The rule is implemented and asserted, but
+production currently holds zero converted-scrap items, so the live check returned `0 rows` for
+that filter rather than proving the label on real data. The conversion path itself is covered by
+the TASK 13 suite.
+
+## 16. Regression — twelve suites green, one pre-existing failure
 
 TASK 07 Finance · TASK 07.1 · TASK 08 Accounting · TASK 10 Authorization · TASK 11 Shifts ·
 TASK 12 History · TASK 13 Used Gold · TASK 14 Weight Custody · TASK 16A Logout browser path ·
-TASK 17 partner reconciliation.
+TASK 17 partner reconciliation · TASK 17 seller stock sales · TASK 17 inventory provenance.
 
-## 14. Safety confirmations
+`task091-regression` fails for a reason that predates this work — see §12.
+
+## 17. Safety confirmations
 
 * **COGS remains deferred** — no FIFO, no cost layers, no valuation, no COGS account, no costing
   migration. No costing file was touched.
@@ -268,21 +383,26 @@ TASK 17 partner reconciliation.
   and the temporary verification account. Books identical before and after both.
 * **Backend authorization unchanged** — no permission, role preset or scope rule was modified.
 
-## 15. Commits
+## 18. Commits
 
 ```
 3d76793  fix(accounting): classify partner balances by entry direction, not partner role
 b40c2c9  fix(partners): derive the customer balance from the subledger, not a stored column
+b044684  feat(partners): customer workspace behind a tap on the card
+1b31cde  feat: seller stock sales and inventory provenance
 ```
 
 ---
 
 ## Verdict
 
-**TASK 17 is not CLOSED.** G and H are complete and verified in production; C is complete on the
-defect you actually pointed at — the balances are real now — but its detail workspace, and all of
-A and B, remain.
+All five sections are built, deployed and verified against the live site. The accounting fix was
+the gate the rest depended on: with AR/AP classified by the direction of each entry rather than by
+a master role, purchasing from a customer became safe and `both` partners reconcile correctly for
+the first time.
 
-The accounting fix was the gate: with AR/AP classified by direction, purchasing from a customer is
-safe, and `both` partners reconcile correctly for the first time. Everything remaining can be
-built on top of books that finally agree with themselves.
+I am not marking TASK 17 **CLOSED** myself, because two acceptance items in §54 and §53 ask for a
+device and a browser, and I used neither. Everything they cover was verified another way and is
+recorded above; thejudgement of whether that is enough is yours.
+
+Reports (TASK 18) were not started, as instructed.
