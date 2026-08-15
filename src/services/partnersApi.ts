@@ -12,7 +12,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export type ApiPartner = Partner & { version: number; isActive: boolean; archivedAt: string | null; updatedAt: string; taxNumber: string };
+// `balanceUSD` is the authoritative subledger position (TASK 17 §21), not a stored column;
+// `openingBalanceUSD` is the editable opening figure it starts from, and `lastActivityAt` is the
+// date of the partner's most recent posted movement — null when they have never transacted.
+export type ApiPartner = Partner & { version: number; isActive: boolean; archivedAt: string | null; updatedAt: string; taxNumber: string; openingBalanceUSD: number; lastActivityAt: string | null };
 export type PartnerList = { items: ApiPartner[]; meta: { page: number; limit: number; total: number } };
 export type PartnerInput = { name: string; type: PartnerType; phone?: string; address?: string; notes?: string; taxNumber?: string; openingBalanceUSD?: number; openingGoldBalance21kGrams?: number };
 

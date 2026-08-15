@@ -165,6 +165,41 @@ async function main() {
     assert.equal((await json(await api('/accounting/trial-balance'))).balanced, true);
     step('§65 the purchase return posted, reconciliation held, the role stayed "customer" and the trial balance still balances');
 
+    // ---------------------------------------------------------------- §21 the balance is derived
+    // The management screen used to read `partners.opening_balance_usd`, which is zero for every
+    // partner in production while their subledgers legitimately held $195 and $6,735. The API now
+    // returns the opening figure plus the subledger, and the sign follows the ledger: a debit —
+    // an unpaid sale — is positive and means the partner owes the shop.
+    const owing = await ok(await api('/partners', 'POST', { name: `رصيد مشتق ${token}`, type: 'customer' }));
+    assert.equal((await json(await api(`/partners/${owing.id}`))).balanceUSD, 0, 'a partner with no history is خالص');
+
+    const stock = await ok(await api('/purchases', 'POST', {
+      warehouseId, supplierId: partner.id,
+      items: [{ itemName: `صنف رصيد ${token}`, code: `T17BAL-${token}`, category: 'متنوع', karat: '21', quantity: '1.000', grossWeightGrams: '10.000', stoneWeightGrams: '0.000', pricePerGramUSD: '50.0000', laborFeeUSDPerGram: '0.0000' }],
+      discountUSD: '0', paidUSD: '0', paidSYP: '0', paymentMethod: 'debt', exchangeRateSypPerUsd: RATE, idempotencyKey: crypto.randomUUID(),
+    }));
+    const [balanceItem] = await sql`select id from inventory_items where code = ${`T17BAL-${token}`} limit 1`;
+
+    // §61: a $1,000 sale settled by $300 leaves $700 owed to the shop.
+    await ok(await api('/sales', 'POST', {
+      warehouseId, customerId: owing.id,
+      items: [{ inventoryItemId: balanceItem.id, pricePerGramUSD: '100.0000', laborFeeUSDPerGram: '0.0000' }],
+      scrapGoldItems: [], discountUSD: '0', paidUSD: '300.0000', paidSYP: '0', paymentMethod: 'mixed',
+      exchangeRateSypPerUsd: RATE, idempotencyKey: crypto.randomUUID(),
+    }));
+    const owingDto = await json(await api(`/partners/${owing.id}`));
+    assert.equal(owingDto.balanceUSD, 700, `§61 expected لنا عليه $700 from the subledger, got ${owingDto.balanceUSD}`);
+    assert.equal(owingDto.openingBalanceUSD, 0, 'the stored opening column must still be zero — proving the balance is derived, not read from it');
+    assert.ok(owingDto.lastActivityAt, '§29 the last activity date must be returned with the partner');
+    step(`§21/§61 balance derived from the subledger: $${owingDto.balanceUSD} owed while the stored column is $${owingDto.openingBalanceUSD}`);
+
+    // §29/§66: the list carries the same derived balance, so the screen needs no per-row request.
+    const listed = await json(await api(`/partners?search=${encodeURIComponent(owing.name)}&page=1&limit=10`));
+    const listedRow = listed.items.find((row: any) => row.id === owing.id);
+    assert.ok(listedRow, 'the search must find the partner by name');
+    assert.equal(listedRow.balanceUSD, 700, `the list must carry the derived balance too, got ${listedRow.balanceUSD}`);
+    step('§66 the paginated list returns the derived balance in the page itself — no per-customer request');
+
     console.log('\nTASK 17 partner reconciliation suite passed.');
   } finally {
     await sql.end();

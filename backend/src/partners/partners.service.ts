@@ -4,7 +4,7 @@ import type { AuthIdentity } from '../auth/auth.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
-import { partners, type PartnerRow } from '../database/schema.js';
+import { partnerLedgerEntries, partners, type PartnerRow } from '../database/schema.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 
 type PartnerKind = 'customer' | 'supplier' | 'both';
@@ -35,13 +35,35 @@ export class PartnersService {
       this.db.select().from(partners).where(where).orderBy(orderBy, asc(partners.id)).limit(limit).offset((page - 1) * limit),
       this.db.select({ total: sql<number>`count(*)::int` }).from(partners).where(where),
     ]);
-    return { items: rows.map(partnerDto), meta: { page, limit, total: countRows[0]?.total ?? 0 } };
+    // §66: one grouped query covers the whole page. Asking per row would be a request per
+    // customer, which this screen is opened often enough to feel and which stops scaling as
+    // soon as the partner list grows.
+    const positions = await this.ledgerPositions(rows.map(row => row.id));
+    return { items: rows.map(row => partnerDto(row, positions.get(row.id))), meta: { page, limit, total: countRows[0]?.total ?? 0 } };
   }
 
   async get(user: AuthIdentity, id: string, includeArchived = false) {
     const partner = await this.find(id, includeArchived);
     this.assert(user, partner.type, 'view');
-    return partnerDto(partner);
+    return partnerDto(partner, await this.ledgerPosition(partner.id));
+  }
+
+  /** The subledger side of a single partner's balance — see `partnerDto` for why it is not stored. */
+  private async ledgerPosition(partnerId: string) {
+    return (await this.ledgerPositions([partnerId])).get(partnerId) ?? { ledgerNet: 0, lastActivityAt: null };
+  }
+
+  /** The same figures for a whole page of partners, grouped in one query rather than one each. */
+  private async ledgerPositions(partnerIds: string[]) {
+    const positions = new Map<string, { ledgerNet: number; lastActivityAt: Date | null }>();
+    if (!partnerIds.length) return positions;
+    const rows = await this.db.select({
+      partnerId: partnerLedgerEntries.partnerId,
+      net: sql<string>`coalesce(sum(${partnerLedgerEntries.debitUsd} - ${partnerLedgerEntries.creditUsd}), 0)`,
+      lastActivityAt: sql<Date | null>`max(${partnerLedgerEntries.occurredAt})`,
+    }).from(partnerLedgerEntries).where(inArray(partnerLedgerEntries.partnerId, partnerIds)).groupBy(partnerLedgerEntries.partnerId);
+    for (const row of rows) positions.set(row.partnerId, { ledgerNet: Number(row.net), lastActivityAt: row.lastActivityAt });
+    return positions;
   }
 
   async create(user: AuthIdentity, input: Record<string, unknown>) {
@@ -70,7 +92,7 @@ export class PartnersService {
     if (!updated[0]) throw new ConflictException('Partner changed by another user.');
     await this.audit.record({ actorUserId: user.id, action: 'partners.update', module: 'partners', entityId: current.id, metadata: { type: updated[0].type } });
     this.emit(updated[0], 'partners.updated');
-    return partnerDto(updated[0]);
+    return partnerDto(updated[0], await this.ledgerPosition(updated[0].id));
   }
 
   async archive(user: AuthIdentity, id: string, version: number) {
@@ -86,7 +108,7 @@ export class PartnersService {
     const restored = await this.db.update(partners).set({ isActive: true, archivedAt: null, archivedByUserId: null, updatedByUserId: user.id, version: sql`${partners.version} + 1`, updatedAt: new Date() }).where(and(eq(partners.id, current.id), eq(partners.version, version), isNotNull(partners.archivedAt))).returning();
     if (!restored[0]) throw new ConflictException('Partner changed by another user.');
     await this.audit.record({ actorUserId: user.id, action: 'partners.reactivate', module: 'partners', entityId: current.id, metadata: { type: current.type } }); this.emit(restored[0], 'partners.reactivated');
-    return partnerDto(restored[0]);
+    return partnerDto(restored[0], await this.ledgerPosition(restored[0].id));
   }
 
   private async find(id: string, includeArchived = false) { id = this.uuid(id, 'id'); const row = (await this.db.select().from(partners).where(and(eq(partners.id, id), includeArchived ? undefined : isNull(partners.archivedAt))).limit(1))[0]; if (!row) throw new NotFoundException('Partner not found.'); return row; }
@@ -118,4 +140,11 @@ export class PartnersService {
 const normalizeText = (value: string) => value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ar');
 const normalizePhone = (value: string) => value.trim().replace(/[\s()\-.]/g, '').replace(/^00/, '+');
 const decimal = (value: unknown, field: string, scale: number) => { const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : Number.NaN; if (!Number.isFinite(number) || Math.abs(number) >= 10 ** (16 - scale)) throw new ConflictException(`${field} is invalid.`); return number.toFixed(scale); };
-const partnerDto = (partner: PartnerRow) => ({ id: partner.id, name: partner.name, type: partner.type, phone: partner.phone ?? '', address: partner.address ?? '', notes: partner.notes ?? '', taxNumber: partner.taxNumber ?? '', balanceUSD: Number(partner.openingBalanceUsd), goldBalance21kGrams: Number(partner.openingGoldBalance21kGrams), isActive: partner.isActive, version: partner.version, archivedAt: partner.archivedAt?.toISOString() ?? null, createdAt: partner.createdAt.toISOString(), updatedAt: partner.updatedAt.toISOString() });
+// TASK 17 §21: `balanceUSD` is the partner's real position — the opening balance plus every
+// posted movement in their subledger — not the static `partners.opening_balance_usd` column.
+//
+// Reading that column alone was why the management screen showed `0$` for everyone: production
+// has it at zero for all nine partners while the subledger legitimately carried $195 and $6,735.
+// A stored balance is also the thing TASK 07/08 deliberately abolished, so the ledger is the
+// only honest source. Callers that already know the ledger net pass it in; the rest resolve it.
+const partnerDto = (partner: PartnerRow, extras?: { ledgerNet?: number; lastActivityAt?: Date | string | null }) => ({ id: partner.id, name: partner.name, type: partner.type, phone: partner.phone ?? '', address: partner.address ?? '', notes: partner.notes ?? '', taxNumber: partner.taxNumber ?? '', balanceUSD: Number((Number(partner.openingBalanceUsd) + (extras?.ledgerNet ?? 0)).toFixed(4)), openingBalanceUSD: Number(partner.openingBalanceUsd), goldBalance21kGrams: Number(partner.openingGoldBalance21kGrams), lastActivityAt: extras?.lastActivityAt ? new Date(extras.lastActivityAt).toISOString() : null, isActive: partner.isActive, version: partner.version, archivedAt: partner.archivedAt?.toISOString() ?? null, createdAt: partner.createdAt.toISOString(), updatedAt: partner.updatedAt.toISOString() });
