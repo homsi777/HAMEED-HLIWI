@@ -4,11 +4,12 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { PermissionGuard } from '../permissions/permission.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
 import { UsedInventoryService } from './used-inventory.service.js';
+import { WeightCustodyService } from './weight-custody.service.js';
 import { GoldService } from './gold.service.js';
 
 @Controller('gold') @UseGuards(AuthGuard, PermissionGuard)
 export class GoldController {
-  constructor(@Inject(GoldService) private readonly gold: GoldService, @Inject(UsedInventoryService) private readonly used: UsedInventoryService) {}
+  constructor(@Inject(GoldService) private readonly gold: GoldService, @Inject(UsedInventoryService) private readonly used: UsedInventoryService, @Inject(WeightCustodyService) private readonly custody: WeightCustodyService) {}
 
   @Get('karats') @RequirePermissions('gold_accounts.view') karats() { return this.gold.karats(); }
   @Get('accounts') @RequirePermissions('gold_accounts.view') listAccounts(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.listAccounts(request.identity!, query); }
@@ -16,6 +17,26 @@ export class GoldController {
 
   // Scrap available for reclassification, and the manager decision that reclassifies it.
   // Literal paths are declared before any `:id` route so they are not captured as ids.
+  // ذمم الأوزان — physical weight custody. A recipient may be an existing partner, an existing
+  // custody person, or a name typed on the spot; none of them requires a Customer.
+  @Get('custody/people') @RequirePermissions('gold_accounts.view')
+  custodyPeople(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.custody.searchPeople(request.identity!, query); }
+
+  @Get('custody/balances') @RequirePermissions('gold_accounts.view')
+  custodyBalances(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.custody.balances(request.identity!, query); }
+
+  @Get('custody/people/:personId') @RequirePermissions('gold_accounts.view')
+  custodyPerson(@Req() request: FastifyRequest, @Param('personId') personId: string) { return this.custody.personDetail(request.identity!, personId); }
+
+  @Post('custody/people') @RequirePermissions('gold_accounts.transaction.create')
+  createCustodyPerson(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.custody.createPerson(request.identity!, body); }
+
+  @Post('custody/hand-out') @RequirePermissions('gold_accounts.transaction.create')
+  custodyHandOut(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.custody.handOut(request.identity!, body); }
+
+  @Post('custody/receive') @RequirePermissions('gold_accounts.transaction.create')
+  custodyReceive(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.custody.receive(request.identity!, body); }
+
   @Get('holdings/scrap') @RequirePermissions('gold_accounts.view')
   availableScrap(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.used.available(request.identity!, query); }
 

@@ -4,6 +4,7 @@ import { goldApi, equivalentWeight, GOLD_KARATS, type ApiGoldHoldings, type ApiG
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { inventoryApi } from '../services/inventoryApi';
 import { UsedGoldPanel } from './UsedGoldPanel';
+import { WeightCustodyPanel } from './WeightCustodyPanel';
 
 // ذمم الأوزان: a weight is only meaningful together with its karat, so every balance is
 // listed per karat and never merged. Positive means the partner owes the shop.
@@ -113,6 +114,9 @@ export const GoldWeightAccountsView: React.FC = () => {
     </div>
 
     {error && <div className="border-r-4 border-rose-500 bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</div>}
+
+    {/* ذمم الأوزان بالمعنى الحقيقي: عهدة وزن لدى أشخاص، والشخص ليس بالضرورة عميلاً. */}
+    <WeightCustodyPanel warehouseId={warehouseId || undefined} />
 
     {/* كسر المقايضة القابل للتحويل — منفصل عن ذمم الأوزان ولا يمسّها. */}
     <UsedGoldPanel onConverted={() => { void refresh(); }} />

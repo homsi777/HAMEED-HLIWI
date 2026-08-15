@@ -54,6 +54,13 @@ export const goldApi = {
   reverseUsedConversion: (id: string, reason: string) => request<UsedConversion>(`/gold/used-conversions/${id}/reverse`, { method: 'POST', body: JSON.stringify({ reason }) }),
   accounts: (filters: Record<string, string | undefined> = {}) => request<ApiGoldAccount[]>(`/gold/accounts?${query(filters)}`),
   partnerBalances: (filters: Record<string, string | undefined> = {}) => request<ApiGoldPartnerSummary[]>(`/gold/partners?${query(filters)}`),
+  // ذمم الأوزان: a custody recipient may be a custody person, an existing partner of any role,
+  // or simply a name typed on the spot. None of them requires a commercial Customer.
+  custodySearch: (search: string) => request<CustodySearchResult>(`/gold/custody/people?search=${encodeURIComponent(search)}`),
+  custodyBalances: (filters: Record<string, string | undefined> = {}) => request<{ people: CustodyCard[]; canManage: boolean }>(`/gold/custody/balances?${query(filters)}`),
+  custodyPerson: (personId: string) => request<CustodyPersonDetail>(`/gold/custody/people/${personId}`),
+  custodyHandOut: (input: CustodyMovementInput) => request<CustodyMovement>('/gold/custody/hand-out', { method: 'POST', body: JSON.stringify(input) }),
+  custodyReceive: (input: CustodyMovementInput) => request<CustodyMovement>('/gold/custody/receive', { method: 'POST', body: JSON.stringify(input) }),
   partnerBalance: (partnerId: string) => request<ApiGoldPartnerBalance>(`/gold/partners/${partnerId}`),
   statement: (partnerId: string, filters: Record<string, string | number | undefined> = {}) => request<ApiGoldStatement>(`/gold/partners/${partnerId}/statement?${query(filters)}`),
   transactions: (filters: Record<string, string | number | undefined> = {}) => request<{ items: ApiGoldTransaction[]; meta: { page: number; limit: number; total: number } }>(`/gold/transactions?${query(filters)}`),
@@ -93,4 +100,27 @@ export interface ConvertToUsedInput {
   name: string; category: string; code: string;
   inventoryMode: 'individual' | 'aggregate'; quantity: string;
   managerNote: string; idempotencyKey: string;
+}
+
+export interface CustodyPersonRef { id: string; name: string; phone: string | null; note?: string | null; partnerId?: string | null; partnerName?: string | null; partnerType?: string | null; kind: 'custody_person' | 'partner'; }
+export interface CustodySearchResult { people: CustodyPersonRef[]; partners: CustodyPersonRef[]; canCreate: boolean; }
+export interface CustodyKaratBalance { karat: string; handedOutGrams: number; receivedBackGrams: number; outstandingGrams: number; }
+export interface CustodyCard { personId: string; name: string; phone: string | null; note: string | null; partnerId: string | null; balances: CustodyKaratBalance[]; settled: boolean; }
+export interface CustodyMovementRow {
+  id: string; transactionId: string; transactionNumber: string;
+  type: 'handed_out' | 'received_back'; karat: string; weightGrams: number;
+  occurredAt: string; status: string; warehouseId: string | null; warehouseName: string | null;
+  actor: string; note: string; description: string;
+}
+export interface CustodyPersonDetail {
+  id: string; name: string; phone: string | null; note: string | null; partnerId: string | null;
+  partnerName?: string | null; partnerType?: string | null;
+  balances: CustodyKaratBalance[]; settled: boolean; movements: CustodyMovementRow[];
+}
+export interface CustodyMovement { transactionId: string; transactionNumber: string; description: string; person: { id: string; name: string } | null; }
+/** `person` accepts exactly one of: custodyPersonId, partnerId, or a typed name. */
+export interface CustodyMovementInput {
+  person: { custodyPersonId?: string; partnerId?: string; name?: string };
+  karat: string; weightGrams: string; warehouseId?: string; note?: string;
+  allowReverseBalance?: boolean; idempotencyKey: string;
 }

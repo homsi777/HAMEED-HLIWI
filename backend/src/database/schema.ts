@@ -217,7 +217,7 @@ export const accountClass = pgEnum('account_class', ['asset', 'liability', 'equi
 export const accountNormalBalance = pgEnum('account_normal_balance', ['debit', 'credit']);
 export const journalStatus = pgEnum('journal_status', ['posted', 'reversed']);
 export const journalSourceType = pgEnum('journal_source_type', ['manual', 'opening', 'sale', 'purchase', 'sales_return', 'purchase_return', 'voucher', 'cashbox_transfer']);
-export const goldAccountKind = pgEnum('gold_account_kind', ['partner', 'company']);
+export const goldAccountKind = pgEnum('gold_account_kind', ['partner', 'company', 'custody_person']);
 export const goldTransactionType = pgEnum('gold_transaction_type', ['opening', 'sale_exchange', 'sales_return_obligation', 'purchase_settlement', 'purchase_return_adjustment', 'receipt', 'payment', 'conversion', 'reversal', 'used_inventory_conversion']);
 export const goldTransactionStatus = pgEnum('gold_transaction_status', ['posted', 'reversed']);
 
@@ -446,9 +446,32 @@ export const journalEntryLines = pgTable('journal_entry_lines', {
 // Sign convention, used everywhere: a positive net on a partner account means the
 // partner owes the shop gold; a negative net means the shop owes the partner. On a
 // company account a positive net is gold physically held.
+// ذمم الأوزان: someone the shop hands gold to for work and expects back. A polisher or a
+// craftsman is not a customer, so custody deliberately has its own light identity rather than
+// pushing every worker into the commercial partners table.
+export const weightCustodyPeople = pgTable('weight_custody_people', {
+  id: id(),
+  displayName: text('display_name').notNull(),
+  // Trimmed and space-collapsed, so "أبو محمد" typed twice reuses one person instead of
+  // creating a second. Genuinely different names stay different: nothing is fuzzy-merged.
+  normalizedName: text('normalized_name').notNull(),
+  phone: text('phone'),
+  note: text('note'),
+  // Optional identity reference only. Linking never changes the partner's commercial role.
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }),
+  isActive: boolean('is_active').notNull().default(true),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  ...timestamps,
+}, table => [
+  uniqueIndex('weight_custody_people_name_unique').on(table.normalizedName),
+  uniqueIndex('weight_custody_people_partner_unique').on(table.partnerId).where(sql`${table.partnerId} is not null`),
+  index('weight_custody_people_active_idx').on(table.isActive),
+]);
+
 export const goldAccounts = pgTable('gold_accounts', {
   id: id(), kind: goldAccountKind('kind').notNull(), name: text('name').notNull(), systemCode: text('system_code'),
-  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
+  partnerId: uuid('partner_id').references(() => partners.id, { onDelete: 'restrict' }), custodyPersonId: uuid('custody_person_id').references(() => weightCustodyPeople.id, { onDelete: 'restrict' }), warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }),
   isActive: boolean('is_active').notNull().default(true), notes: text('notes'),
   createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
 }, table => [
@@ -456,7 +479,10 @@ export const goldAccounts = pgTable('gold_accounts', {
   uniqueIndex('gold_accounts_company_warehouse_unique').on(table.warehouseId).where(sql`${table.kind} = 'company' and ${table.warehouseId} is not null`),
   uniqueIndex('gold_accounts_system_code_unique').on(table.systemCode).where(sql`${table.systemCode} is not null`),
   index('gold_accounts_kind_idx').on(table.kind, table.isActive),
-  check('gold_accounts_scope_check', sql`(${table.kind} = 'partner' and ${table.partnerId} is not null) or (${table.kind} = 'company' and ${table.partnerId} is null)`),
+  uniqueIndex('gold_accounts_custody_person_unique').on(table.custodyPersonId).where(sql`${table.custodyPersonId} is not null`),
+  // A custody account belongs to a person, a partner account to a partner, and a company
+  // account to neither. The three are mutually exclusive by construction.
+  check('gold_accounts_scope_check', sql`(${table.kind}::text = 'partner' and ${table.partnerId} is not null and ${table.custodyPersonId} is null) or (${table.kind}::text = 'company' and ${table.partnerId} is null and ${table.custodyPersonId} is null) or (${table.kind}::text = 'custody_person' and ${table.custodyPersonId} is not null and ${table.partnerId} is null)`),
 ]);
 
 export const goldTransactionSequences = pgTable('gold_transaction_sequences', { year: integer('year').notNull(), type: text('type').notNull(), lastNumber: integer('last_number').notNull().default(0), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow() }, table => [primaryKey({ columns: [table.year, table.type], name: 'gold_transaction_sequences_pk' })]);

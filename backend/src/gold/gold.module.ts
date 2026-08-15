@@ -8,9 +8,10 @@ import { GoldController } from './gold.controller.js';
 import { GoldDocumentsService } from './gold-documents.service.js';
 import { GoldPostingService } from './gold-posting.service.js';
 import { UsedInventoryService } from './used-inventory.service.js';
+import { WeightCustodyService } from './weight-custody.service.js';
 import { GoldService } from './gold.service.js';
 
 // GoldDocumentsService is exported so Sales and Returns can post the gold effect of a
 // document inside their own transaction, exactly as they do for finance and accounting.
-@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule, RealtimeModule], controllers: [GoldController], providers: [UsedInventoryService, GoldService, GoldPostingService, GoldDocumentsService], exports: [GoldPostingService, GoldDocumentsService] })
+@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule, RealtimeModule], controllers: [GoldController], providers: [UsedInventoryService, WeightCustodyService, GoldService, GoldPostingService, GoldDocumentsService], exports: [GoldPostingService, GoldDocumentsService] })
 export class GoldModule {}
