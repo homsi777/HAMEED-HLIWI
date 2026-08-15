@@ -127,9 +127,29 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   // made the app create a duplicate supplier for someone it already knew. §47: appearing here
   // never changes anyone's role.
   const refreshSuppliers = async () => { if (!canViewSuppliers) return; try { const response = await partnersApi.list({ page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerSuppliers(response.items); } catch { /* Quick supplier creation remains available. */ } };
-  // Inventory management is not a selling permission. Without `inventory.view` this screen
-  // simply does not ask, and never surfaces a purchase error for a screen it does not own.
-  const refreshOperationalStock = async () => { if (!canViewInventory) return; try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); } };
+  // TASK 17 §3: inventory management is not a selling permission, but a seller still has to be
+  // able to sell what is already digitised. A manager keeps reading `/inventory`, which also
+  // carries the negative historical rows the purchase reconciliation dropdown needs; a seller
+  // reads the scoped sellable list instead, which their `sales.create` alone unlocks.
+  //
+  // Both are mapped into the one shape this screen already renders, so the picker is unchanged.
+  const refreshOperationalStock = async () => {
+    if (canViewInventory) {
+      try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); }
+      catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); }
+      return;
+    }
+    try {
+      const sellable = await salesApi.availableItems({ page: 1, limit: 100 });
+      setServerInventory(sellable.items.map(item => ({
+        ...item, status: 'in_stock' as const, netWeightGrams: item.availableWeightGrams, isManualSaleEntry: false,
+      })) as unknown as typeof legacyInventory);
+      // The seller's own warehouse is the only one they can sell from, so the picker is seeded
+      // from what came back rather than from a warehouses endpoint they cannot read.
+      const own = sellable.items[0];
+      if (own) setServerWarehouses([{ id: own.warehouseId, name: own.warehouseName }] as any);
+    } catch { /* Manual sale stays available whatever happens to the stock lookup. */ }
+  };
   const refreshServerReturns = async () => { try { setReturnsError(''); const response = await returnsApi.list({ page: returnsPage, limit: 30 }); setServerReturns(response.items); setReturnsTotal(response.meta.total); } catch (reason: any) { setReturnsError(reason?.message || 'تعذر تحميل المرتجعات من الخادم.'); } };
   useEffect(() => { void refreshServerSales(); }, [salesPage]);
   useEffect(() => { if (canPurchase) void refreshServerPurchases(); }, [purchasesPage, canPurchase]);

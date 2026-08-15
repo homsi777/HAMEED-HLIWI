@@ -13,7 +13,38 @@ const categories = new Set(['أطقم', 'خواتم ومحابس', 'أساور �
 const decimal = (value: unknown, name: string, minimum = 0) => { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < minimum || !/^\d+(\.\d{1,3})?$/.test(String(value))) throw new ConflictException(`${name} is invalid.`); return parsed.toFixed(3); };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const money = (value: unknown, name: string) => { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < 0) throw new ConflictException(`${name} is invalid.`); return parsed.toFixed(4); };
-const itemDto = (item: typeof inventoryItems.$inferSelect) => ({ ...item, grossWeightGrams: Number(item.grossWeightGrams), stoneWeightGrams: Number(item.stoneWeightGrams), netWeightGrams: Number(item.netWeightGrams), quantity: Number(item.quantity), laborFeeUSDPerGram: Number(item.laborFeeUsdPerGram), totalLaborFeeUSD: Number(item.totalLaborFeeUsd), imageUrl: publicImageUrl(item.imagePath, item.updatedAt) });
+// TASK 17 §11–§14: where a piece came from, derived from records that already exist.
+export type ItemOrigin = 'purchase' | 'direct' | 'historical' | 'used_gold';
+const ORIGIN_LABEL: Record<ItemOrigin, string> = {
+  purchase: 'من فاتورة شراء',
+  direct: 'إدخال مباشر للمخزون',
+  historical: 'من فاتورة بيع',
+  // §17: what sits in inventory is the converted metal, never the unconverted scrap, which stays
+  // in the gold domain and is not stock at all.
+  used_gold: 'ذهب مستعمل — من كسر مقايضة',
+};
+
+/**
+ * §12/§13: one rule, in one place, reading only authoritative records — no migration.
+ *
+ * §14: origin is the *first* movement, so a piece bought and later transferred between branches
+ * is still a purchase. Transfer is movement history, not provenance.
+ */
+const originOf = (item: typeof inventoryItems.$inferSelect, firstMovementType?: string): ItemOrigin =>
+  item.isManualSaleEntry ? 'historical'
+    : (item.condition === 'used' && item.sourceType === 'gold_scrap_conversion') || firstMovementType === 'gold_used_conversion' ? 'used_gold'
+    : firstMovementType === 'purchase' ? 'purchase'
+    : 'direct';
+
+const itemDto = (item: typeof inventoryItems.$inferSelect, provenance?: { type?: string; documentNumber?: string | null }) => {
+  const origin = originOf(item, provenance?.type);
+  const document = provenance?.documentNumber ?? null;
+  return { ...item, grossWeightGrams: Number(item.grossWeightGrams), stoneWeightGrams: Number(item.stoneWeightGrams), netWeightGrams: Number(item.netWeightGrams), quantity: Number(item.quantity), laborFeeUSDPerGram: Number(item.laborFeeUsdPerGram), totalLaborFeeUSD: Number(item.totalLaborFeeUsd), imageUrl: publicImageUrl(item.imagePath, item.updatedAt),
+    origin,
+    sourceDocumentNumber: document,
+    // The line the card shows: the origin, and the document behind it when there is one.
+    sourceDescription: document && (origin === 'purchase' || origin === 'historical') ? `${ORIGIN_LABEL[origin]} ${document}` : ORIGIN_LABEL[origin] };
+};
 
 @Injectable()
 export class InventoryService {
@@ -31,11 +62,48 @@ export class InventoryService {
     if (typeof query.search === 'string' && query.search.trim()) { const pattern = `%${query.search.trim()}%`; conditions.push(or(ilike(inventoryItems.code, pattern), ilike(inventoryItems.name, pattern))!); }
     const sortMap = { createdAt: inventoryItems.createdAt, code: inventoryItems.code, netWeightGrams: inventoryItems.netWeightGrams, category: inventoryItems.category, karat: inventoryItems.karat } as const;
     const sort = typeof query.sort === 'string' && query.sort in sortMap ? query.sort as keyof typeof sortMap : 'createdAt'; const order = query.order === 'asc' ? asc(sortMap[sort]) : desc(sortMap[sort]);
+    // §18: filtering by origin happens on the server so it survives pagination. The same rule the
+    // DTO uses is expressed here in SQL, with the first movement resolved per row.
+    const firstMovementType = sql`(select earliest.type from inventory_movements earliest where earliest.inventory_item_id = ${inventoryItems.id} order by earliest.created_at asc, earliest.id asc limit 1)`;
+    const usedGold = sql`((${inventoryItems.condition} = 'used' and ${inventoryItems.sourceType} = 'gold_scrap_conversion') or ${firstMovementType} = 'gold_used_conversion')`;
+    if (typeof query.origin === 'string' && query.origin !== 'all') {
+      if (query.origin === 'historical') conditions.push(eq(inventoryItems.isManualSaleEntry, true));
+      else if (query.origin === 'used_gold') conditions.push(and(eq(inventoryItems.isManualSaleEntry, false), usedGold)!);
+      else if (query.origin === 'purchase') conditions.push(and(eq(inventoryItems.isManualSaleEntry, false), sql`not ${usedGold}`, sql`${firstMovementType} = 'purchase'`)!);
+      else if (query.origin === 'direct') conditions.push(and(eq(inventoryItems.isManualSaleEntry, false), sql`not ${usedGold}`, sql`coalesce(${firstMovementType}::text, '') <> 'purchase'`)!);
+    }
+
     const where = and(...conditions); const [rows, count] = await Promise.all([this.db.select().from(inventoryItems).where(where).orderBy(order).limit(limit).offset((page - 1) * limit), this.db.select({ count: sql<number>`count(*)` }).from(inventoryItems).where(where)]);
-    return { items: rows.map(itemDto), meta: { page, limit, total: Number(count[0]?.count ?? 0) } };
+    // §66-style: one grouped lookup for the whole page rather than one per row.
+    const provenance = await this.provenance(rows.map(row => row.id));
+    return { items: rows.map(row => itemDto(row, provenance.get(row.id))), meta: { page, limit, total: Number(count[0]?.count ?? 0) } };
   }
 
-  async get(user: AuthIdentity, id: string) { const item = await this.findAccessible(user, this.uuid(id, 'id')); return itemDto(item); }
+  async get(user: AuthIdentity, id: string) { const item = await this.findAccessible(user, this.uuid(id, 'id')); return itemDto(item, (await this.provenance([item.id])).get(item.id)); }
+
+  /**
+   * §13/§14: the first movement of each item, with the document behind it. One query for a whole
+   * page — `distinct on` picks the earliest row per item, which is what makes a later transfer
+   * unable to overwrite where the piece actually came from.
+   */
+  private async provenance(itemIds: string[]) {
+    const found = new Map<string, { type: string; documentNumber: string | null }>();
+    if (!itemIds.length) return found;
+    const rows = await this.db.execute(sql`
+      select distinct on (movement.inventory_item_id)
+             movement.inventory_item_id as item_id,
+             movement.type::text        as type,
+             coalesce(purchase.purchase_number, sale.invoice_number) as document_number
+        from inventory_movements movement
+        left join purchase_invoices purchase on purchase.id = movement.purchase_invoice_id
+        left join sales_invoices    sale     on sale.id     = movement.sales_invoice_id
+       where movement.inventory_item_id in (${sql.join(itemIds.map(value => sql`${value}::uuid`), sql`, `)})
+       order by movement.inventory_item_id, movement.created_at asc, movement.id asc`);
+    for (const row of rows as unknown as Array<{ item_id: string; type: string; document_number: string | null }>) {
+      found.set(row.item_id, { type: row.type, documentNumber: row.document_number });
+    }
+    return found;
+  }
 
   async create(user: AuthIdentity, input: Record<string, unknown>) {
     this.scope.assertAccess(user, this.uuid(this.text(input.warehouseId, 'warehouseId'), 'warehouseId')); const values = this.values(input);
@@ -53,7 +121,7 @@ export class InventoryService {
   async transfer(user: AuthIdentity, id: string, input: Record<string, unknown>) { id = this.uuid(id, 'id'); const destination = this.uuid(this.text(input.destinationWarehouseId, 'destinationWarehouseId'), 'destinationWarehouseId'); this.scope.assertAccess(user, destination); const expected = Number(input.version); return this.db.transaction(async tx => { const current = (await tx.select().from(inventoryItems).where(and(eq(inventoryItems.id, id), isNull(inventoryItems.archivedAt))).limit(1))[0]; if (!current) throw new NotFoundException('Inventory item not found.'); this.scope.assertAccess(user, current.warehouseId); if (expected !== current.version) throw new ConflictException('Inventory item changed by another user.'); if (current.warehouseId === destination) throw new ConflictException('Destination warehouse is the current warehouse.'); const updated = (await tx.update(inventoryItems).set({ warehouseId: destination, version: sql`${inventoryItems.version} + 1`, updatedByUserId: user.id, updatedAt: new Date() }).where(and(eq(inventoryItems.id, id), eq(inventoryItems.version, expected))).returning())[0]; if (!updated) throw new ConflictException('Inventory item changed by another user.'); await tx.insert(inventoryMovements).values({ inventoryItemId: id, type: 'transfer', fromWarehouseId: current.warehouseId, toWarehouseId: destination, actorUserId: user.id, note: this.optional(input.note) }); await this.audit.record({ actorUserId: user.id, action: 'inventory.transfer', module: 'inventory', entityId: id, warehouseId: destination, metadata: { fromWarehouseId: current.warehouseId, toWarehouseId: destination } }); this.realtime.emitToWarehouse(current.warehouseId, 'inventory.transferred', { id, fromWarehouseId: current.warehouseId }); this.realtime.emitToWarehouse(destination, 'inventory.transferred', { id, toWarehouseId: destination }); return itemDto(updated); }); }
 
   async movements(user: AuthIdentity, id: string) { id = this.uuid(id, 'id'); await this.findAccessible(user, id); return this.db.select().from(inventoryMovements).where(eq(inventoryMovements.inventoryItemId, id)).orderBy(desc(inventoryMovements.createdAt)); }
-  async stocktake(user: AuthIdentity, warehouseId: string) { warehouseId = this.uuid(warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); const rows = await this.db.select().from(inventoryItems).where(and(eq(inventoryItems.warehouseId, warehouseId), eq(inventoryItems.status, 'in_stock'), isNull(inventoryItems.archivedAt))); const snapshot = rows.map(itemDto); const netWeight = snapshot.reduce((sum, row) => sum + row.netWeightGrams, 0).toFixed(3); const created = (await this.db.insert(stocktakes).values({ warehouseId, actorUserId: user.id, itemCount: snapshot.length, netWeightGrams: netWeight, snapshot }).returning())[0]!; await this.audit.record({ actorUserId: user.id, action: 'inventory.stocktake', module: 'inventory', entityId: created.id, warehouseId }); return created; }
+  async stocktake(user: AuthIdentity, warehouseId: string) { warehouseId = this.uuid(warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); const rows = await this.db.select().from(inventoryItems).where(and(eq(inventoryItems.warehouseId, warehouseId), eq(inventoryItems.status, 'in_stock'), isNull(inventoryItems.archivedAt))); const snapshot = rows.map(row => itemDto(row)); const netWeight = snapshot.reduce((sum, row) => sum + row.netWeightGrams, 0).toFixed(3); const created = (await this.db.insert(stocktakes).values({ warehouseId, actorUserId: user.id, itemCount: snapshot.length, netWeightGrams: netWeight, snapshot }).returning())[0]!; await this.audit.record({ actorUserId: user.id, action: 'inventory.stocktake', module: 'inventory', entityId: created.id, warehouseId }); return created; }
   async stocktakesFor(user: AuthIdentity, warehouseId?: string) { if (warehouseId) { warehouseId = this.uuid(warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); } const conditions = warehouseId ? [eq(stocktakes.warehouseId, warehouseId)] : this.scope.canAccessAll(user) ? [] : [inArray(stocktakes.warehouseId, this.scope.allowedWarehouseIds(user) ?? [])]; return this.db.select().from(stocktakes).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(stocktakes.createdAt)).limit(50); }
 
   private async findAccessible(user: AuthIdentity, id: string, db: Database = this.db) { const item = (await db.select().from(inventoryItems).where(and(eq(inventoryItems.id, id), isNull(inventoryItems.archivedAt))).limit(1))[0]; if (!item) throw new NotFoundException('Inventory item not found.'); this.scope.assertAccess(user, item.warehouseId); return item; }

@@ -16,4 +16,9 @@ const saleLine = (item: InvoiceItem) => ({
   pricePerGramUSD: item.pricePerGramUSD, laborFeeUSDPerGram: item.laborFeeUSDPerGram,
 });
 
-export const salesApi = { list: (filters: Record<string, string | number | undefined>) => request<{ items: SalesInvoice[]; meta: { page: number; limit: number; total: number } }>(`/sales?${query(filters)}`), get: (id: string) => request<SalesInvoice>(`/sales/${id}`), create: (input: SaleInput) => request<SalesInvoice>('/sales', { method: 'POST', body: JSON.stringify({ ...input, items: input.items.map(saleLine) }) }), cancel: (id: string, reason: string) => request<SalesInvoice>(`/sales/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }) };
+// TASK 17 §3: the stock a seller may sell, reachable with `sales.create` alone. It deliberately
+// carries none of the management fields `/inventory` returns — selling stock is not managing it.
+export type SellableItem = { id: string; code: string; name: string; category: string; karat: string; inventoryMode: 'individual' | 'aggregate'; condition: string; source: string | null; quantity: number; availableWeightGrams: number; grossWeightGrams: number; stoneWeightGrams: number; laborFeeUSDPerGram: number; imageUrl?: string; warehouseId: string; warehouseName: string };
+
+export const salesApi = { availableItems: (filters: Record<string, string | number | undefined> = {}) => request<{ items: SellableItem[]; meta: { page: number; limit: number; total: number } }>(`/sales/available-items?${query(filters)}`),
+  list: (filters: Record<string, string | number | undefined>) => request<{ items: SalesInvoice[]; meta: { page: number; limit: number; total: number } }>(`/sales?${query(filters)}`), get: (id: string) => request<SalesInvoice>(`/sales/${id}`), create: (input: SaleInput) => request<SalesInvoice>('/sales', { method: 'POST', body: JSON.stringify({ ...input, items: input.items.map(saleLine) }) }), cancel: (id: string, reason: string) => request<SalesInvoice>(`/sales/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }) };

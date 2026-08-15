@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { AuthIdentity } from '../auth/auth.service.js'; import { AuditService } from '../audit/audit.service.js'; import { DATABASE, type Database } from '../database/database.module.js';
-import { inventoryItems, inventoryMovements, partners, returnInvoices, salesGoldExchanges, salesInvoiceItems, salesInvoiceSequences, salesInvoices, salesPayments, users } from '../database/schema.js'; import { RealtimeGateway } from '../realtime/realtime.gateway.js'; import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js';
+import { inventoryItems, inventoryMovements, partners, returnInvoices, salesGoldExchanges, salesInvoiceItems, salesInvoiceSequences, salesInvoices, salesPayments, users, warehouses } from '../database/schema.js'; import { RealtimeGateway } from '../realtime/realtime.gateway.js'; import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js';
 import { FinancePostingService } from '../finance/finance-posting.service.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { GoldDocumentsService } from '../gold/gold-documents.service.js';
@@ -35,6 +35,67 @@ const dto = (invoice: any, items: any[] = [], exchanges: any[] = [], payments: a
     const ledgerNet = await this.finance.partnerNetUsd(invoice.customerPartnerId);
     const financials = await this.finance.documentFinancials(invoice.id, 'sales');
     return { ...dto(invoice, items, exchanges, payments), customerOutstandingUSD: Number((Number(customer[0]?.openingBalanceUsd ?? 0) + ledgerNet).toFixed(4)), invoiceDebtUSD: Number(operationalDebt[0]?.value ?? 0), ...financials }; }
+  /**
+   * TASK 17 §3–§8: the stock this caller is allowed to sell, without holding `inventory.view`.
+   *
+   * Selling from inventory is not managing it. Nothing an inventory manager needs is returned —
+   * no acquisition cost, no valuation, no stocktake or movement history, no archived rows, no
+   * other warehouse — only the fields the sale form has to render.
+   *
+   * §3: the warehouse comes from the caller's own scope. A `warehouseId` in the query can narrow
+   * a manager's view to a branch they already hold, and `assertAccess` refuses anything else, so
+   * a browser-supplied id can never widen a seller's reach.
+   *
+   * §9: manual historical sales stay a separate workflow. Their records carry negative weights
+   * and quantities, so they are excluded here — a piece that left the shop before it was ever
+   * entered cannot be sold again.
+   */
+  async availableItems(user: AuthIdentity, query: Record<string, unknown>) {
+    const page = this.page(query.page); const limit = this.limit(query.limit);
+    const conditions: any[] = [eq(inventoryItems.status, 'in_stock'), isNull(inventoryItems.archivedAt), eq(inventoryItems.isManualSaleEntry, false)];
+
+    const warehouseId = query.warehouseId ? id(query.warehouseId, 'warehouseId') : undefined;
+    if (warehouseId) { this.scope.assertAccess(user, warehouseId); conditions.push(eq(inventoryItems.warehouseId, warehouseId)); }
+    else if (!this.scope.canAccessAll(user)) {
+      const ids = this.scope.allowedWarehouseIds(user) ?? [];
+      if (!ids.length) return { items: [], meta: { page, limit, total: 0 } };
+      conditions.push(inArray(inventoryItems.warehouseId, ids));
+    }
+
+    // §7: an aggregate line is sellable while it still has weight; an individual piece while it
+    // still has a quantity. Anything drawn down to nothing is simply not offered.
+    conditions.push(or(and(eq(inventoryItems.inventoryMode, 'aggregate'), gt(inventoryItems.netWeightGrams, '0')), and(eq(inventoryItems.inventoryMode, 'individual'), gt(inventoryItems.quantity, '0')))!);
+
+    // §5: the seller should not have to know the code. Both are searched, and an exact code match
+    // sorts first so scanning or typing a full code lands on the piece immediately.
+    const search = typeof query.search === 'string' ? query.search.trim() : '';
+    if (search) conditions.push(or(ilike(inventoryItems.code, `%${search}%`), ilike(inventoryItems.name, `%${search}%`))!);
+
+    const where = and(...conditions);
+    const [rows, countRows] = await Promise.all([
+      this.db.select({ item: inventoryItems, warehouseName: warehouses.name })
+        .from(inventoryItems).innerJoin(warehouses, eq(warehouses.id, inventoryItems.warehouseId)).where(where)
+        .orderBy(search ? sql`case when lower(${inventoryItems.code}) = lower(${search}) then 0 else 1 end` : asc(inventoryItems.name), asc(inventoryItems.name), asc(inventoryItems.id))
+        .limit(limit).offset((page - 1) * limit),
+      this.db.select({ total: sql<number>`count(*)::int` }).from(inventoryItems).where(where),
+    ]);
+
+    return {
+      items: rows.map(({ item, warehouseName }) => ({
+        id: item.id, code: item.code, name: item.name, category: item.category, karat: item.karat,
+        inventoryMode: item.inventoryMode, condition: item.condition, source: item.sourceType,
+        quantity: Number(item.quantity), availableWeightGrams: Number(item.netWeightGrams),
+        grossWeightGrams: Number(item.grossWeightGrams), stoneWeightGrams: Number(item.stoneWeightGrams),
+        // Selling-side workmanship, which the sale form pre-fills. This is not acquisition cost —
+        // `inventory_items` holds none, and TASK 16 costing stays deferred.
+        laborFeeUSDPerGram: Number(item.laborFeeUsdPerGram),
+        imageUrl: item.imagePath ?? undefined,
+        warehouseId: item.warehouseId, warehouseName,
+      })),
+      meta: { page, limit, total: countRows[0]?.total ?? 0 },
+    };
+  }
+
   async create(user: AuthIdentity, input: Record<string, unknown>) { const warehouseId = id(input.warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); const customerId = id(input.customerId ?? input.customerPartnerId, 'customerId'); const key = typeof input.idempotencyKey === 'string' && UUID.test(input.idempotencyKey) ? input.idempotencyKey : (() => { throw new ConflictException('idempotencyKey is invalid.'); })(); const preexisting = await this.db.select({ id: salesInvoices.id }).from(salesInvoices).where(eq(salesInvoices.idempotencyKey, key)).limit(1); if (preexisting[0]) return this.get(user, preexisting[0].id);
     const lines = this.lines(input.items); const exchanges = this.exchanges(input.scrapGoldItems); const discount = numeric(input.discountUSD ?? '0', 'discountUSD'); const exchangeRate = numeric(input.exchangeRateSypPerUsd, 'exchangeRateSypPerUsd', 4, 0.0001); const paymentMethod = typeof input.paymentMethod === 'string' && METHODS.has(input.paymentMethod) ? input.paymentMethod as any : (() => { throw new ConflictException('paymentMethod is invalid.'); })(); const paidUsd = numeric(input.paidUSD ?? '0', 'paidUSD'); const paidSyp = numeric(input.paidSYP ?? '0', 'paidSYP', 2); const notes = this.optional(input.notes, 2000); const photo = this.photo(input.itemPhotoUrl);
     let invoiceId: string; try { invoiceId = await this.db.transaction(async tx => { const customer = (await tx.select().from(partners).where(and(eq(partners.id, customerId), eq(partners.isActive, true), isNull(partners.archivedAt), inArray(partners.type, ['customer','both']))).limit(1))[0]; if (!customer) throw new ConflictException('The selected partner is not an active customer.'); const shiftId = await this.shifts.resolveShiftForDocument(tx, user, warehouseId); const year = new Date().getUTCFullYear(); const { sequence, number: invoiceNumber } = await this.numbers.next(tx, 'sale'); const invoice = (await tx.insert(salesInvoices).values({ invoiceNumber, invoiceYear: year, sequenceNumber: sequence, warehouseId, customerPartnerId: customer.id, customerNameSnapshot: customer.name, customerPhoneSnapshot: customer.phone, paymentMethod, exchangeRateSypPerUsd: exchangeRate, discountUsd: discount, notes, itemPhotoData: photo, idempotencyKey: key, shiftId, createdByUserId: user.id, updatedByUserId: user.id }).returning())[0]!;

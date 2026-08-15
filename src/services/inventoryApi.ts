@@ -1,7 +1,11 @@
 import type { InventoryItem, Warehouse } from '../types';
 const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '/api/v1';
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(`${base}${path}`, { ...options, credentials: 'include', headers: { ...(options.body === undefined || options.body instanceof Blob ? {} : { 'Content-Type': 'application/json' }), ...options.headers } }); if (!response.ok) throw { status: response.status, ...(await response.json().catch(() => ({})) as object) }; return response.json() as Promise<T>; }
-export type ApiInventoryItem = InventoryItem & { version: number; imagePath?: string; archivedAt?: string | null };
+// TASK 17 §13: `origin` is derived on the server from the item's first movement, so a later
+// transfer never rewrites where a piece came from, and `sourceDescription` is the line the card
+// shows. Both come back with every item — no extra request, no client-side inference.
+export type ItemOrigin = 'purchase' | 'direct' | 'historical' | 'used_gold';
+export type ApiInventoryItem = InventoryItem & { version: number; imagePath?: string; archivedAt?: string | null; origin: ItemOrigin; sourceDocumentNumber: string | null; sourceDescription: string };
 export const inventoryApi = {
   list: (query: Record<string, string | number | undefined>) => request<{ items: ApiInventoryItem[]; meta: { page: number; limit: number; total: number } }>(`/inventory?${new URLSearchParams(Object.entries(query).filter(([, value]) => value !== undefined && value !== '') as [string, string][]).toString()}`),
   create: (input: Record<string, unknown>) => request<ApiInventoryItem>('/inventory', { method: 'POST', body: JSON.stringify(input) }), update: (id: string, input: Record<string, unknown>) => request<ApiInventoryItem>(`/inventory/${id}`, { method: 'PATCH', body: JSON.stringify(input) }), archive: (id: string, version: number) => request(`/inventory/${id}`, { method: 'DELETE', body: JSON.stringify({ version }) }), transfer: (id: string, input: Record<string, unknown>) => request<ApiInventoryItem>(`/inventory/${id}/transfer`, { method: 'POST', body: JSON.stringify(input) }),

@@ -49,6 +49,20 @@ const readNumber = (value: string) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+// TASK 17 §15: provenance is carried by a thin RTL edge plus the badge already in use and a
+// small source line — never by colouring the whole card. §16 keeps red reserved for negative
+// stock, which stays the more urgent signal during the digitisation transition.
+const ORIGIN_EDGE: Record<string, string> = {
+  purchase: 'border-r-amber-400',
+  direct: 'border-r-slate-200',
+  historical: 'border-r-slate-400',
+  used_gold: 'border-r-violet-400',
+};
+const originEdge = (origin?: string) => ORIGIN_EDGE[origin ?? 'direct'] ?? 'border-r-slate-200';
+// The source line: one quiet sentence saying where the piece came from.
+const SourceLine = ({ item }: { item: { sourceDescription?: string } }) =>
+  item.sourceDescription ? <p className="mt-0.5 text-[10px] font-bold text-slate-400">{item.sourceDescription}</p> : null;
+
 export const InventoryView: React.FC = () => {
   const { 
     goldPrices, 
@@ -60,10 +74,13 @@ export const InventoryView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>('all');
   const [selectedKarat, setSelectedKarat] = useState<string>('all');
+  // TASK 17 §18: filtered on the server, so the choice survives pagination instead of only
+  // narrowing whichever page happens to be loaded.
+  const [selectedOrigin, setSelectedOrigin] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [inventoryPage, setInventoryPage] = useState(1);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const inventoryModule = useInventoryModule({ search: searchQuery, warehouseId: selectedWarehouse === 'all' ? '' : selectedWarehouse, karat: selectedKarat === 'all' ? '' : selectedKarat, category: selectedCategory === 'all' ? '' : selectedCategory, status: 'all', page: String(inventoryPage) });
+  const inventoryModule = useInventoryModule({ search: searchQuery, warehouseId: selectedWarehouse === 'all' ? '' : selectedWarehouse, karat: selectedKarat === 'all' ? '' : selectedKarat, category: selectedCategory === 'all' ? '' : selectedCategory, origin: selectedOrigin === 'all' ? '' : selectedOrigin, status: 'all', page: String(inventoryPage) });
   const { inventory, warehouses, inventoryVersions, total: inventoryTotal, loading, error, mutate } = inventoryModule;
 
   // Modals
@@ -387,6 +404,21 @@ export const InventoryView: React.FC = () => {
               </select>
             </div>
 
+            {/* Source Filter — TASK 17 §18 */}
+            <div className={showMobileFilters ? '' : 'hidden sm:block'}>
+              <select
+                value={selectedOrigin}
+                onChange={e => { setSelectedOrigin(e.target.value); setInventoryPage(1); }}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-sm focus:outline-none focus:border-amber-400 text-slate-800 font-medium"
+              >
+                <option value="all">كل المصادر</option>
+                <option value="purchase">شراء</option>
+                <option value="direct">إدخال مباشر</option>
+                <option value="historical">تاريخي</option>
+                <option value="used_gold">مستعمل</option>
+              </select>
+            </div>
+
             {/* Karat Filter */}
             <div className={showMobileFilters ? '' : 'hidden sm:block'}>
               <select
@@ -457,7 +489,7 @@ export const InventoryView: React.FC = () => {
                   const wh = warehouses.find(w => w.id === item.warehouseId);
 
                   return (
-                    <div key={item.id} className="bg-white p-3 transition hover:bg-amber-50/30">
+                    <div key={item.id} className={`border-r-4 ${originEdge(item.origin)} bg-white p-3 transition hover:bg-amber-50/30`}>
                       {/* Row 1 — identity: what the piece is, and its code. */}
                       <div className="flex items-start gap-2.5">
                         {item.imageUrl ? (
@@ -482,6 +514,7 @@ export const InventoryView: React.FC = () => {
                             {item.isManualSaleEntry && <span className="rounded-sm bg-slate-200 px-1.5 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
                             {item.condition === 'used' && <span className="rounded-sm bg-violet-100 px-1.5 py-0.5 text-[10px] font-black text-violet-700">مستعمل</span>}
                           </div>
+                          <SourceLine item={item} />
                         </div>
                       </div>
 
@@ -551,7 +584,7 @@ export const InventoryView: React.FC = () => {
                       const wh = warehouses.find(w => w.id === item.warehouseId);
 
                       return (
-                        <tr key={item.id} className={item.isManualSaleEntry ? 'bg-slate-50/60 transition hover:bg-amber-50/50' : 'transition hover:bg-amber-50/50'}>
+                        <tr key={item.id} className={`border-r-4 ${originEdge(item.origin)} ${item.isManualSaleEntry ? 'bg-slate-50/60' : ''} transition hover:bg-amber-50/50`}>
                           <td className="py-3 px-4 font-bold text-slate-900 font-sans">
                             <div className="flex items-center gap-2">
                               {item.imageUrl && <button type="button" onClick={() => setImagePreviewItem(item)} aria-label={`عرض صورة ${item.name}`} className="h-9 w-9 shrink-0 overflow-hidden rounded-sm border border-amber-300 bg-amber-50"><img src={item.imageUrl} alt="" className="h-full w-full object-cover" /></button>}
@@ -562,6 +595,7 @@ export const InventoryView: React.FC = () => {
                               {item.isManualSaleEntry && <span className="rounded-sm bg-slate-200 px-1.5 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
                               {item.condition === 'used' && <span className="rounded-sm bg-violet-100 px-1.5 py-0.5 text-[10px] font-black text-violet-700">مستعمل</span>}
                             </div>
+                            <SourceLine item={item} />
                           </td>
                           <td className="py-3 px-3 text-slate-600 font-sans font-medium">{item.category}</td>
                           <td className="py-3 px-3 text-center font-sans">
