@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
+import { reportsApi } from '../services/reportsApi';
 import { 
   Scale, 
   TrendingUp, 
@@ -36,7 +37,11 @@ interface DashboardProps {
 }
 
 // Turned on by the future dashboard task, together with real data for these charts.
-const SHOW_DASHBOARD_CHARTS = false;
+// TASK 17 hid these because Recharts flooded the console with width(0) and height(0) warnings:
+// the container had no size at first paint. They are back with an explicit pixel height and are
+// only mounted once there is a series to draw, which is what the warning was really about.
+const SHOW_DASHBOARD_CHARTS = true;
+const CHART_HEIGHT = 260;
 
 export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInvoiceClick }) => {
   const { 
@@ -51,6 +56,26 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
     activeCurrency,
     settings 
   } = useStore();
+  // TASK 21: the dashboard reads the same server aggregates the reports do, so the manager's
+  // first screen and the reports cannot tell different stories. Two of the figures here were
+  // wrong before this: the debt cards used the pre-TASK-17 sign convention and were showing
+  // receivables and payables the wrong way round, and the chart was drawing a hardcoded week.
+  const [live, setLive] = useState<any>(null);
+  const [liveError, setLiveError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      reportsApi.overview(), reportsApi.receivables(), reportsApi.cash(),
+      reportsApi.inventory(), reportsApi.salesTimeline(14), reportsApi.workmanship(),
+    ]).then(([overview, receivables, cash, inventory, timeline, workmanship]) => {
+      if (!cancelled) setLive({ overview, receivables, cash, inventory, timeline, workmanship });
+    }).catch((reason: any) => {
+      // A manager without `reports.view` simply sees the screen without these figures.
+      if (!cancelled) setLiveError(reason?.status === 403 ? '' : 'تعذر تحميل أرقام لوحة القيادة من الخادم.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   const [showShortcutSettings, setShowShortcutSettings] = useState(false);
   const [showGoldPriceModal, setShowGoldPriceModal] = useState(false);
   const [quickGoldPrices, setQuickGoldPrices] = useState(() => goldPrices.map(price => ({ ...price })));
@@ -126,35 +151,24 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
     }
   });
 
-  // Calculate Sales & Purchase totals
-  const totalSalesUSD = invoices
-    .filter(inv => inv.type === 'sale')
-    .reduce((acc, inv) => acc + inv.finalTotalUSD, 0);
+  // Every figure below is the server's, aggregated from the authoritative records.
+  const totalSalesUSD = live?.overview?.sales?.valueUSD ?? 0;
+  const totalPurchasesUSD = live?.overview?.purchases?.valueUSD ?? 0;
 
-  const totalPurchasesUSD = invoices
-    .filter(inv => inv.type === 'purchase')
-    .reduce((acc, inv) => acc + inv.finalTotalUSD, 0);
+  // §24 sign convention, corrected. A positive subledger balance means the partner owes the shop.
+  // The previous code read `balanceUSD < 0` as a customer debt, which has been backwards since
+  // the balance started coming from the ledger in TASK 17.
+  const customerDebtsUSD = live?.receivables?.totalOwedToShopUSD ?? 0;
+  const supplierDebtsUSD = live?.receivables?.totalOwedByShopUSD ?? 0;
+  const customerGoldDebtsGrams = (live?.overview?.gold ?? [])
+    .reduce((sum: number, row: any) => sum + (row.grams > 0 ? row.grams : 0), 0);
 
-  // Receivables & Payables
-  let customerDebtsUSD = 0;
-  let supplierDebtsUSD = 0;
-  let customerGoldDebtsGrams = 0;
-
-  partners.forEach(p => {
-    if (p.balanceUSD < 0) {
-      customerDebtsUSD += Math.abs(p.balanceUSD);
-    } else {
-      supplierDebtsUSD += p.balanceUSD;
-    }
-    if (p.goldBalance21kGrams < 0) {
-      customerGoldDebtsGrams += Math.abs(p.goldBalance21kGrams);
-    }
-  });
-
-  // Cash box totals
-  const usdCash = cashBoxes.find(b => b.id === 'box-usd')?.balanceAmount || 0;
-  const sypCash = cashBoxes.find(b => b.id === 'box-syp')?.balanceAmount || 0;
-  const safeCash = cashBoxes.find(b => b.id === 'box-safe')?.balanceAmount || 0;
+  // Cashboxes are matched by currency rather than by hardcoded legacy ids, and each stays in its
+  // own currency — a dollar total and a lira total are never added together.
+  const boxes = live?.cash?.boxes ?? [];
+  const usdCash = boxes.filter((box: any) => box.currency === 'USD').reduce((sum: number, box: any) => sum + box.closingBalance, 0);
+  const sypCash = boxes.filter((box: any) => box.currency === 'SYP').reduce((sum: number, box: any) => sum + box.closingBalance, 0);
+  const safeCash = 0;
 
   // Pie chart data for Karat distribution
   const pieData = [
@@ -164,16 +178,13 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
     { name: 'عيار 22', value: stockByKarat['22'], color: '#d97706' },
   ].filter(d => d.value > 0);
 
-  // Sales vs Purchases timeline mock data for chart
-  const chartTimelineData = [
-    { day: 'سبت', مبيعات: 12000, مشتريات: 8500 },
-    { day: 'أحد', مبيعات: 18500, مشتريات: 12000 },
-    { day: 'إثنين', مبيعات: 15400, مشتريات: 9200 },
-    { day: 'ثلاثاء', مبيعات: 22100, مشتريات: 14000 },
-    { day: 'أربعاء', مبيعات: 19800, مشتريات: 11500 },
-    { day: 'خميس', مبيعات: 28500, مشتريات: 16200 },
-    { day: 'جمعة', مبيعات: totalSalesUSD, مشتريات: totalPurchasesUSD },
-  ];
+  // A real fourteen-day series from the server. What stood here was a hardcoded week with only
+  // the final point real — a chart that looks like data and is not is worse than no chart at all.
+  const chartTimelineData = (live?.timeline ?? []).map((row: any) => ({
+    day: new Date(row.date).toLocaleDateString('ar-EG', { day: '2-digit', month: '2-digit' }),
+    مبيعات: row.salesUSD,
+    مشتريات: row.purchasesUSD,
+  }));
 
   return (
     <div className="space-y-6">
@@ -395,8 +406,8 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
           0x0 and logged a width(0)/height(0) warning on every render. Rendering is gated instead,
           so nothing mounts until the dashboard task deliberately turns it on. Visual behaviour is
           unchanged: this section was invisible before and is invisible now. */}
-      {SHOW_DASHBOARD_CHARTS && (
-      <div className="hidden grid-cols-1 gap-6 lg:grid-cols-3">
+      {SHOW_DASHBOARD_CHARTS && chartTimelineData.length > 0 && (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Sales & Purchases Timeline Chart (2 cols) */}
         <div className="lg:col-span-2 bg-white rounded-sm p-5 border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -417,7 +428,7 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
           </div>
 
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
               <AreaChart data={chartTimelineData}>
                 <defs>
                   <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
@@ -450,7 +461,7 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
           </div>
 
           <div className="h-52 my-2">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
               <PieChart>
                 <Pie
                   data={pieData}

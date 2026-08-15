@@ -48,5 +48,7 @@ export const reportsApi = {
   receivables: (filters: ReportFilters = {}) => request<ReceivablesReport>(`/reports/receivables?${query(filters)}`),
   cash: (filters: ReportFilters = {}) => request<CashReport>(`/reports/cash?${query(filters)}`),
   gold: (filters: ReportFilters = {}) => request<GoldReport>(`/reports/gold?${query(filters)}`),
+  /** A real daily series. The dashboard used to draw a hardcoded week with one real point. */
+  salesTimeline: (days = 14, filters: ReportFilters = {}) => request<Array<{ date: string; salesUSD: number; purchasesUSD: number; invoices: number }>>(`/reports/sales-timeline?${query({ ...filters, days: String(days) })}`),
   shifts: (filters: ReportFilters = {}) => request<any[]>(`/reports/shifts?${query(filters)}`),
 };

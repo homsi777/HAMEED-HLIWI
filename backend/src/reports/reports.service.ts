@@ -494,6 +494,53 @@ export class ReportsService {
     }));
   }
 
+  // ---------------------------------------------------------------- timeline
+
+  /**
+   * A real daily series for the dashboard chart.
+   *
+   * This exists because the dashboard was drawing a hardcoded week of invented sales figures with
+   * only the last point real. A chart that looks like data and is not is worse than no chart.
+   */
+  async salesTimeline(user: AuthIdentity, query: Record<string, unknown>) {
+    const ids = this.warehouseIds(user, query);
+    const days = Math.min(90, Math.max(1, Number(query.days ?? 14) || 14));
+    if (ids && !ids.length) return [];
+    const since = new Date(Date.now() - (days - 1) * 86400000);
+    since.setUTCHours(0, 0, 0, 0);
+
+    const scope = ids ? inArray(salesInvoices.warehouseId, ids) : undefined;
+    const sales = await this.db.select({
+      day: sql<string>`to_char(${salesInvoices.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
+      valueUSD: sql<string>`coalesce(sum(${salesInvoices.finalTotalUsd}), 0)`,
+      invoices: sql<number>`count(*)::int`,
+    }).from(salesInvoices)
+      .where(and(eq(salesInvoices.status, 'posted'), gte(salesInvoices.createdAt, since), scope))
+      .groupBy(sql`to_char(${salesInvoices.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`);
+
+    const purchaseScope = ids ? inArray(purchaseInvoices.warehouseId, ids) : undefined;
+    const purchases = await this.db.select({
+      day: sql<string>`to_char(${purchaseInvoices.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`,
+      valueUSD: sql<string>`coalesce(sum(${purchaseInvoices.finalTotalUsd}), 0)`,
+    }).from(purchaseInvoices)
+      .where(and(eq(purchaseInvoices.status, 'posted'), gte(purchaseInvoices.createdAt, since), purchaseScope))
+      .groupBy(sql`to_char(${purchaseInvoices.createdAt} at time zone 'UTC', 'YYYY-MM-DD')`);
+
+    const saleByDay = new Map(sales.map(row => [row.day, row]));
+    const purchaseByDay = new Map(purchases.map(row => [row.day, row]));
+    // Every day in the window is present, including the quiet ones. A gap silently closed up
+    // makes a slow week look like a busy one.
+    return Array.from({ length: days }, (_, index) => {
+      const date = new Date(since.getTime() + index * 86400000).toISOString().slice(0, 10);
+      return {
+        date,
+        salesUSD: money(saleByDay.get(date)?.valueUSD),
+        purchasesUSD: money(purchaseByDay.get(date)?.valueUSD),
+        invoices: saleByDay.get(date)?.invoices ?? 0,
+      };
+    });
+  }
+
   // ---------------------------------------------------------------- overview
 
   /** §8: the manager's first screen. Headline figures only, each from its own report. */

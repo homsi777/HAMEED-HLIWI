@@ -177,6 +177,18 @@ async function main() {
       step('§6 a warehouse filter narrows the view rather than being ignored');
     }
 
+    // ---------------------------------------------------------------- TASK 21 the daily series
+    // The dashboard used to draw a hardcoded week with only the last point real. This is the
+    // series that replaced it, so it has to be real all the way across.
+    const timeline = await ok(await api(`/reports/sales-timeline?days=7&warehouseId=${warehouseId}`));
+    assert.equal(timeline.length, 7, 'every day in the window must be present, including quiet ones');
+    assert.ok(timeline.every((row: any) => typeof row.salesUSD === 'number' && typeof row.purchasesUSD === 'number'), 'each day carries real figures');
+    const todayRow = timeline[timeline.length - 1];
+    assert.equal(todayRow.date, today, 'the series must end today');
+    assert.ok(todayRow.salesUSD > 0, 'today has sales in this run, so the series must show them');
+    assert.equal(round(todayRow.salesUSD), round(afterCancel.totals.valueUSD), 'the last point must equal the sales report for the same day');
+    step(`the daily series is real end to end - today $${todayRow.salesUSD} matches the sales report`);
+
     console.log('\nTASK 19 reports suite passed.');
   } finally {
     await sql`delete from auth_sessions where user_id in (select id from users where username = ${username})`;
