@@ -200,6 +200,25 @@ async function main() {
     assert.equal(listedRow.balanceUSD, 700, `the list must carry the derived balance too, got ${listedRow.balanceUSD}`);
     step('§66 the paginated list returns the derived balance in the page itself — no per-customer request');
 
+    // ---------------------------------------------------------------- §31–§37 customer workspace
+    const workspace = await json(await api(`/partners/${owing.id}/workspace`));
+    assert.equal(workspace.partner.id, owing.id);
+    assert.equal(workspace.financial.balanceUSD, 700, 'the workspace headline must be the subledger balance');
+    assert.equal(workspace.sales.length, 1, 'the sale must appear in recent sales');
+    assert.equal(workspace.sales[0].remainingUSD, 700, 'the outstanding remainder must be visible on the row');
+    assert.ok(Array.isArray(workspace.vouchers) && workspace.vouchers.length >= 1, '§36 the automatic receipt for the $300 paid must be listed');
+    assert.ok(workspace.movements.length >= 1, '§31 recent account movements must be present');
+    // §32/§34: a workspace, not a report — nothing here may carry cost or profit.
+    const serialised = JSON.stringify(workspace);
+    for (const forbidden of ['cost', 'Cost', 'profit', 'Profit', 'margin', 'Margin']) {
+      assert.ok(!serialised.includes(forbidden), `the workspace must not expose "${forbidden}"`);
+    }
+    step(`§31–§37 workspace: balance $${workspace.financial.balanceUSD}, ${workspace.sales.length} sale(s), ${workspace.vouchers.length} voucher(s), ${workspace.movements.length} movement(s), no cost or profit`);
+
+    // §49: a seller must not be able to read a partner workspace they have no business seeing.
+    assert.equal((await fetch(`${base}/partners/${owing.id}/workspace`)).status, 401, 'the workspace must refuse unauthenticated callers');
+    step('§49 the workspace endpoint refuses unauthenticated callers');
+
     console.log('\nTASK 17 partner reconciliation suite passed.');
   } finally {
     await sql.end();

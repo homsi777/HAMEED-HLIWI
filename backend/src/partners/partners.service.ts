@@ -4,7 +4,7 @@ import type { AuthIdentity } from '../auth/auth.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
-import { partnerLedgerEntries, partners, type PartnerRow } from '../database/schema.js';
+import { partnerLedgerEntries, partners, purchaseInvoices, returnInvoices, salesInvoices, vouchers, type PartnerRow } from '../database/schema.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 
 type PartnerKind = 'customer' | 'supplier' | 'both';
@@ -46,6 +46,61 @@ export class PartnersService {
     const partner = await this.find(id, includeArchived);
     this.assert(user, partner.type, 'view');
     return partnerDto(partner, await this.ledgerPosition(partner.id));
+  }
+
+  /**
+   * TASK 17 §31–§37: everything the manager needs to understand one partner in a single request.
+   *
+   * §32 draws the line deliberately — this is a workspace, not TASK 18 Reports. Each list is the
+   * most recent handful of documents, enough to recognise the account and drill into the module
+   * that owns it. No analytics, no aggregation beyond what the header states, and nothing that
+   * reveals acquisition cost or margin.
+   *
+   * Weight custody is intentionally absent: the screen already loads every partner's custody
+   * balance in one grouped call, so asking again here would be a second request for data the
+   * caller is holding.
+   */
+  async workspace(user: AuthIdentity, id: string) {
+    const partner = await this.find(id, true);
+    this.assert(user, partner.type, 'view');
+    const limit = 8;
+
+    const [position, sales, purchases, returns, receipts, movements] = await Promise.all([
+      this.ledgerPosition(partner.id),
+      this.db.select({ id: salesInvoices.id, number: salesInvoices.invoiceNumber, date: salesInvoices.createdAt, status: salesInvoices.status, totalUsd: salesInvoices.finalTotalUsd, paidUsd: salesInvoices.paidUsd, remainingUsd: salesInvoices.remainingDebtUsd })
+        .from(salesInvoices).where(eq(salesInvoices.customerPartnerId, partner.id)).orderBy(desc(salesInvoices.createdAt)).limit(limit),
+      this.db.select({ id: purchaseInvoices.id, number: purchaseInvoices.purchaseNumber, date: purchaseInvoices.createdAt, status: purchaseInvoices.status, totalUsd: purchaseInvoices.finalTotalUsd, paidUsd: purchaseInvoices.paidUsd, remainingUsd: purchaseInvoices.remainingDebtUsd })
+        .from(purchaseInvoices).where(eq(purchaseInvoices.supplierPartnerId, partner.id)).orderBy(desc(purchaseInvoices.createdAt)).limit(limit),
+      this.db.select({ id: returnInvoices.id, number: returnInvoices.returnNumber, date: returnInvoices.createdAt, status: returnInvoices.status, type: returnInvoices.type, totalUsd: returnInvoices.finalTotalUsd })
+        .from(returnInvoices).where(eq(returnInvoices.partnerId, partner.id)).orderBy(desc(returnInvoices.createdAt)).limit(limit),
+      this.db.select({ id: vouchers.id, number: vouchers.voucherNumber, date: vouchers.createdAt, status: vouchers.status, type: vouchers.type, currency: vouchers.currency, amount: vouchers.amount, amountUsd: vouchers.amountUsdEquivalent })
+        .from(vouchers).where(eq(vouchers.partnerId, partner.id)).orderBy(desc(vouchers.createdAt)).limit(limit),
+      this.db.select({ id: partnerLedgerEntries.id, date: partnerLedgerEntries.occurredAt, entryType: partnerLedgerEntries.entryType, description: partnerLedgerEntries.description, documentNumber: partnerLedgerEntries.documentNumber, debitUsd: partnerLedgerEntries.debitUsd, creditUsd: partnerLedgerEntries.creditUsd })
+        .from(partnerLedgerEntries).where(eq(partnerLedgerEntries.partnerId, partner.id)).orderBy(desc(partnerLedgerEntries.occurredAt)).limit(limit),
+    ]);
+
+    const money = (value: unknown) => Number(Number(value ?? 0).toFixed(4));
+    const outstanding = (rows: Array<{ status: string; remainingUsd: unknown }>) =>
+      money(rows.filter(row => row.status === 'posted').reduce((sum, row) => sum + Number(row.remainingUsd ?? 0), 0));
+
+    return {
+      partner: partnerDto(partner, position),
+      financial: {
+        // The headline figure is the subledger, not a sum of the rows below — those are only the
+        // most recent few, so adding them up would understate an older account.
+        balanceUSD: money(Number(partner.openingBalanceUsd) + position.ledgerNet),
+        openingBalanceUSD: money(partner.openingBalanceUsd),
+        recentSalesOutstandingUSD: outstanding(sales),
+        recentPurchasesOutstandingUSD: outstanding(purchases),
+        lastActivityAt: position.lastActivityAt ? new Date(position.lastActivityAt).toISOString() : null,
+        lastVoucherAt: receipts[0]?.date ? new Date(receipts[0].date).toISOString() : null,
+      },
+      sales: sales.map(row => ({ id: row.id, number: row.number, date: row.date.toISOString(), status: row.status, totalUSD: money(row.totalUsd), paidUSD: money(row.paidUsd), remainingUSD: money(row.remainingUsd) })),
+      purchases: purchases.map(row => ({ id: row.id, number: row.number, date: row.date.toISOString(), status: row.status, totalUSD: money(row.totalUsd), paidUSD: money(row.paidUsd), remainingUSD: money(row.remainingUsd) })),
+      returns: returns.map(row => ({ id: row.id, number: row.number, date: row.date.toISOString(), status: row.status, type: row.type, totalUSD: money(row.totalUsd) })),
+      vouchers: receipts.map(row => ({ id: row.id, number: row.number, date: row.date.toISOString(), status: row.status, type: row.type, currency: row.currency, amount: money(row.amount), amountUSD: money(row.amountUsd) })),
+      movements: movements.map(row => ({ id: row.id, date: row.date.toISOString(), entryType: row.entryType, description: row.description, documentNumber: row.documentNumber, debitUSD: money(row.debitUsd), creditUSD: money(row.creditUsd) })),
+    };
   }
 
   /** The subledger side of a single partner's balance — see `partnerDto` for why it is not stored. */

@@ -21,8 +21,20 @@ export type PartnerInput = { name: string; type: PartnerType; phone?: string; ad
 
 const query = (values: Record<string, string | number | undefined>) => new URLSearchParams(Object.entries(values).filter(([, value]) => value !== undefined && value !== '') as [string, string][]).toString();
 
+export type WorkspaceDocument = { id: string; number: string; date: string; status: string; totalUSD: number; paidUSD: number; remainingUSD: number };
+export type WorkspaceReturn = { id: string; number: string; date: string; status: string; type: 'sales_return' | 'purchase_return'; totalUSD: number };
+export type WorkspaceVoucher = { id: string; number: string; date: string; status: string; type: string; currency: string; amount: number; amountUSD: number };
+export type WorkspaceMovement = { id: string; date: string; entryType: string; description: string; documentNumber: string | null; debitUSD: number; creditUSD: number };
+export type PartnerWorkspace = {
+  partner: ApiPartner;
+  financial: { balanceUSD: number; openingBalanceUSD: number; recentSalesOutstandingUSD: number; recentPurchasesOutstandingUSD: number; lastActivityAt: string | null; lastVoucherAt: string | null };
+  sales: WorkspaceDocument[]; purchases: WorkspaceDocument[]; returns: WorkspaceReturn[]; vouchers: WorkspaceVoucher[]; movements: WorkspaceMovement[];
+};
+
 export const partnersApi = {
   list: (filters: Record<string, string | number | undefined>) => request<PartnerList>(`/partners?${query(filters)}`),
+  // TASK 17 §31: one request behind a tap on a customer card.
+  workspace: (id: string) => request<PartnerWorkspace>(`/partners/${id}/workspace`),
   create: (input: PartnerInput) => request<ApiPartner>('/partners', { method: 'POST', body: JSON.stringify(input) }),
   update: (id: string, input: PartnerInput & { version: number }) => request<ApiPartner>(`/partners/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
   archive: (id: string, version: number) => request<{ success: true }>(`/partners/${id}`, { method: 'DELETE', body: JSON.stringify({ version }) }),
