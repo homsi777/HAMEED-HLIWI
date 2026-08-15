@@ -267,13 +267,12 @@ export class AccountingService {
   // Accounting must agree with the operational modules it was posted from; any gap is
   // reported rather than absorbed.
   async reconciliation(_user: AuthIdentity) {
-    const [boxes, cashLines, partnerRows, ledgerRows, receivable, payable] = await Promise.all([
+    const [boxes, cashLines, partnerRows, receivable, payable] = await Promise.all([
       this.db.select().from(cashboxes).where(isNull(cashboxes.archivedAt)),
       this.db.select({ cashboxId: journalEntryLines.cashboxId, debit: sql<string>`coalesce(sum(${journalEntryLines.debitUsd}), 0)`, credit: sql<string>`coalesce(sum(${journalEntryLines.creditUsd}), 0)`, originalDebit: sql<string>`coalesce(sum(case when ${journalEntryLines.debitUsd} > 0 then ${journalEntryLines.originalAmount} else 0 end), 0)`, originalCredit: sql<string>`coalesce(sum(case when ${journalEntryLines.creditUsd} > 0 then ${journalEntryLines.originalAmount} else 0 end), 0)` }).from(journalEntryLines).where(sql`${journalEntryLines.cashboxId} is not null`).groupBy(journalEntryLines.cashboxId),
       // Archiving a partner does not erase what they owe, so reconciliation counts every
       // partner the ledger ever touched, exactly as the accounting entries do.
       this.db.select().from(partners),
-      this.db.select({ partnerId: partnerLedgerEntries.partnerId, net: sql<string>`coalesce(sum(${partnerLedgerEntries.debitUsd} - ${partnerLedgerEntries.creditUsd}), 0)` }).from(partnerLedgerEntries).groupBy(partnerLedgerEntries.partnerId),
       this.accountBalance('accounts_receivable'),
       this.accountBalance('accounts_payable'),
     ]);
@@ -289,15 +288,52 @@ export class AccountingService {
       return { cashboxId: box.id, name: box.name, currency: box.currency, financeBalance, accountingBalance, differenceUSD: Number((accountingBalance - financeBalance).toFixed(4)), matches: Math.abs(accountingBalance - financeBalance) < 0.005 };
     });
 
-    // Compared signed and by partner type, exactly the way the entries were posted: a
-    // customer's balance always sits in Receivables and a supplier's in Payables, so a
-    // partner who happens to be in credit lowers that account rather than moving sides.
-    let operationalReceivable = 0; let operationalPayable = 0;
+    // Aggregated the way the entries were actually posted — by the nature of each
+    // document, not by the partner's master role.
+    //
+    // `accounting-documents.service.ts` always sends a sale to Receivables and a purchase
+    // to Payables whoever the counterparty is. Classifying the whole of a partner's
+    // subledger by `partners.type` therefore only agreed with the ledger while every
+    // partner stayed on one side of the business. The moment a customer was the
+    // counterparty to a purchase, this side moved that purchase into Receivables while
+    // the journal had put it in Payables, and the two disagreed by exactly its value.
+    // A `both` partner is the same case permanently: it legitimately holds a receivable
+    // and a payable at once, which a single role can never express.
+    //
+    // Reversals carry the document links of the entry they reverse, so the same rule
+    // classifies them correctly without following `reversal_of_entry_id`.
+    const classified = await this.db.execute(sql`
+      select case
+               when e.sales_invoice_id is not null then 'AR'
+               when e.purchase_invoice_id is not null then 'AP'
+               when r.type = 'sales_return' then 'AR'
+               when r.type = 'purchase_return' then 'AP'
+               when e.entry_type in ('sale', 'sales_return') then 'AR'
+               when e.entry_type in ('purchase', 'purchase_return') then 'AP'
+               when p.type = 'supplier' then 'AP'
+               else 'AR'
+             end as account,
+             coalesce(sum(e.debit_usd - e.credit_usd), 0) as net
+        from partner_ledger_entries e
+        join partners p on p.id = e.partner_id
+        left join return_invoices r on r.id = e.return_invoice_id
+       group by 1`);
+    const classifiedNet = (account: 'AR' | 'AP') =>
+      Number((classified as unknown as Array<{ account: string; net: string }>).find(row => row.account === account)?.net ?? 0);
+
+    // Opening balances stay classified by role because that is how `postPartnerOpening`
+    // posts them, and each side keeps the sign the journal gave it: an opening always
+    // increases its own account, so it is added, never negated.
+    let openingReceivable = 0; let openingPayable = 0;
     for (const partner of partnerRows) {
-      const net = Number((Number(partner.openingBalanceUsd) + Number(ledgerRows.find(row => row.partnerId === partner.id)?.net ?? 0)).toFixed(4));
-      if (partner.type === 'supplier') operationalPayable += -net; else operationalReceivable += net;
+      const opening = Number(partner.openingBalanceUsd);
+      if (partner.type === 'supplier') openingPayable += opening; else openingReceivable += opening;
     }
-    operationalReceivable = Number(operationalReceivable.toFixed(4)); operationalPayable = Number(operationalPayable.toFixed(4));
+
+    // Receivables are debit-normal, Payables credit-normal, so the payable side is the
+    // negated debit-minus-credit sum — the same convention the journal uses.
+    const operationalReceivable = Number((openingReceivable + classifiedNet('AR')).toFixed(4));
+    const operationalPayable = Number((openingPayable - classifiedNet('AP')).toFixed(4));
 
     // A manual journal may touch Receivables or Payables without any operational
     // document behind it. That is legitimate accounting, so it is measured and shown

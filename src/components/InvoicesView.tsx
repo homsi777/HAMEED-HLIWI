@@ -121,7 +121,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const refreshCustomers = async () => { try { const response = await partnersApi.list({ type: 'customer', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerCustomers(response.items); } catch { /* Quick customer creation remains available. */ } };
   // Suppliers belong to the purchase side. A seller holds no `suppliers.view`, so the
   // request is never issued rather than issued and refused.
-  const refreshSuppliers = async () => { if (!canViewSuppliers) return; try { const response = await partnersApi.list({ type: 'supplier', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerSuppliers(response.items); } catch { /* Quick supplier creation remains available. */ } };
+  // TASK 17 §46: the purchase counterparty list is no longer filtered to suppliers. A walk-in
+  // customer who sells their old gold is a genuine counterparty, and the name typed here is
+  // matched against this list to resolve an id — so leaving customers out of it was also what
+  // made the app create a duplicate supplier for someone it already knew. §47: appearing here
+  // never changes anyone's role.
+  const refreshSuppliers = async () => { if (!canViewSuppliers) return; try { const response = await partnersApi.list({ page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerSuppliers(response.items); } catch { /* Quick supplier creation remains available. */ } };
   // Inventory management is not a selling permission. Without `inventory.view` this screen
   // simply does not ask, and never surfaces a purchase error for a screen it does not own.
   const refreshOperationalStock = async () => { if (!canViewInventory) return; try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); } };
