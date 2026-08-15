@@ -33,6 +33,9 @@ const LANDING_ORDER = ['dashboard', 'invoices', 'inventory', 'history', 'partner
 
 function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedUser?: InfrastructureUser | null; scope: SessionScope; onLogout?: () => void }) {
   const modules = scope.modules;
+  // Raw permission codes, straight from the server session. Module visibility is coarser than
+  // some screens need: selling is not the same capability as managing inventory.
+  const permissions = authenticatedUser?.permissions ?? [];
   const canAccessTab = (tab: string) => {
     const module = TAB_MODULE[tab] ?? (tab.startsWith('finance') ? 'finance' : undefined);
     return module ? modules.includes(module) : false;
@@ -86,7 +89,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 
           {activeTab === 'inventory' && <InventoryView />}
 
-          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} />}
+          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} canViewInventory={permissions.includes('inventory.view')} canViewSuppliers={permissions.includes('suppliers.view')} />}
 
           {activeTab === 'partners' && <PartnersView />}
           {activeTab === 'gold-weight-accounts' && <GoldWeightAccountsView />}

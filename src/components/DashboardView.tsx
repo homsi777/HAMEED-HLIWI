@@ -35,6 +35,9 @@ interface DashboardProps {
   onNewInvoiceClick?: (type: 'sale' | 'purchase') => void;
 }
 
+// Turned on by the future dashboard task, together with real data for these charts.
+const SHOW_DASHBOARD_CHARTS = false;
+
 export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInvoiceClick }) => {
   const { 
     inventory, 
@@ -387,6 +390,12 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
       </div>
 
       {/* Analytics Charts Row */}
+      {/* The dashboard charts have always been inside a `hidden` wrapper, so no user has ever seen
+          them — but React still mounted Recharts into a display:none subtree, where it measured
+          0x0 and logged a width(0)/height(0) warning on every render. Rendering is gated instead,
+          so nothing mounts until the dashboard task deliberately turns it on. Visual behaviour is
+          unchanged: this section was invisible before and is invisible now. */}
+      {SHOW_DASHBOARD_CHARTS && (
       <div className="hidden grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Sales & Purchases Timeline Chart (2 cols) */}
         <div className="lg:col-span-2 bg-white rounded-sm p-5 border border-slate-200 shadow-sm">
@@ -474,6 +483,7 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
           </div>
         </div>
       </div>
+      )}
 
       {/* Cash Box Summary & Recent Activity Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

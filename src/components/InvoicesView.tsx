@@ -50,6 +50,9 @@ interface InvoicesViewProps {
   initialType?: 'sale' | 'purchase';
   /** Pre-fills the search so a row opened from السجلات lands on the existing preview. */
   initialSearch?: string;
+  /** Real permission codes from the session. The screen requests only what it may read. */
+  canViewInventory?: boolean;
+  canViewSuppliers?: boolean;
   /** Whether this session holds the purchases module. A seller does not. */
   canPurchase?: boolean;
 }
@@ -80,7 +83,7 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
   };
 };
 
-export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true }) => {
+export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true, canViewInventory = true, canViewSuppliers = true }) => {
   const {
     inventory: legacyInventory,
     partners,
@@ -116,13 +119,17 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const refreshServerSales = async () => { try { setSalesLoading(true); setSalesError(''); const response = await salesApi.list({ page: salesPage, limit: 30 }); setServerSales(response.items); setSalesTotal(response.meta.total); } catch (reason: any) { setSalesError(reason?.message || 'تعذر تحميل فواتير البيع من الخادم.'); } finally { setSalesLoading(false); } };
   const refreshServerPurchases = async () => { try { setPurchasesError(''); const response = await purchasesApi.list({ page: purchasesPage, limit: 30 }); setServerPurchases(response.items); setPurchasesTotal(response.meta.total); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل فواتير الشراء من الخادم.'); } };
   const refreshCustomers = async () => { try { const response = await partnersApi.list({ type: 'customer', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerCustomers(response.items); } catch { /* Quick customer creation remains available. */ } };
-  const refreshSuppliers = async () => { try { const response = await partnersApi.list({ type: 'supplier', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerSuppliers(response.items); } catch { /* Quick supplier creation remains available. */ } };
-  const refreshOperationalStock = async () => { try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); } };
+  // Suppliers belong to the purchase side. A seller holds no `suppliers.view`, so the
+  // request is never issued rather than issued and refused.
+  const refreshSuppliers = async () => { if (!canViewSuppliers) return; try { const response = await partnersApi.list({ type: 'supplier', page: 1, limit: 100, sort: 'name', order: 'asc' }); setServerSuppliers(response.items); } catch { /* Quick supplier creation remains available. */ } };
+  // Inventory management is not a selling permission. Without `inventory.view` this screen
+  // simply does not ask, and never surfaces a purchase error for a screen it does not own.
+  const refreshOperationalStock = async () => { if (!canViewInventory) return; try { const [warehouseRows, stockRows] = await Promise.all([inventoryApi.warehouses(), inventoryApi.list({ page: 1, limit: 100, status: 'all' })]); setServerWarehouses(warehouseRows); setServerInventory(stockRows.items); } catch (reason: any) { setPurchasesError(reason?.message || 'تعذر تحميل المستودعات أو المخزون من الخادم.'); } };
   const refreshServerReturns = async () => { try { setReturnsError(''); const response = await returnsApi.list({ page: returnsPage, limit: 30 }); setServerReturns(response.items); setReturnsTotal(response.meta.total); } catch (reason: any) { setReturnsError(reason?.message || 'تعذر تحميل المرتجعات من الخادم.'); } };
   useEffect(() => { void refreshServerSales(); }, [salesPage]);
   useEffect(() => { if (canPurchase) void refreshServerPurchases(); }, [purchasesPage, canPurchase]);
   useEffect(() => { void refreshServerReturns(); }, [returnsPage]);
-  useEffect(() => { void refreshCustomers(); void refreshSuppliers(); void refreshOperationalStock(); }, []);
+  useEffect(() => { void refreshCustomers(); void refreshSuppliers(); void refreshOperationalStock(); }, [canViewSuppliers, canViewInventory]);
 
   // 3-Dots Invoice Actions Menu State (Fixed Viewport Position to avoid clipping)
   const [activeMenu, setActiveMenu] = useState<{ inv: Invoice; top: number; left: number } | null>(null);
