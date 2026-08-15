@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
+import { BackupPanel } from './BackupPanel';
 import { GoldPriceSetting } from '../types';
 import { 
   Settings, 
@@ -362,6 +363,7 @@ export const SettingsView: React.FC = () => {
           </button>
         </div>
       </form>
+      <div className="mt-6"><BackupPanel /></div>
     </div>
   );
 };

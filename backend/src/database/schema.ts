@@ -1,4 +1,4 @@
-import { check, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, boolean } from 'drizzle-orm/pg-core';
+import { bigint, check, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, boolean } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 const id = () => uuid('id').defaultRandom().primaryKey();
@@ -582,6 +582,29 @@ export const settingsHistory = pgTable('settings_history', {
   index('settings_history_scope_field_idx').on(table.scope, table.field),
   check('settings_history_scope_check', sql`${table.scope} in ('general', 'gold_price')`),
 ]);
+
+// TASK 20: one row per backup run, scheduled or manual. A backup nobody can see the state of is
+// a backup nobody knows has stopped running - silent failure is the normal way these systems die.
+export const backupRuns = pgTable('backup_runs', {
+  id: id(),
+  fileName: text('file_name').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull().default(0),
+  kind: text('kind').notNull(),
+  status: text('status').notNull().default('running'),
+  checksum: text('checksum'),
+  errorMessage: text('error_message'),
+  // Null for a scheduled run: nobody asked for it, the timer did.
+  actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, table => [
+  index('backup_runs_started_idx').on(table.startedAt),
+  index('backup_runs_status_idx').on(table.status),
+  check('backup_runs_kind_check', sql`${table.kind} in ('scheduled', 'manual')`),
+  check('backup_runs_status_check', sql`${table.status} in ('running', 'completed', 'failed')`),
+]);
+
+export type BackupRunRow = typeof backupRuns.$inferSelect;
 
 export type AppSettingsRow = typeof appSettings.$inferSelect;
 export type GoldPriceRow = typeof goldPrices.$inferSelect;

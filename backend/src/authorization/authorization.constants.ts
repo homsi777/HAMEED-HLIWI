@@ -33,6 +33,8 @@ export const ALL_PERMISSION_CODES = [
   // identity. Reading them needs no permission at all: a seller cannot price a sale without
   // the gold price. Changing them is a commercial act and belongs to whoever runs the company.
   'settings.manage',
+  // TASK 20: a backup file is the whole business in one document. Highest role only.
+  'backups.manage',
   OWN_SCOPE_PERMISSION,
 ] as const;
 

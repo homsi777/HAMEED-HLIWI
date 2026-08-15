@@ -20,6 +20,7 @@ import { UsersModule } from './users/users.module.js';
 import { ShiftsModule } from './shifts/shifts.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { BackupsModule } from './backups/backups.module.js';
 import { HistoryModule } from './history/history.module.js';
-@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, AuthorizationModule, UsersModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, SalesModule, PurchasesModule, ReturnsModule, FinanceModule, AccountingModule, GoldModule, ShiftsModule, SettingsModule, ReportsModule, HistoryModule, HealthModule] })
+@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, AuthorizationModule, UsersModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, SalesModule, PurchasesModule, ReturnsModule, FinanceModule, AccountingModule, GoldModule, ShiftsModule, SettingsModule, ReportsModule, BackupsModule, HistoryModule, HealthModule] })
 export class AppModule {}

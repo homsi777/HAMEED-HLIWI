@@ -35,7 +35,9 @@
     "test:task14": "tsx test/task14-weight-custody.spec.ts",
     "test:task15": "tsx test/task15-logout.spec.ts",
     "test:task16a": "tsx test/task16a-logout-browser-path.spec.ts",
-    "test:task17": "tsx test/task17-partner-reconciliation.spec.ts"
+    "test:task17": "tsx test/task17-partner-reconciliation.spec.ts",
+    "backup:scheduled": "tsx src/database/scheduled-backup.ts",
+    "test:task20": "tsx test/task20-backups.spec.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
