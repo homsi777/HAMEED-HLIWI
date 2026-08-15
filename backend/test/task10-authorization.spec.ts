@@ -98,7 +98,7 @@ async function main() {
 
     const sellerMe = await ok(await api('/auth/me', 'GET', undefined, cookieA), 200);
     assert.equal(sellerMe.scope.type, 'own');
-    assert.deepEqual(sellerMe.scope.modules.sort(), ['invoices', 'returns']);
+    assert.deepEqual(sellerMe.scope.modules.sort(), ['history', 'invoices', 'returns']);
     assert.equal(sellerMe.scope.allWarehouses, false);
     step('§17/§20 the seller session reports own scope and only the invoices modules');
 

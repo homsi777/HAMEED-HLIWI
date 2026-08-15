@@ -106,6 +106,13 @@
       "when": 1786730963333,
       "tag": "0014_task11_shifts",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786730964333,
+      "tag": "0015_task12_history_indexes",
+      "breakpoints": true
     }
   ]
 }

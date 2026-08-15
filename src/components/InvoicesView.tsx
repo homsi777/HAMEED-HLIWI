@@ -48,6 +48,8 @@ import { inventoryApi } from '../services/inventoryApi';
 
 interface InvoicesViewProps {
   initialType?: 'sale' | 'purchase';
+  /** Pre-fills the search so a row opened from السجلات lands on the existing preview. */
+  initialSearch?: string;
   /** Whether this session holds the purchases module. A seller does not. */
   canPurchase?: boolean;
 }
@@ -78,7 +80,7 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
   };
 };
 
-export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, canPurchase = true }) => {
+export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true }) => {
   const {
     inventory: legacyInventory,
     partners,
@@ -91,7 +93,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, canPurc
   } = useStore();
 
   const [filterType, setFilterType] = useState<'all' | 'sale' | 'purchase' | 'return'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(initialSearch ?? '');
   const [serverSales, setServerSales] = useState<SalesInvoice[]>([]);
   const [serverPurchases, setServerPurchases] = useState<PurchaseInvoice[]>([]);
   const [serverReturns, setServerReturns] = useState<ReturnInvoice[]>([]);
@@ -460,6 +462,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, canPurc
   useEffect(() => {
     if (initialType) handleOpenCreateModal(initialType);
   }, [initialType]);
+  useEffect(() => { if (initialSearch) setSearchQuery(initialSearch); }, [initialSearch]);
 
   // Select item from available stock
   const handleAddStockItemToInvoice = (itemToAdd?: any) => {

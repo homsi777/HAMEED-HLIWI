@@ -12,22 +12,24 @@ import { AccountingView } from './components/AccountingView';
 import { ReportsView } from './components/ReportsView';
 import { UsersView } from './components/UsersView';
 import { ShiftsView } from './components/ShiftsView';
+import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
 import { InstallPrompt } from './components/InstallPrompt';
 import { LoginView } from './components/LoginView';
 import { ServiceUnavailableView } from './components/ServiceUnavailableView';
 import { useInfrastructureSession } from './hooks/useInfrastructureSession';
 import { infrastructureApi, type InfrastructureUser, type SessionScope } from './services/infrastructureApi';
+import type { HistoryFilters } from './services/historyApi';
 
 // Which authenticated module each screen belongs to. The module list itself is produced by the
 // backend from real permission codes, so nothing here can widen access on its own.
 const TAB_MODULE: Record<string, string> = {
   dashboard: 'dashboard', inventory: 'inventory', invoices: 'invoices', partners: 'partners',
-  'gold-weight-accounts': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'shifts', settings: 'settings',
+  'gold-weight-accounts': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'shifts', history: 'history', settings: 'settings',
   'finance-accounts': 'accounting', 'finance-ledger': 'accounting',
 };
 // The order a user lands in: the most senior screen they are actually allowed to open.
-const LANDING_ORDER = ['dashboard', 'invoices', 'inventory', 'partners', 'finance-boxes', 'reports', 'users', 'settings'];
+const LANDING_ORDER = ['dashboard', 'invoices', 'inventory', 'history', 'partners', 'finance-boxes', 'reports', 'users', 'settings'];
 
 function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedUser?: InfrastructureUser | null; scope: SessionScope; onLogout?: () => void }) {
   const modules = scope.modules;
@@ -39,6 +41,18 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
   const firstAllowedTab = () => LANDING_ORDER.find(canAccessTab) ?? 'invoices';
   const [activeTab, setActiveTab] = useState<string>(() => firstAllowedTab());
   const [invoiceTypeTrigger, setInvoiceTypeTrigger] = useState<'sale' | 'purchase'>('sale');
+  // Drill-down state: a shift hands filters to السجلات, and a history row hands a shift or an
+  // invoice number back. Nothing is recomputed on the way — each screen stays the authority.
+  const [historyPreset, setHistoryPreset] = useState<{ filters: HistoryFilters; tab: 'invoices' | 'weights' } | null>(null);
+  const [shiftPreset, setShiftPreset] = useState<string | undefined>();
+  const [invoiceSearch, setInvoiceSearch] = useState<string | undefined>();
+
+  const openHistoryForShift = (shiftId: string, tab: 'invoices' | 'weights') => {
+    setHistoryPreset({ filters: { shiftId }, tab });
+    setActiveTab('history');
+  };
+  const openShift = (shiftId: string) => { setShiftPreset(shiftId); setActiveTab('shifts'); };
+  const openInvoice = (invoiceNumber: string) => { setInvoiceSearch(invoiceNumber); setActiveTab('invoices'); };
 
   useEffect(() => {
     if (!canAccessTab(activeTab)) setActiveTab(firstAllowedTab());
@@ -72,7 +86,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 
           {activeTab === 'inventory' && <InventoryView />}
 
-          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} canPurchase={modules.includes('purchases')} />}
+          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} />}
 
           {activeTab === 'partners' && <PartnersView />}
           {activeTab === 'gold-weight-accounts' && <GoldWeightAccountsView />}
@@ -87,7 +101,17 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 
           {activeTab === 'users' && <UsersView />}
 
-          {activeTab === 'shifts' && <ShiftsView />}
+          {activeTab === 'history' && (
+            <HistoryView
+              key={historyPreset ? `${historyPreset.tab}-${historyPreset.filters.shiftId ?? ''}` : 'history'}
+              initialFilters={historyPreset?.filters}
+              initialTab={historyPreset?.tab}
+              onOpenInvoiceNumber={openInvoice}
+              onOpenShift={modules.includes('shifts') ? openShift : undefined}
+            />
+          )}
+
+          {activeTab === 'shifts' && <ShiftsView initialShiftId={shiftPreset} onDrillDown={openHistoryForShift} />}
 
           {activeTab === 'settings' && <SettingsView />}
         </section>

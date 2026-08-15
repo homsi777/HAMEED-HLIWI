@@ -105,6 +105,7 @@ export const MODULE_PERMISSIONS: Record<string, string[]> = {
   dashboard: ['reports.view'],
   inventory: ['inventory.view'],
   invoices: ['sales.view'],
+  history: ['sales.view'],
   purchases: ['purchases.view'],
   returns: ['returns.view'],
   partners: ['customers.update', 'suppliers.view'],

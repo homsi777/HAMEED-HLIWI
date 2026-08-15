@@ -21,12 +21,12 @@ const STATUS: Record<string, { label: string; className: string }> = {
 
 type Tab = 'live' | 'requests' | 'history';
 
-export const ShiftsView: React.FC = () => {
+export const ShiftsView: React.FC<{ initialShiftId?: string; onDrillDown?: (shiftId: string, tab: 'invoices' | 'weights') => void }> = ({ initialShiftId, onDrillDown }) => {
   const [tab, setTab] = useState<Tab>('live');
   const [shifts, setShifts] = useState<ShiftSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialShiftId ?? null);
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -128,7 +128,7 @@ export const ShiftsView: React.FC = () => {
         </div>
       )}
 
-      {selected && <ShiftDetailSheet shiftId={selected} onClose={() => setSelected(null)} onChanged={() => { void load(true); }} />}
+      {selected && <ShiftDetailSheet shiftId={selected} onClose={() => setSelected(null)} onChanged={() => { void load(true); }} onDrillDown={onDrillDown} />}
     </div>
   );
 };
@@ -182,7 +182,7 @@ const Metric: React.FC<{ icon: typeof Coins; label: string; value: string; tone?
 
 // ---------------------------------------------------------------- detail
 
-const ShiftDetailSheet: React.FC<{ shiftId: string; onClose: () => void; onChanged: () => void }> = ({ shiftId, onClose, onChanged }) => {
+const ShiftDetailSheet: React.FC<{ shiftId: string; onClose: () => void; onChanged: () => void; onDrillDown?: (shiftId: string, tab: 'invoices' | 'weights') => void }> = ({ shiftId, onClose, onChanged, onDrillDown }) => {
   const [shift, setShift] = useState<ShiftDetail | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -223,6 +223,17 @@ const ShiftDetailSheet: React.FC<{ shiftId: string; onClose: () => void; onChang
 
         <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
           {!shift ? <div className="grid place-items-center py-12 text-slate-400"><Loader2 className="h-6 w-6 animate-spin" /></div> : <>
+            {onDrillDown && (
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => onDrillDown(shiftId, 'invoices')} className="flex h-10 items-center justify-center gap-1.5 rounded-sm border-2 border-slate-200 bg-white text-[11px] font-extrabold text-slate-700 transition active:scale-95">
+                  <History className="h-3.5 w-3.5" />فواتير هذه الوردية
+                </button>
+                <button onClick={() => onDrillDown(shiftId, 'weights')} className="flex h-10 items-center justify-center gap-1.5 rounded-sm border-2 border-slate-200 bg-white text-[11px] font-extrabold text-slate-700 transition active:scale-95">
+                  <Scale className="h-3.5 w-3.5" />أوزان هذه الوردية
+                </button>
+              </div>
+            )}
+
             {shift.isSnapshot && (
               <p className="rounded-sm border border-slate-300 bg-slate-50 px-3 py-2 text-[10px] font-bold leading-5 text-slate-600">
                 هذه أرقام مجمّدة لحظة الاعتماد ولا تتغيّر بأي حركة لاحقة.

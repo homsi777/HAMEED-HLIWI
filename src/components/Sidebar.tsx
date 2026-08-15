@@ -19,7 +19,8 @@ import {
   X,
   Clock3,
   Layers,
-  Scale
+  Scale,
+  Archive
 } from 'lucide-react';
 interface SidebarProps {
   activeTab: string;
@@ -55,6 +56,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
       icon: FileText,
       allowed: allows('invoices'),
       badge: 'جديد'
+    },
+    {
+      id: 'history',
+      label: 'السجلات',
+      icon: Archive,
+      allowed: allows('history'),
+      badge: 'أرشيف'
     },
     {
       id: 'partners',
@@ -399,6 +407,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
             {activeTab === 'reports' && 'التقارير والتحليلات'}
             {activeTab === 'users' && 'الصلاحيات والمستخدمين'}
             {activeTab === 'shifts' && 'الورديات'}
+            {activeTab === 'history' && 'السجلات'}
             {activeTab === 'settings' && 'الإعدادات العامة'}
           </span>
         </div>
