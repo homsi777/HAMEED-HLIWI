@@ -1,10 +1,10 @@
 # TASK 17 — Final Operational Completion
 
-**Hameed Hliwi Jewelry** · commits `3d76793`, `b40c2c9`, `b044684`, `1b31cde`
+**Hameed Hliwi Jewelry** · commits `3d76793`, `b40c2c9`, `b044684`, `1b31cde`, `a3750b3`
 **Status: COMPLETE on all five sections — deployed and verified on `https://hameed-hliwi.org/`.**
 
 Sections **G**, **H**, **C**, **A** and **B** are built, tested and live. Two acceptance items
-were not performed and are named plainly in §12: the 390/430 device sweep and the browser console
+were not performed and are named plainly in §15: the 390/430 device sweep and the browser console
 walk-through. Nothing else is outstanding.
 
 TASK 16 Costing/COGS remains **deferred** — nothing was built. No database migration.
@@ -371,16 +371,17 @@ TASK 07 Finance · TASK 07.1 · TASK 08 Accounting · TASK 10 Authorization · T
 TASK 12 History · TASK 13 Used Gold · TASK 14 Weight Custody · TASK 16A Logout browser path ·
 TASK 17 partner reconciliation · TASK 17 seller stock sales · TASK 17 inventory provenance.
 
-`task091-regression` fails for a reason that predates this work — see §12.
+`task091-regression` fails for a reason that predates this work — see §15.
 
 ## 17. Safety confirmations
 
 * **COGS remains deferred** — no FIFO, no cost layers, no valuation, no COGS account, no costing
   migration. No costing file was touched.
 * **Invoice templates untouched** — `git diff --name-only bc36012..HEAD` matches no print,
-  invoice-modal, costing or FIFO file. Nine files changed in total.
+  invoice-modal, costing or FIFO file. Twenty-one files changed across the whole task.
 * **Production data preserved** — the only rows removed were the four proven-corrupted partners
-  and the temporary verification account. Books identical before and after both.
+  and the two temporary verification accounts, one per deployment. Books read
+  `14,046.0000 = 14,046.0000` before and after every one of those operations.
 * **Backend authorization unchanged** — no permission, role preset or scope rule was modified.
 
 ## 18. Commits
@@ -403,6 +404,6 @@ the first time.
 
 I am not marking TASK 17 **CLOSED** myself, because two acceptance items in §54 and §53 ask for a
 device and a browser, and I used neither. Everything they cover was verified another way and is
-recorded above; thejudgement of whether that is enough is yours.
+recorded above; the judgement of whether that is enough is yours.
 
 Reports (TASK 18) were not started, as instructed.
