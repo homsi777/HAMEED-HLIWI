@@ -135,7 +135,24 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 
 export default function App() {
   const session = useInfrastructureSession();
-  const logout = async () => { await infrastructureApi.logout(); await session.refresh(); };
+  const [loggingOut, setLoggingOut] = useState(false);
+  /**
+   * A real server logout. The session is revoked on the server first; whatever happens, the
+   * local session state is then re-read, so the screen can never sit authenticated while the
+   * server has ended the session. A second tap while the first is in flight is ignored.
+   */
+  const logout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try { await infrastructureApi.logout(); }
+    catch { /* already revoked, or offline: the refresh below settles the truth either way */ }
+    finally {
+      // Protected data cached for the previous account must not survive into the next one.
+      try { localStorage.removeItem('HAMEED_HLIWI_GOLD_STORE_V1'); } catch { /* ignore */ }
+      await session.refresh();
+      setLoggingOut(false);
+    }
+  };
   if (session.mode === 'loading') return <ServiceUnavailableView connecting />;
   if (session.mode === 'unavailable') return <ServiceUnavailableView />;
   if (session.mode === 'unauthenticated' || !session.user || !session.scope) return <LoginView onLoggedIn={session.refresh} />;

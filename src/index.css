@@ -254,3 +254,43 @@
   .invoice-a5-print-active .invoice-print-sheet-portrait { width: 148mm !important; height: 210mm !important; min-height: 210mm !important; overflow: hidden !important; }
 }
 .invoice-paper-remaining { margin-top: 4px; text-align: center; color: #9f2f23; font-weight: 900; font-size: 12px; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Operational text selection (TASK 15)
+
+   This is a point-of-sale application, not a document reader: long-pressing a
+   card label on a phone should not raise browser selection handles. The rule is
+   therefore applied once at the root and then deliberately lifted everywhere the
+   user genuinely needs text — rather than being sprinkled across components.
+
+   The invoice sheet is exempt in full. Its template is approved and locked, and
+   selecting or copying from a rendered invoice is legitimate.
+   ───────────────────────────────────────────────────────────────────────────── */
+body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  /* Stops the iOS long-press callout without affecting taps, scrolling or swipes. */
+  -webkit-touch-callout: none;
+}
+
+/* Anything the user types in, plus anything explicitly marked copyable. */
+input,
+textarea,
+select,
+[contenteditable],
+[contenteditable] *,
+.selectable,
+.selectable *,
+.invoice-print-sheet,
+.invoice-print-sheet * {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Printing must never inherit a selection restriction. */
+@media print {
+  body, body * { -webkit-user-select: text; user-select: text; }
+}

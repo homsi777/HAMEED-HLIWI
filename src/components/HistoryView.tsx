@@ -226,7 +226,7 @@ const InvoiceList: React.FC<{ invoices: HistoryInvoice[]; onOpenInvoice?: (invoi
             className={`w-full rounded-sm border-2 bg-white p-3 text-right transition active:scale-[.995] ${invoice.status === 'cancelled' ? 'border-slate-200 opacity-70' : 'border-slate-200 hover:border-amber-400'}`}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="font-mono text-sm font-black text-slate-900">
+                <p className="selectable font-mono text-sm font-black text-slate-900">
                   {invoice.invoiceNumber}
                   {invoice.type === 'sales_return' && <span className="mr-1.5 rounded-sm bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700">مرتجع</span>}
                 </p>
@@ -260,7 +260,7 @@ const InvoiceList: React.FC<{ invoices: HistoryInvoice[]; onOpenInvoice?: (invoi
               return (
                 <tr key={invoice.id} onClick={() => onOpenInvoice?.(invoice.invoiceNumber)}
                   className={`cursor-pointer transition hover:bg-amber-50/60 ${invoice.status === 'cancelled' ? 'text-slate-400' : ''}`}>
-                  <td className="px-3 py-2.5 font-mono font-black text-slate-900 whitespace-nowrap">
+                  <td className="selectable px-3 py-2.5 font-mono font-black text-slate-900 whitespace-nowrap">
                     {invoice.invoiceNumber}
                     {invoice.type === 'sales_return' && <span className="mr-1.5 rounded-sm bg-rose-100 px-1.5 py-0.5 text-[9px] font-black text-rose-700">مرتجع</span>}
                   </td>

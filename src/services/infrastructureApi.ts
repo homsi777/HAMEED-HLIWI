@@ -30,9 +30,15 @@ async function rawRequest(path: string, options: RequestInit = {}) {
   return fetch(`${apiBaseUrl}${path}`, { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers } });
 }
 
+// Renewal is skipped only where retrying would be wrong or would loop: obtaining a session,
+// renewing one, and the public warehouse list. Everything else — including `/auth/logout` and
+// `/auth/me` — may renew, because the 15-minute access cookie expires long before the session
+// does, and a live session must not be treated as a dead one.
+const NO_RENEWAL = ['/auth/login', '/auth/refresh', '/auth/login-warehouses'];
+
 async function request<T>(path: string, options: RequestInit = {}, allowRenewal = true): Promise<T> {
   let response = await rawRequest(path, options);
-  if (response.status === 401 && allowRenewal && !path.startsWith('/auth/')) {
+  if (response.status === 401 && allowRenewal && !NO_RENEWAL.some(entry => path.startsWith(entry))) {
     const renewal = await rawRequest('/auth/refresh', { method: 'POST' });
     if (renewal.ok) response = await rawRequest(path, options);
   }

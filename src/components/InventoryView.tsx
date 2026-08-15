@@ -26,7 +26,8 @@ import {
   Eye,
   FileText,
   Download,
-  Share2
+  Share2,
+  Gem
 } from 'lucide-react';
 import { GoldKarat, ItemCategory, InventoryItem, Warehouse } from '../types';
 
@@ -456,73 +457,59 @@ export const InventoryView: React.FC = () => {
                   const wh = warehouses.find(w => w.id === item.warehouseId);
 
                   return (
-                    <div key={item.id} className="p-4 space-y-3 bg-white hover:bg-amber-50/30 transition">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {item.imageUrl && <button type="button" onClick={() => setImagePreviewItem(item)} aria-label={`عرض صورة ${item.name}`} className="h-10 w-10 shrink-0 overflow-hidden rounded-sm border border-amber-300 bg-amber-50"><img src={item.imageUrl} alt="" className="h-full w-full object-cover" /></button>}
-                          <span className="font-mono text-[10px] bg-slate-900 text-amber-400 px-2 py-0.5 rounded font-bold">
-                            {item.code}
-                          </span>
-                          <span className="font-extrabold text-slate-900 text-sm">{item.name}</span>
-                          {item.isManualSaleEntry && <span className="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
-                          {item.condition === 'used' && <span className="rounded bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-700" title={item.sourceType === 'gold_scrap_conversion' ? 'من كسر مقايضة' : undefined}>مستعمل</span>}
+                    <div key={item.id} className="bg-white p-3 transition hover:bg-amber-50/30">
+                      {/* Row 1 — identity: what the piece is, and its code. */}
+                      <div className="flex items-start gap-2.5">
+                        {item.imageUrl ? (
+                          <button type="button" onClick={() => setImagePreviewItem(item)} aria-label={`عرض صورة ${item.name}`}
+                            className="h-14 w-14 shrink-0 overflow-hidden rounded-sm border border-slate-200 bg-slate-50">
+                            <img src={item.imageUrl} alt={item.name} loading="lazy" className="h-full w-full object-cover" />
+                          </button>
+                        ) : (
+                          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-sm border border-dashed border-slate-300 bg-slate-50 text-slate-300">
+                            <Gem className="h-5 w-5" />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-black leading-tight text-slate-900">{item.name}</p>
+                          {/* The code is the one field worth copying from this card. */}
+                          <p className="selectable mt-0.5 font-mono text-[11px] font-bold text-slate-500">{item.code}</p>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                            <span className="rounded-sm bg-amber-400 px-1.5 py-0.5 text-[10px] font-black text-slate-900">{item.karat}K</span>
+                            <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
+                              {item.inventoryMode === 'aggregate' ? 'مخزون بالوزن' : 'قطعة'}
+                            </span>
+                            {item.isManualSaleEntry && <span className="rounded-sm bg-slate-200 px-1.5 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
+                            {item.condition === 'used' && <span className="rounded-sm bg-violet-100 px-1.5 py-0.5 text-[10px] font-black text-violet-700">مستعمل</span>}
+                          </div>
                         </div>
-                        <span className="bg-amber-400 text-slate-900 font-black px-2 py-0.5 rounded text-[10px]">
-                          عيار {item.karat}
+                      </div>
+
+                      {/* Row 2 — the two stock facts that matter, as real metrics rather than a run of text. */}
+                      <div className="mt-2.5 grid grid-cols-2 gap-1.5">
+                        <div className="rounded-sm bg-slate-50 px-2.5 py-1.5">
+                          <p className="text-[10px] font-bold text-slate-500">الكمية</p>
+                          <p className={`font-mono text-sm font-black ${item.quantity < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{item.quantity}</p>
+                        </div>
+                        <div className="rounded-sm bg-slate-50 px-2.5 py-1.5">
+                          <p className="text-[10px] font-bold text-slate-500">الوزن</p>
+                          <p className={`font-mono text-sm font-black ${item.netWeightGrams < 0 ? 'text-rose-600' : 'text-slate-900'}`}>{item.netWeightGrams.toFixed(3)} غ</p>
+                        </div>
+                      </div>
+
+                      {/* Row 3 — context and one reachable action menu, not a row of tiny icons. */}
+                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                        <span className="flex min-w-0 items-center gap-1 text-[10px] font-bold text-slate-500">
+                          <Building2 className="h-3 w-3 shrink-0 text-slate-400" />
+                          <span className="truncate">{wh?.name || '—'}</span>
                         </span>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-slate-50 p-2.5 rounded border border-slate-100">
-                        <div>
-                          <span className="text-[10px] text-slate-400 block font-sans">التصنيف:</span>
-                          <span className="font-bold text-slate-800 font-sans">{item.category}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 block font-sans">المستودع:</span>
-                          <span className="font-bold text-slate-800 font-sans">{wh?.name || 'الرئيسي'}</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 block font-sans">الوزن الصافي:</span>
-                          <span className="font-black text-amber-900">{item.netWeightGrams.toFixed(2)} غ</span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 block font-sans">القيمة التقديرية:</span>
-                          <span className="font-black text-emerald-800">{formatMoney(estimatedTotalUSD)}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between text-xs pt-1">
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          أجرة/غ: ${item.laborFeeUSDPerGram}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              setShowTransferModal(item);
-                              setTargetWarehouseForTransfer(item.warehouseId);
-                            }}
-                            className="hidden p-1.5 bg-slate-100 text-slate-800 hover:bg-slate-200 rounded text-xs flex items-center gap-1"
-                          >
-                            <ArrowRightLeft className="w-3.5 h-3.5" />
-                            <span className="text-[10px]">نقل</span>
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenEditItem(item)}
-                            className="hidden p-1.5 bg-amber-100 text-amber-900 hover:bg-amber-200 rounded text-xs flex items-center gap-1 font-bold"
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                            <span className="text-[10px]">تعديل</span>
-                          </button>
-
-                          <button
-                            onClick={() => deleteInventoryItem(item.id)}
-                            className="hidden p-1.5 bg-rose-100 text-rose-800 hover:bg-rose-200 rounded text-xs"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={(event) => toggleItemMenu(event, item)} className={`p-1.5 rounded-sm transition flex items-center justify-center border shadow-sm ${activeItemMenu?.item.id === item.id ? 'bg-amber-400 text-slate-900 border-amber-500' : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'}`} title="خيارات القطعة">
-                            <MoreVertical className="w-4 h-4" />
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <span className="rounded-sm bg-emerald-50 px-1.5 py-0.5 text-[10px] font-black text-emerald-700">
+                            {item.status === 'sold' ? 'مُباع' : item.status === 'reserved' ? 'محجوز' : 'متوفر'}
+                          </span>
+                          <button onClick={(event) => toggleItemMenu(event, item)} aria-label="إجراءات"
+                            className="grid h-8 w-8 place-items-center rounded-sm border border-slate-200 text-slate-600 transition active:scale-95">
+                            <MoreVertical className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
