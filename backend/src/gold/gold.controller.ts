@@ -3,15 +3,33 @@ import type { FastifyRequest } from 'fastify';
 import { AuthGuard } from '../auth/auth.guard.js';
 import { PermissionGuard } from '../permissions/permission.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
+import { UsedInventoryService } from './used-inventory.service.js';
 import { GoldService } from './gold.service.js';
 
 @Controller('gold') @UseGuards(AuthGuard, PermissionGuard)
 export class GoldController {
-  constructor(@Inject(GoldService) private readonly gold: GoldService) {}
+  constructor(@Inject(GoldService) private readonly gold: GoldService, @Inject(UsedInventoryService) private readonly used: UsedInventoryService) {}
 
   @Get('karats') @RequirePermissions('gold_accounts.view') karats() { return this.gold.karats(); }
   @Get('accounts') @RequirePermissions('gold_accounts.view') listAccounts(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.listAccounts(request.identity!, query); }
   @Get('holdings') @RequirePermissions('gold_accounts.view') holdings(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.holdings(request.identity!, query); }
+
+  // Scrap available for reclassification, and the manager decision that reclassifies it.
+  // Literal paths are declared before any `:id` route so they are not captured as ids.
+  @Get('holdings/scrap') @RequirePermissions('gold_accounts.view')
+  availableScrap(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.used.available(request.identity!, query); }
+
+  @Get('used-conversions') @RequirePermissions('gold_accounts.view')
+  conversions(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.used.conversions(request.identity!, query); }
+
+  @Get('used-conversions/:conversionId') @RequirePermissions('gold_accounts.view')
+  usedConversion(@Req() request: FastifyRequest, @Param('conversionId') conversionId: string) { return this.used.detail(request.identity!, conversionId); }
+
+  @Post('used-conversions') @RequirePermissions('gold_accounts.used_inventory.convert')
+  convertToUsedInventory(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.used.convert(request.identity!, body); }
+
+  @Post('used-conversions/:conversionId/reverse') @RequirePermissions('gold_accounts.used_inventory.reverse')
+  reverseConversion(@Req() request: FastifyRequest, @Param('conversionId') conversionId: string, @Body() body: Record<string, unknown>) { return this.used.reverse(request.identity!, conversionId, body); }
   @Get('partners') @RequirePermissions('gold_accounts.view') partnerBalances(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.partnerBalances(request.identity!, query); }
   @Get('partners/:id') @RequirePermissions('gold_accounts.view') partnerBalance(@Req() request: FastifyRequest, @Param('id') id: string) { return this.gold.partnerBalance(request.identity!, id); }
   @Get('partners/:id/statement') @RequirePermissions('gold_accounts.view') statement(@Req() request: FastifyRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) { return this.gold.partnerStatement(request.identity!, id, query); }

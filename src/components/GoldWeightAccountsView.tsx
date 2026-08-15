@@ -3,6 +3,7 @@ import { Coins, Package, Plus, Printer, RotateCcw, Shuffle, X } from 'lucide-rea
 import { goldApi, equivalentWeight, GOLD_KARATS, type ApiGoldHoldings, type ApiGoldHoldingMovement, type ApiGoldPartnerSummary, type ApiGoldReconciliation, type ApiGoldStatement, type ApiGoldStatementRow } from '../services/goldApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { inventoryApi } from '../services/inventoryApi';
+import { UsedGoldPanel } from './UsedGoldPanel';
 
 // ذمم الأوزان: a weight is only meaningful together with its karat, so every balance is
 // listed per karat and never merged. Positive means the partner owes the shop.
@@ -112,6 +113,9 @@ export const GoldWeightAccountsView: React.FC = () => {
     </div>
 
     {error && <div className="border-r-4 border-rose-500 bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</div>}
+
+    {/* كسر المقايضة القابل للتحويل — منفصل عن ذمم الأوزان ولا يمسّها. */}
+    <UsedGoldPanel onConverted={() => { void refresh(); }} />
 
     {/* الذهب الموجود فعلاً في المحل — منفصل تماماً عن ذمم الأوزان: هذا معدن في الخزنة، لا التزام على أحد. */}
     {holdings && holdings.totals.length > 0 && <div className="bg-white p-3 shadow-sm sm:p-4">

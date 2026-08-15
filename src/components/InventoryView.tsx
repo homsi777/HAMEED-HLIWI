@@ -465,6 +465,7 @@ export const InventoryView: React.FC = () => {
                           </span>
                           <span className="font-extrabold text-slate-900 text-sm">{item.name}</span>
                           {item.isManualSaleEntry && <span className="rounded bg-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
+                          {item.condition === 'used' && <span className="rounded bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-700" title={item.sourceType === 'gold_scrap_conversion' ? 'من كسر مقايضة' : undefined}>مستعمل</span>}
                         </div>
                         <span className="bg-amber-400 text-slate-900 font-black px-2 py-0.5 rounded text-[10px]">
                           عيار {item.karat}
@@ -572,6 +573,7 @@ export const InventoryView: React.FC = () => {
                               </span>
                               <span>{item.name}</span>
                               {item.isManualSaleEntry && <span className="rounded-sm bg-slate-200 px-1.5 py-0.5 text-[10px] font-black text-slate-700">مخزون تاريخي</span>}
+                              {item.condition === 'used' && <span className="rounded-sm bg-violet-100 px-1.5 py-0.5 text-[10px] font-black text-violet-700">مستعمل</span>}
                             </div>
                           </td>
                           <td className="py-3 px-3 text-slate-600 font-sans font-medium">{item.category}</td>

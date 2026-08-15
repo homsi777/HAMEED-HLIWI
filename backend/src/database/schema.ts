@@ -147,6 +147,39 @@ export const shiftActivities = pgTable('shift_activities', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, table => [index('shift_activities_shift_time_idx').on(table.shiftId, table.occurredAt)]);
 
+// One manager decision to reclassify physical scrap into sellable second-hand stock.
+//
+// The gold ledger already moves the metal, and the inventory item already exists; what neither
+// can express on its own is the link between them plus the manager's judgement — which holding
+// was drawn down, how much, into which item, why, and by whom. That relationship is what this
+// table records, and it is what makes a conversion reversible and auditable.
+export const goldInventoryConversions = pgTable('gold_inventory_conversions', {
+  id: id(),
+  goldAccountId: uuid('gold_account_id').notNull().references(() => goldAccounts.id, { onDelete: 'restrict' }),
+  warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'restrict' }),
+  karat: text('karat').notNull(),
+  convertedWeightGrams: numeric('converted_weight_grams', { precision: 14, scale: 3 }).notNull(),
+  quantity: numeric('quantity', { precision: 14, scale: 3 }).notNull().default('1'),
+  inventoryItemId: uuid('inventory_item_id').notNull().references(() => inventoryItems.id, { onDelete: 'restrict' }),
+  goldTransactionId: uuid('gold_transaction_id').notNull().references(() => goldTransactions.id, { onDelete: 'restrict' }),
+  managerNote: text('manager_note').notNull(),
+  status: text('status').notNull().default('posted'),
+  reversedAt: timestamp('reversed_at', { withTimezone: true }),
+  reversedByUserId: uuid('reversed_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+  reversalReason: text('reversal_reason'),
+  reversalGoldTransactionId: uuid('reversal_gold_transaction_id').references(() => goldTransactions.id, { onDelete: 'restrict' }),
+  idempotencyKey: text('idempotency_key').notNull(),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  ...timestamps,
+}, table => [
+  uniqueIndex('gold_inventory_conversions_idempotency_unique').on(table.idempotencyKey),
+  uniqueIndex('gold_inventory_conversions_item_unique').on(table.inventoryItemId),
+  index('gold_inventory_conversions_account_karat_idx').on(table.goldAccountId, table.karat, table.status),
+  index('gold_inventory_conversions_warehouse_idx').on(table.warehouseId, table.createdAt),
+  check('gold_inventory_conversions_weight_check', sql`${table.convertedWeightGrams} > 0 and ${table.quantity} > 0`),
+  check('gold_inventory_conversions_status_check', sql`${table.status} in ('posted', 'reversed')`),
+]);
+
 export const auditLogs = pgTable('audit_logs', {
   id: id(),
   actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
@@ -161,7 +194,9 @@ export const auditLogs = pgTable('audit_logs', {
 
 export const inventoryStatus = pgEnum('inventory_status', ['in_stock', 'reserved', 'sold']);
 export const inventoryMode = pgEnum('inventory_mode', ['individual', 'aggregate']);
-export const inventoryMovementType = pgEnum('inventory_movement_type', ['initial', 'transfer', 'sale', 'manual_sale', 'sale_cancellation', 'purchase', 'legacy_reconciliation', 'purchase_cancellation', 'sales_return', 'purchase_return', 'return_cancellation']);
+export const inventoryMovementType = pgEnum('inventory_movement_type', ['initial', 'transfer', 'sale', 'manual_sale', 'sale_cancellation', 'purchase', 'legacy_reconciliation', 'purchase_cancellation', 'sales_return', 'purchase_return', 'return_cancellation', 'gold_used_conversion', 'gold_used_conversion_reversal']);
+// Whether a stock item is new or second-hand metal reclassified from scrap taken in.
+export const inventoryCondition = pgEnum('inventory_condition', ['new', 'used']);
 export const stocktakeStatus = pgEnum('stocktake_status', ['completed']);
 export const partnerType = pgEnum('partner_type', ['customer', 'supplier', 'both']);
 export const salesInvoiceStatus = pgEnum('sales_invoice_status', ['posted', 'cancelled']);
@@ -183,14 +218,14 @@ export const accountNormalBalance = pgEnum('account_normal_balance', ['debit', '
 export const journalStatus = pgEnum('journal_status', ['posted', 'reversed']);
 export const journalSourceType = pgEnum('journal_source_type', ['manual', 'opening', 'sale', 'purchase', 'sales_return', 'purchase_return', 'voucher', 'cashbox_transfer']);
 export const goldAccountKind = pgEnum('gold_account_kind', ['partner', 'company']);
-export const goldTransactionType = pgEnum('gold_transaction_type', ['opening', 'sale_exchange', 'sales_return_obligation', 'purchase_settlement', 'purchase_return_adjustment', 'receipt', 'payment', 'conversion', 'reversal']);
+export const goldTransactionType = pgEnum('gold_transaction_type', ['opening', 'sale_exchange', 'sales_return_obligation', 'purchase_settlement', 'purchase_return_adjustment', 'receipt', 'payment', 'conversion', 'reversal', 'used_inventory_conversion']);
 export const goldTransactionStatus = pgEnum('gold_transaction_status', ['posted', 'reversed']);
 
 export const inventoryItems = pgTable('inventory_items', {
   id: id(), code: text('code').notNull(), name: text('name').notNull(), category: text('category').notNull(), karat: text('karat').notNull(),
   grossWeightGrams: numeric('gross_weight_grams', { precision: 14, scale: 3 }).notNull(), stoneWeightGrams: numeric('stone_weight_grams', { precision: 14, scale: 3 }).notNull().default('0'), netWeightGrams: numeric('net_weight_grams', { precision: 14, scale: 3 }).notNull(),
   laborFeeUsdPerGram: numeric('labor_fee_usd_per_gram', { precision: 16, scale: 4 }).notNull().default('0'), totalLaborFeeUsd: numeric('total_labor_fee_usd', { precision: 16, scale: 4 }).notNull().default('0'),
-  warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'restrict' }), status: inventoryStatus('status').notNull().default('in_stock'), inventoryMode: inventoryMode('inventory_mode').notNull().default('individual'), quantity: numeric('quantity', { precision: 14, scale: 3 }).notNull().default('1'), isManualSaleEntry: boolean('is_manual_sale_entry').notNull().default(false), imagePath: text('image_path'), notes: text('notes'), version: integer('version').notNull().default(1), archivedAt: timestamp('archived_at', { withTimezone: true }), archivedByUserId: uuid('archived_by_user_id').references(() => users.id, { onDelete: 'set null' }), createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), updatedByUserId: uuid('updated_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+  warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'restrict' }), status: inventoryStatus('status').notNull().default('in_stock'), inventoryMode: inventoryMode('inventory_mode').notNull().default('individual'), quantity: numeric('quantity', { precision: 14, scale: 3 }).notNull().default('1'), isManualSaleEntry: boolean('is_manual_sale_entry').notNull().default(false), condition: inventoryCondition('condition').notNull().default('new'), sourceType: text('source_type'), imagePath: text('image_path'), notes: text('notes'), version: integer('version').notNull().default(1), archivedAt: timestamp('archived_at', { withTimezone: true }), archivedByUserId: uuid('archived_by_user_id').references(() => users.id, { onDelete: 'set null' }), createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), updatedByUserId: uuid('updated_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
 }, table => [uniqueIndex('inventory_items_code_unique').on(table.code), index('inventory_items_warehouse_status_idx').on(table.warehouseId, table.status), index('inventory_items_karat_idx').on(table.karat), index('inventory_items_category_idx').on(table.category), check('inventory_items_karat_check', sql`${table.karat} in ('24','22','21','18','14')`), check('inventory_items_weights_check', sql`(${table.isManualSaleEntry} = true and ${table.grossWeightGrams} < 0 and ${table.stoneWeightGrams} <= 0 and ${table.netWeightGrams} < 0) or (${table.isManualSaleEntry} = false and ${table.grossWeightGrams} >= 0 and ${table.stoneWeightGrams} >= 0 and ${table.netWeightGrams} >= 0 and ${table.grossWeightGrams} >= ${table.stoneWeightGrams})`), check('inventory_items_quantity_check', sql`(${table.isManualSaleEntry} = true and ${table.quantity} < 0) or (${table.inventoryMode} = 'aggregate') or (${table.quantity} > 0)`), check('inventory_items_labor_check', sql`${table.laborFeeUsdPerGram} >= 0 and ${table.totalLaborFeeUsd} >= 0`)]);
 
 export const inventoryMovements = pgTable('inventory_movements', { id: id(), inventoryItemId: uuid('inventory_item_id').notNull().references(() => inventoryItems.id, { onDelete: 'restrict' }), salesInvoiceId: uuid('sales_invoice_id').references(() => salesInvoices.id, { onDelete: 'restrict' }), purchaseInvoiceId: uuid('purchase_invoice_id').references(() => purchaseInvoices.id, { onDelete: 'restrict' }), returnInvoiceId: uuid('return_invoice_id').references(() => returnInvoices.id, { onDelete: 'restrict' }), type: inventoryMovementType('type').notNull(), fromWarehouseId: uuid('from_warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }), toWarehouseId: uuid('to_warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }), actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), note: text('note'), metadata: jsonb('metadata').notNull().default({}), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow() }, table => [index('inventory_movements_item_created_idx').on(table.inventoryItemId, table.createdAt), index('inventory_movements_warehouse_idx').on(table.toWarehouseId), index('inventory_movements_sale_invoice_idx').on(table.salesInvoiceId), index('inventory_movements_purchase_invoice_idx').on(table.purchaseInvoiceId), index('inventory_movements_return_invoice_idx').on(table.returnInvoiceId)]);

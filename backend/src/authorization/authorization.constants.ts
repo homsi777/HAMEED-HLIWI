@@ -27,6 +27,7 @@ export const ALL_PERMISSION_CODES = [
   // the General Manager holds everything the internal technical role holds.
   'accounting.view', 'accounting.accounts.manage', 'accounting.journal.create', 'accounting.journal.post', 'accounting.journal.reverse',
   'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.adjust', 'gold_accounts.convert', 'gold_accounts.reverse',
+  'gold_accounts.used_inventory.convert', 'gold_accounts.used_inventory.reverse',
   'shifts.view', 'shifts.open', 'shifts.close.request', 'shifts.approve', 'shifts.manage',
   OWN_SCOPE_PERMISSION,
 ] as const;
@@ -47,7 +48,7 @@ export const WAREHOUSE_MANAGER_PERMISSIONS = [
   'reports.view', 'users.view', 'users.manage', 'warehouses.view',
   'finance.view', 'finance.voucher.create',
   'accounting.view',
-  'gold_accounts.view', 'gold_accounts.transaction.create',
+  'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.used_inventory.convert',
   'shifts.view', 'shifts.approve', 'shifts.manage',
 ];
 

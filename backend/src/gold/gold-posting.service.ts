@@ -6,11 +6,12 @@ import { goldAccounts, goldLedgerEntries, goldTransactionSequences, goldTransact
 
 export const KARATS = ['24', '22', '21', '18', '14'] as const;
 export type Karat = (typeof KARATS)[number];
-export type GoldTransactionKind = 'opening' | 'sale_exchange' | 'sales_return_obligation' | 'purchase_settlement' | 'purchase_return_adjustment' | 'receipt' | 'payment' | 'conversion' | 'reversal';
+export type GoldTransactionKind = 'opening' | 'sale_exchange' | 'sales_return_obligation' | 'purchase_settlement' | 'purchase_return_adjustment' | 'receipt' | 'payment' | 'conversion' | 'reversal' | 'used_inventory_conversion';
 
 const PREFIX: Record<GoldTransactionKind, string> = {
   opening: 'GOP', sale_exchange: 'GSX', sales_return_obligation: 'GSR', purchase_settlement: 'GPS',
   purchase_return_adjustment: 'GPR', receipt: 'GRC', payment: 'GPM', conversion: 'GCV', reversal: 'GRV',
+  used_inventory_conversion: 'GUI',
 };
 
 export type GoldDraftLine = {
@@ -95,7 +96,7 @@ export class GoldPostingService {
   async systemAccount(tx: any, user: AuthIdentity, systemCode: string) {
     const existing = (await tx.select().from(goldAccounts).where(eq(goldAccounts.systemCode, systemCode)).limit(1))[0];
     if (existing) return existing;
-    const names: Record<string, string> = { sales_settlement: 'ذهب محتسب ضمن الفواتير', opening_gold: 'أرصدة الأوزان الافتتاحية' };
+    const names: Record<string, string> = { sales_settlement: 'ذهب محتسب ضمن الفواتير', opening_gold: 'أرصدة الأوزان الافتتاحية', used_inventory: 'ذهب مستعمل ضمن المخزون' };
     return (await tx.insert(goldAccounts).values({ kind: 'company', name: names[systemCode] ?? systemCode, systemCode, createdByUserId: user.id }).returning())[0]!;
   }
 

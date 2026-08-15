@@ -30,7 +30,8 @@
     "test:task091": "tsx test/task091-regression.spec.ts",
     "test:task10": "tsx test/task10-authorization.spec.ts",
     "test:task11": "tsx test/task11-shifts.spec.ts",
-    "test:task12": "tsx test/task12-history.spec.ts"
+    "test:task12": "tsx test/task12-history.spec.ts",
+    "test:task13": "tsx test/task13-used-gold.spec.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

@@ -47,6 +47,11 @@ export type ApiGoldHoldings = {
 
 export const goldApi = {
   holdings: (filters: Record<string, string | number | undefined> = {}) => request<ApiGoldHoldings>(`/gold/holdings?${query(filters)}`),
+  // Barter scrap still available to reclassify, plus the manager decision that reclassifies it.
+  scrapHoldings: () => request<{ holdings: ScrapHolding[] }>('/gold/holdings/scrap'),
+  usedConversions: (filters: Record<string, string | number | undefined> = {}) => request<{ items: UsedConversion[] }>(`/gold/used-conversions?${query(filters)}`),
+  convertToUsedInventory: (body: ConvertToUsedInput) => request<UsedConversion>('/gold/used-conversions', { method: 'POST', body: JSON.stringify(body) }),
+  reverseUsedConversion: (id: string, reason: string) => request<UsedConversion>(`/gold/used-conversions/${id}/reverse`, { method: 'POST', body: JSON.stringify({ reason }) }),
   accounts: (filters: Record<string, string | undefined> = {}) => request<ApiGoldAccount[]>(`/gold/accounts?${query(filters)}`),
   partnerBalances: (filters: Record<string, string | undefined> = {}) => request<ApiGoldPartnerSummary[]>(`/gold/partners?${query(filters)}`),
   partnerBalance: (partnerId: string) => request<ApiGoldPartnerBalance>(`/gold/partners/${partnerId}`),
@@ -64,3 +69,28 @@ export const goldApi = {
 // The equivalent weight at another karat, at the milligram precision the ledger stores.
 export const equivalentWeight = (grams: number, fromKarat: string, toKarat: string) => Number(((grams * Number(fromKarat)) / Number(toKarat)).toFixed(3));
 export const pureGoldGrams = (grams: number, karat: string) => Number(((grams * Number(karat)) / 24).toFixed(4));
+
+export interface ScrapHolding {
+  goldAccountId: string; accountName: string;
+  warehouseId: string | null; warehouseName: string | null;
+  karat: string;
+  receivedGrams: number; convertedGrams: number; availableGrams: number;
+  conversionCount: number; fullyConverted: boolean;
+  lastReceivedAt: string | null; canConvert: boolean;
+}
+export interface UsedConversion {
+  id: string; goldAccountId: string; warehouseId: string; warehouseName: string; karat: string;
+  convertedWeightGrams: number; quantity: number;
+  inventoryItemId: string; inventoryCode: string; inventoryName: string; inventoryStatus: string;
+  inventoryMode: string; inventoryRemainingWeightGrams: number; inventoryRemainingQuantity: number;
+  goldTransactionId: string; goldTransactionNumber: string;
+  managerNote: string; status: 'posted' | 'reversed';
+  reversedAt: string | null; reversalReason: string | null;
+  createdBy: string; createdAt: string;
+}
+export interface ConvertToUsedInput {
+  goldAccountId: string; karat: string; weightGrams: string;
+  name: string; category: string; code: string;
+  inventoryMode: 'individual' | 'aggregate'; quantity: string;
+  managerNote: string; idempotencyKey: string;
+}

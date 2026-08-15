@@ -51,6 +51,9 @@ export interface InventoryItem {
   quantity?: number;
   inventoryMode?: 'individual' | 'aggregate';
   isManualSaleEntry?: boolean;
+  /** Second-hand metal reclassified from barter scrap carries a real marker, not a name. */
+  condition?: 'new' | 'used';
+  sourceType?: string | null;
 }
 
 export interface ScrapGoldItem {
@@ -65,6 +68,9 @@ export interface InvoiceItem {
   reconciliationTargetInventoryItemId?: string;
   quantity?: number;
   isManualSaleEntry?: boolean;
+  /** Second-hand metal reclassified from barter scrap carries a real marker, not a name. */
+  condition?: 'new' | 'used';
+  sourceType?: string | null;
   itemName: string;
   category: ItemCategory;
   karat: GoldKarat;
