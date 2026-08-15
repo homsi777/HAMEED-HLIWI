@@ -34,8 +34,11 @@ export interface ShiftSaleLine { id: string; invoiceNumber: string; status: stri
 export interface ShiftReturnLine { id: string; returnNumber: string; status: string; partnerName: string; finalTotalUSD: number; createdAt: string; }
 export interface ShiftDetail extends ShiftSummary { timeline: ShiftTimelineEntry[]; sales: ShiftSaleLine[]; returns: ShiftReturnLine[]; }
 
+// Fastify refuses an empty body when the JSON content type is set, so the header is sent only
+// when there is actually a body. A body-less POST — logout, logout-all, refresh — would
+// otherwise be rejected with 400 before it ever reached the route.
 async function rawRequest(path: string, options: RequestInit = {}) {
-  return fetch(`${apiBaseUrl}${path}`, { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers } });
+  return fetch(`${apiBaseUrl}${path}`, { ...options, credentials: 'include', headers: { ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers } });
 }
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   let response = await rawRequest(path, options);

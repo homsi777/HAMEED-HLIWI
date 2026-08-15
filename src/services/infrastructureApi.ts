@@ -26,8 +26,11 @@ export interface ManagedUser {
 export interface RolePreset { name: string; displayName: string; description: string; scope: DataScope; warehouseSelection: 'none' | 'single' | 'multiple'; permissions: string[]; }
 export interface UsersCatalog { presets: RolePreset[]; permissions: string[]; warehouses: LoginWarehouse[]; actor: { id: string; scope: DataScope; canGrantGlobal: boolean }; }
 
+// Fastify refuses an empty body when the JSON content type is set, so the header is sent only
+// when there is actually a body. A body-less POST — logout, logout-all, refresh — would
+// otherwise be rejected with 400 before it ever reached the route.
 async function rawRequest(path: string, options: RequestInit = {}) {
-  return fetch(`${apiBaseUrl}${path}`, { ...options, credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers } });
+  return fetch(`${apiBaseUrl}${path}`, { ...options, credentials: 'include', headers: { ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers } });
 }
 
 // Renewal is skipped only where retrying would be wrong or would loop: obtaining a session,

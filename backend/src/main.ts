@@ -36,6 +36,27 @@ export async function createApp(): Promise<NestFastifyApplication> {
   app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalInterceptors(new RequestContextInterceptor(app.get(RequestContextService)));
   app.enableShutdownHooks();
+  // A browser sends `Content-Type: application/json` on every request its client makes,
+  // including POSTs that legitimately have no body — logout, logout-all, refresh. Fastify's
+  // default JSON parser rejects those with `400 Body cannot be empty…` before the route is
+  // ever reached, which is exactly how the production logout button failed.
+  //
+  // Nest installs that parser during `init()`, so the app is initialised first and the parser
+  // replaced afterwards. An empty body under this content type becomes an empty object;
+  // malformed JSON is still rejected.
+  await app.init();
+  const fastify = app.getHttpAdapter().getInstance();
+  fastify.removeContentTypeParser('application/json');
+  fastify.addContentTypeParser(
+    'application/json',
+    { parseAs: 'string' },
+    (_request: unknown, body: string, done: (error: Error | null, value?: unknown) => void) => {
+      if (typeof body !== 'string' || body.trim() === '') return done(null, {});
+      try { done(null, JSON.parse(body)); }
+      catch { done(Object.assign(new Error('Invalid JSON body.'), { statusCode: 400 })); }
+    },
+  );
+
   return app;
 }
 
