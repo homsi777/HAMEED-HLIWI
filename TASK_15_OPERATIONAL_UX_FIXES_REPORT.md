@@ -1,9 +1,8 @@
 # TASK 15 — Operational UX Fixes: Logout, Mobile Text Selection & Inventory Mobile Layout
 
 **Hameed Hliwi Jewelry** · commit `8985a91`
-**Status: BUILT AND TESTED — DEPLOYMENT BLOCKED.** All three fixes are implemented, all suites
-pass, but the VPS is currently refusing SSH authentication, so the code is **not yet live**. See
-§9. Production continues to run the previous release (TASK 14) normally.
+**Status: CLOSED / PASSED** — deployed and verified on `https://hameed-hliwi.org/`, 22/22
+production checks green.
 
 **No database migration required** (§59). No backend source file changed — only a new test.
 
@@ -158,49 +157,49 @@ I have no browser or device automation here, so I am **not** claiming a visual p
 is reasoned for 390 px and 430 px and the code contains no fixed widths that could overflow, but
 final mobile UX acceptance depends on your own check on the phone.
 
-## 9. Deployment — blocked
+## 9. Deployment and production verification
 
-Deployment did not happen. After the commit, the VPS began refusing SSH authentication:
+Deployment was blocked for a period: the VPS refused SSH authentication with both the current
+and previous passwords, while the site itself stayed healthy (`200`) and port 2727 stayed open.
+I stopped after two attempts rather than retry, since repeated failures would deepen any
+automatic ban. The cause was simple — Nabil had rotated the `ubuntu` password. Once he supplied
+the new one the deployment proceeded normally.
 
-```
-plink -P 2727 ubuntu@65.21.136.217   →  Access denied (password not accepted)
-```
+Pulled from GitHub (`8f2ec3f`, in sync), rebuilt, and restarted **only** `hameed-hliwi-api` and
+`hameed-hliwi`. The migration ledger still ends at **18**, confirming no migration was applied.
 
-Both the current password and the previous one are rejected. Meanwhile:
+**22 checks, 22 passed** against the live site:
 
-```
-https://hameed-hliwi.org/            →  200
-https://hameed-hliwi.org/api/v1/health →  200
-TCP 65.21.136.217:2727               →  open
-```
+*Logout* — login `201` · `/auth/me` `200` · logout `201` · `hh_access` cleared on `Path=/` ·
+`hh_refresh` cleared on `Path=/api/v1/auth` · `/auth/me` `401` · protected API `401` · stale
+refresh `401` · repeated logout harmless · fresh login `201` · new session `/auth/me` `200`.
 
-So **the server and the live application are healthy**; only SSH authentication is failing. I
-stopped after two attempts rather than retry repeatedly, since repeated failures would deepen
-any automatic ban.
+*Shipped bundle* — the corrected renewal list is present in the served JS, the selection policy
+and the `.invoice-print-sheet` exemption are present in the served CSS, and the new inventory
+labels ship.
 
-The most likely explanations, in order: an SSH brute-force protector (fail2ban or similar)
-temporarily blocking this IP after the many connections made during today's tasks; or the
-account password having been changed on the server.
+*Inventory* — the list answers `200` on real production items, and every item carries name,
+code, karat, quantity, weight, `condition` and `inventoryMode`, so every card element has real
+data behind it. Both of Nabil's in-stock items carry **negative quantities**, which makes §30
+directly relevant to his live data: they render in red rather than hidden or clamped.
 
-**Production is unaffected** and continues to run the previous release. Nothing was left
-half-deployed: the migration ledger is untouched because this task has no migration, and no
-backend source changed.
+*Safety* — sales, inventory, vouchers, journals and gold transactions identical before and
+after; trial balance still balances; no migration applied. Temporary verification accounts were
+removed; remaining users are `admin` and `hameed`.
 
-**What is needed to finish:** either wait for the temporary ban to lapse, or confirm the current
-`ubuntu` password. Once SSH is available the remaining steps are the usual ones — pull, rebuild,
-restart the two processes, and run the production verification in §61.
+**One thing found and deliberately left alone.** Production now holds real weight-custody records
+Nabil created himself at 10:52 today while trying TASK 14 — a custody person `نبيل٢` with
+21.840 g outstanding. That is his data, not test residue, and it was not touched.
 
 ---
 
 ## 10. Remaining risks
 
-1. **Not yet live.** Everything in this report is implemented and tested locally; none of it is
-   in production until the deployment above completes.
-2. **Visual acceptance is yours.** §62 — I cannot verify pixels from here.
-3. **The 15-minute access cookie is unchanged.** I fixed the client so a short-lived access
+1. **Visual acceptance is yours.** §62 — I cannot verify pixels from here.
+2. **The 15-minute access cookie is unchanged.** I fixed the client so a short-lived access
    cookie is renewed transparently rather than treated as a dead session. Lengthening the cookie
    itself would be a security decision, not a UX one, so I left it alone.
-4. **Selection is off by default now.** If any screen turns out to need copying that I have not
+3. **Selection is off by default now.** If any screen turns out to need copying that I have not
    marked, adding `selectable` to that element is a one-word change.
 
-**TASK 15 = IMPLEMENTED, TESTED, AWAITING DEPLOYMENT.**
+**TASK 15 = CLOSED / PASSED.**
