@@ -18,6 +18,7 @@ import { AccountingModule } from './accounting/accounting.module.js';
 import { GoldModule } from './gold/gold.module.js';
 import { UsersModule } from './users/users.module.js';
 import { ShiftsModule } from './shifts/shifts.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 import { HistoryModule } from './history/history.module.js';
-@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, AuthorizationModule, UsersModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, SalesModule, PurchasesModule, ReturnsModule, FinanceModule, AccountingModule, GoldModule, ShiftsModule, HistoryModule, HealthModule] })
+@Module({ imports: [CommonModule, DatabaseModule, AuditModule, AuthModule, AuthorizationModule, UsersModule, PermissionsModule, WarehousesModule, RealtimeModule, InventoryModule, PartnersModule, SalesModule, PurchasesModule, ReturnsModule, FinanceModule, AccountingModule, GoldModule, ShiftsModule, SettingsModule, HistoryModule, HealthModule] })
 export class AppModule {}

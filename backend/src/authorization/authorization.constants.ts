@@ -29,6 +29,10 @@ export const ALL_PERMISSION_CODES = [
   'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.adjust', 'gold_accounts.convert', 'gold_accounts.reverse',
   'gold_accounts.used_inventory.convert', 'gold_accounts.used_inventory.reverse',
   'shifts.view', 'shifts.open', 'shifts.close.request', 'shifts.approve', 'shifts.manage',
+  // TASK 18: company-wide operating parameters - the exchange rate, gold prices and store
+  // identity. Reading them needs no permission at all: a seller cannot price a sale without
+  // the gold price. Changing them is a commercial act and belongs to whoever runs the company.
+  'settings.manage',
   OWN_SCOPE_PERMISSION,
 ] as const;
 
@@ -116,7 +120,7 @@ export const MODULE_PERMISSIONS: Record<string, string[]> = {
   reports: ['reports.view'],
   users: ['users.view'],
   shifts: ['shifts.manage'],
-  settings: ['warehouses.manage'],
+  settings: ['settings.manage'],
 };
 
 export function visibleModules(permissions: string[]): string[] {

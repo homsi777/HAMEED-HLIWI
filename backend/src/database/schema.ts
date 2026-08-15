@@ -520,6 +520,71 @@ export const goldLedgerEntries = pgTable('gold_ledger_entries', {
   check('gold_ledger_entries_amounts_check', sql`${table.debitGrams} >= 0 and ${table.creditGrams} >= 0`),
 ]);
 
+// TASK 18: the shop's operating parameters. Until now these lived in each browser's
+// localStorage, which meant two devices could price the same goods differently on the same day
+// and the approved invoice printed a store name held in a browser. They belong on the server.
+//
+// `isProvisional` marks the seeded placeholder values. The real prices exist only in the manager's
+// browser and cannot be read from here, so they are seeded obviously-wrong and flagged until a
+// human enters the true ones — a plausible-looking wrong price is worse than a visible placeholder.
+export const appSettings = pgTable('app_settings', {
+  id: id(),
+  // One shop, one row. The constraint enforces it so no code path can create a second and leave
+  // the system asking which is real.
+  singleton: boolean('singleton').notNull().default(true),
+  storeName: text('store_name').notNull(), storeSubtitle: text('store_subtitle').notNull().default(''),
+  address: text('address').notNull().default(''), branchName: text('branch_name').notNull().default(''),
+  phone1: text('phone1').notNull().default(''), phone2: text('phone2').notNull().default(''),
+  usdToSypRate: numeric('usd_to_syp_rate', { precision: 18, scale: 4 }).notNull(),
+  baseGoldOunceUsd: numeric('base_gold_ounce_usd', { precision: 18, scale: 4 }).notNull().default('0'),
+  baseGoldGram24kUsd: numeric('base_gold_gram_24k_usd', { precision: 18, scale: 4 }).notNull().default('0'),
+  buyMarginPercent: numeric('buy_margin_percent', { precision: 9, scale: 4 }).notNull().default('0'),
+  sellMarginPercent: numeric('sell_margin_percent', { precision: 9, scale: 4 }).notNull().default('0'),
+  taxRatePercent: numeric('tax_rate_percent', { precision: 9, scale: 4 }).notNull().default('0'),
+  autoSyncGoldPrices: boolean('auto_sync_gold_prices').notNull().default(false),
+  isProvisional: boolean('is_provisional').notNull().default(true),
+  version: integer('version').notNull().default(1),
+  updatedByUserId: uuid('updated_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+  ...timestamps,
+}, table => [
+  uniqueIndex('app_settings_singleton_unique').on(table.singleton),
+  check('app_settings_singleton_check', sql`${table.singleton} = true`),
+  check('app_settings_rate_check', sql`${table.usdToSypRate} > 0`),
+]);
+
+// One row per karat. Karats are never merged here any more than anywhere else in this system.
+export const goldPrices = pgTable('gold_prices', {
+  id: id(), karat: text('karat').notNull(),
+  buyPriceUsdPerGram: numeric('buy_price_usd_per_gram', { precision: 16, scale: 4 }).notNull().default('0'),
+  sellPriceUsdPerGram: numeric('sell_price_usd_per_gram', { precision: 16, scale: 4 }).notNull().default('0'),
+  buyPriceSypPerGram: numeric('buy_price_syp_per_gram', { precision: 20, scale: 2 }).notNull().default('0'),
+  sellPriceSypPerGram: numeric('sell_price_syp_per_gram', { precision: 20, scale: 2 }).notNull().default('0'),
+  laborFeeUsdPerGram: numeric('labor_fee_usd_per_gram', { precision: 16, scale: 4 }).notNull().default('0'),
+  version: integer('version').notNull().default(1),
+  updatedByUserId: uuid('updated_by_user_id').references(() => users.id, { onDelete: 'restrict' }),
+  ...timestamps,
+}, table => [
+  uniqueIndex('gold_prices_karat_unique').on(table.karat),
+  check('gold_prices_karat_check', sql`${table.karat} in ('24','22','21','18','14')`),
+  check('gold_prices_amounts_check', sql`${table.buyPriceUsdPerGram} >= 0 and ${table.sellPriceUsdPerGram} >= 0 and ${table.buyPriceSypPerGram} >= 0 and ${table.sellPriceSypPerGram} >= 0 and ${table.laborFeeUsdPerGram} >= 0`),
+]);
+
+// Append-only, like every other ledger here: a correction is a new row, never an edit. This is
+// what will later let a report say what the price was on the day of an invoice.
+export const settingsHistory = pgTable('settings_history', {
+  id: id(),
+  scope: text('scope').notNull(), karat: text('karat'),
+  field: text('field').notNull(), oldValue: text('old_value'), newValue: text('new_value').notNull(),
+  actorUserId: uuid('actor_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [
+  index('settings_history_occurred_idx').on(table.occurredAt),
+  index('settings_history_scope_field_idx').on(table.scope, table.field),
+  check('settings_history_scope_check', sql`${table.scope} in ('general', 'gold_price')`),
+]);
+
+export type AppSettingsRow = typeof appSettings.$inferSelect;
+export type GoldPriceRow = typeof goldPrices.$inferSelect;
 export type UserRow = typeof users.$inferSelect;
 export type WarehouseRow = typeof warehouses.$inferSelect;
 export type PartnerRow = typeof partners.$inferSelect;

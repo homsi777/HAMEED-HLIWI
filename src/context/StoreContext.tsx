@@ -13,7 +13,9 @@ import {
   GoldKarat
   , GoldWeightAccount, GoldDebtEntry
 } from '../types';
+import { settingsApi } from '../services/settingsApi';
 import {
+
   initialSettings,
   initialGoldPrices,
   initialWarehouses,
@@ -41,8 +43,11 @@ interface StoreContextType {
   activeCurrency: 'USD' | 'SYP';
   
   // Actions
-  updateSettings: (newSettings: Partial<GeneralSettings>) => void;
-  updateGoldPrices: (newPrices: GoldPriceSetting[]) => void;
+  updateSettings: (newSettings: Partial<GeneralSettings>) => Promise<void>;
+  // TASK 18 §5: true while the values are the ones derived from past documents rather than
+  // ones a human confirmed. The Settings screen says so until a manager saves.
+  settingsProvisional: boolean;
+  updateGoldPrices: (newPrices: GoldPriceSetting[]) => Promise<void>;
   updateKaratPrice: (karat: GoldKarat, buyUSD: number, sellUSD: number) => void;
   recalculateAllGoldPricesFromBase: (baseOunceUSD: number, exchangeRateSYP: number) => void;
   
@@ -119,6 +124,12 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
   const savedData = loadInitialState();
 
   const [settings, setSettings] = useState<GeneralSettings>(savedData?.settings || initialSettings);
+  // TASK 18: the server owns these values. What is kept here is a cache so the app renders
+  // before the first response lands; it is overwritten on every load and never wins over the
+  // server. `settingsVersion` guards concurrent saves, `settingsProvisional` says the values
+  // are still the ones derived from past documents rather than ones a human confirmed.
+  const [settingsVersion, setSettingsVersion] = useState(0);
+  const [settingsProvisional, setSettingsProvisional] = useState(false);
   const [goldPrices, setGoldPrices] = useState<GoldPriceSetting[]>(() => (savedData?.goldPrices || initialGoldPrices).map((price: GoldPriceSetting) => ({ ...price, laborFeeUSDPerGram: price.laborFeeUSDPerGram ?? 5 })));
   const [warehouses, setWarehouses] = useState<Warehouse[]>(savedData?.warehouses || initialWarehouses);
   const [inventory, setInventory] = useState<InventoryItem[]>(savedData?.inventory || initialInventory);
@@ -188,20 +199,39 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
     setActivityLogs(prev => [newLog, ...prev]);
   };
 
-  const updateSettings = (newSettings: Partial<GeneralSettings>) => {
-    setSettings(prev => {
-      const updated = { ...prev, ...newSettings };
-      // If rate changed, recalculate SYP prices
-      if (newSettings.usdToSypRate && newSettings.usdToSypRate !== prev.usdToSypRate) {
-        recalculateAllGoldPricesFromBase(updated.baseGoldOunceUSD, newSettings.usdToSypRate);
-      }
-      return updated;
-    });
+
+  // The server is the source of truth for the shop's operating parameters. It is read on mount
+  // and again whenever the app comes back to the front, which is what makes a manager's rate
+  // change reach a seller's phone. The backend also emits `settings.changed` over the realtime
+  // gateway; there is no socket client in this app yet, so convergence is on focus instead.
+  const applyServerSettings = React.useCallback((server: Awaited<ReturnType<typeof settingsApi.get>>) => {
+    const { goldPrices: serverPrices, isProvisional, version, updatedAt, ...general } = server;
+    setSettings(prev => ({ ...prev, ...general }));
+    setGoldPrices(serverPrices.map(({ version: _priceVersion, ...price }) => price));
+    setSettingsVersion(version);
+    setSettingsProvisional(isProvisional);
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = () => { void settingsApi.get().then(server => { if (!cancelled) applyServerSettings(server); }).catch(() => undefined); };
+    load();
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    return () => { cancelled = true; window.removeEventListener('focus', onFocus); };
+  }, [applyServerSettings]);
+
+  // TASK 18: saved on the server, then re-read from its answer. The local state is never the
+  // authority — if the save is refused, nothing here moves, which is the point.
+  const updateSettings = async (newSettings: Partial<GeneralSettings>) => {
+    const server = await settingsApi.update({ ...newSettings, version: settingsVersion });
+    applyServerSettings(server);
     logActivity('تحديث الإعدادات', 'تم تعديل إعدادات النظام العامة', 'setting');
   };
 
-  const updateGoldPrices = (newPrices: GoldPriceSetting[]) => {
-    setGoldPrices(newPrices);
+  const updateGoldPrices = async (newPrices: GoldPriceSetting[]) => {
+    const server = await settingsApi.updateGoldPrices(newPrices.map(price => ({ ...price, karat: String(price.karat) })));
+    applyServerSettings(server);
     logActivity('تحديث أسعار الذهب', 'تم تحديث جدول أسعار الذهب رسمياً', 'setting');
   };
 
@@ -659,6 +689,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
         activityLogs,
         activeCurrency,
         updateSettings,
+        settingsProvisional,
         updateGoldPrices,
         updateKaratPrice,
         recalculateAllGoldPricesFromBase,

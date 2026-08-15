@@ -127,6 +127,13 @@
       "when": 1786730966333,
       "tag": "0017_task14_custody_people",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786730967333,
+      "tag": "0018_task18_settings",
+      "breakpoints": true
     }
   ]
 }

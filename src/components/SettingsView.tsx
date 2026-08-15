@@ -27,7 +27,7 @@ const priceInputValuesFrom = (prices: GoldPriceSetting[]) => prices.reduce<Recor
 }, {});
 
 export const SettingsView: React.FC = () => {
-  const { settings, goldPrices, updateSettings, updateGoldPrices, resetToDefaultData } = useStore();
+  const { settings, goldPrices, updateSettings, updateGoldPrices, resetToDefaultData, settingsProvisional } = useStore();
 
   const [storeName, setStoreName] = useState(settings.storeName);
   const [address, setAddress] = useState(settings.address);
@@ -41,15 +41,18 @@ export const SettingsView: React.FC = () => {
   const [priceInputValues, setPriceInputValues] = useState(() => priceInputValuesFrom(goldPrices));
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError('');
     const rate = parseFloat(usdToSypRate) || 15200;
     const ounce = parseFloat(baseOunceUSD) || 2650;
     const bMargin = parseFloat(buyMargin) || 0.5;
     const sMargin = parseFloat(sellMargin) || 1.5;
 
-    updateSettings({
+    try {
+    await updateSettings({
       storeName,
       address,
       phone1,
@@ -60,11 +63,16 @@ export const SettingsView: React.FC = () => {
       sellMarginPercent: sMargin
     });
 
-    updateGoldPrices(priceDraft.map(price => ({
+    await updateGoldPrices(priceDraft.map(price => ({
       ...price,
       buyPriceSYPPerGram: Math.round(price.buyPriceUSDPerGram * rate),
       sellPriceSYPPerGram: Math.round(price.sellPriceUSDPerGram * rate)
     })));
+    } catch (reason: any) {
+      // A refused save must not look like a successful one, least of all on a phone.
+      setSaveError(reason?.message || 'تعذر حفظ الإعدادات على الخادم.');
+      return;
+    }
 
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
@@ -133,6 +141,17 @@ export const SettingsView: React.FC = () => {
           </h2>
         </div>
 
+        {settingsProvisional && (
+          <div className="mb-3 rounded-sm border border-amber-400 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-900">
+            هذه القيم مبدئية — استُنتجت من آخر مستنداتك المرحّلة ولم يؤكّدها أحد بعد.
+            راجع سعر الصرف وأسعار العيارات ثم احفظ لتصبح معتمدة.
+          </div>
+        )}
+        {saveError && (
+          <div className="mb-3 rounded-sm border border-rose-300 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-800">
+            {saveError}
+          </div>
+        )}
         {savedSuccess && (
           <div className="bg-emerald-100 text-emerald-900 font-bold px-4 py-2 rounded-sm text-xs flex items-center gap-2 border border-emerald-300">
             <CheckCircle2 className="w-4 h-4" />

@@ -31,4 +31,8 @@ export class RealtimeGateway {
   emitToWarehouse(warehouseId: string, event: string, payload: unknown) { this.server.to(`warehouse:${warehouseId}`).emit(event, payload); }
   emitToWarehousePermission(warehouseId: string, permission: string, event: string, payload: unknown) { this.server.to(`warehouse-permission:${warehouseId}:${permission}`).emit(event, payload); }
   emitToPermissions(permissionCodes: string[], event: string, payload: unknown) { this.server.to(permissionCodes.map(permission => `permission:${permission}`)).emit(event, payload); }
+  // TASK 18 §18: a change to the exchange rate or the gold price has to reach every open session,
+  // seller and manager alike, because the alternative is two devices pricing the same goods
+  // differently — the exact failure this task exists to remove.
+  emitToAll(event: string, payload: unknown) { this.server.emit(event, payload); }
 }
