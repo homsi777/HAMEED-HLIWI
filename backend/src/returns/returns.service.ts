@@ -290,10 +290,27 @@ export class ReturnsService {
   // individual item, or only the returned quantity and weight for an aggregate one.
   private async restoreSoldStock(tx: any, user: AuthIdentity, source: any, header: any, amounts: { quantity: number; gross: number; stone: number; net: number; remainingQuantity: number; remainingNet: number }) {
     if (!source.inventoryItemId) return null;
-    const item = (await tx.select().from(inventoryItems).where(eq(inventoryItems.id, source.inventoryItemId)).limit(1).for('update'))[0];
+    let item = (await tx.select().from(inventoryItems).where(eq(inventoryItems.id, source.inventoryItemId)).limit(1).for('update'))[0];
     if (!item) throw new ConflictException('The inventory record for a returned line is no longer available.');
     if (item.warehouseId !== header.warehouseId) throw new ConflictException('The returned item belongs to another warehouse.');
-    if (item.archivedAt) throw new ConflictException('The inventory record for a returned line has been archived and cannot receive the return.');
+    // An archived item used to end the return here, which left the customer holding goods the
+    // system refused to take back. The archive is stale by definition at this point: accepting
+    // the return means the piece is physically coming back, so the row is revived first and the
+    // normal restore below then runs against it (TASK 24). Nothing else may revive an archived
+    // item — only this decision, on this line.
+    if (item.archivedAt) {
+      const revived = (await tx.update(inventoryItems)
+        .set({ archivedAt: null, archivedByUserId: null, updatedByUserId: user.id, updatedAt: new Date(), version: sql`${inventoryItems.version} + 1` })
+        .where(and(eq(inventoryItems.id, item.id), eq(inventoryItems.version, item.version))).returning())[0];
+      if (!revived) throw new ConflictException('The returned item changed while the return was being posted. Reload and retry.');
+      await tx.insert(inventoryMovements).values({
+        inventoryItemId: item.id, returnInvoiceId: header.id, salesInvoiceId: header.originalSalesInvoiceId,
+        type: 'sales_return', toWarehouseId: header.warehouseId, actorUserId: user.id,
+        note: `Sales return ${header.returnNumber}: إعادة تفعيل صنف محذوف ليستقبل المرتجع`,
+        metadata: { unarchivedByReturn: true, archivedAt: item.archivedAt },
+      });
+      item = revived;
+    }
     const before = { beforeQuantity: item.quantity, beforeGrossWeightGrams: item.grossWeightGrams, beforeStoneWeightGrams: item.stoneWeightGrams, beforeNetWeightGrams: item.netWeightGrams, beforeTotalLaborFeeUsd: item.totalLaborFeeUsd, beforeStatus: item.status };
     const movement = async (metadata: Record<string, unknown>) => { await tx.insert(inventoryMovements).values({ inventoryItemId: item.id, returnInvoiceId: header.id, salesInvoiceId: header.originalSalesInvoiceId, type: 'sales_return', toWarehouseId: header.warehouseId, actorUserId: user.id, note: `Sales return ${header.returnNumber}`, metadata: { ...before, ...metadata } }); };
 
