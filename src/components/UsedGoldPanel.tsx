@@ -35,7 +35,12 @@ export const UsedGoldPanel: React.FC<{ onConverted?: () => void }> = ({ onConver
 
   if (loading) return <div className="grid place-items-center bg-white p-8 text-slate-400 shadow-sm"><Loader2 className="h-5 w-5 animate-spin" /></div>;
   if (error) return <p role="alert" className="flex items-start gap-2 border-2 border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-700"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>;
-  if (!holdings.length && !conversions.length) return null;
+  // على شاشتها المستقلة لم يعد الإخفاء الكامل مقبولاً: الشاشة الفارغة يجب أن تقول لماذا هي فارغة.
+  if (!holdings.length && !conversions.length) return (
+    <div className="border border-dashed border-slate-300 bg-white p-6 text-center text-xs font-bold text-slate-500 sm:p-8">
+      لا يوجد كسر مقايضة مستلم حتى الآن. يظهر هنا الذهب الذي يستلمه المحل من الزبائن ضمن فواتير البيع.
+    </div>
+  );
 
   return (
     <div className="bg-white p-3 shadow-sm sm:p-4">

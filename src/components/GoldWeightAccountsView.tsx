@@ -1,10 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Coins, Package, Plus, Printer, RotateCcw, Shuffle, X } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, Coins, Package, PencilLine, Plus, Printer, Recycle, RotateCcw, Scale, Shuffle, X } from 'lucide-react';
 import { goldApi, equivalentWeight, GOLD_KARATS, type ApiGoldHoldings, type ApiGoldHoldingMovement, type ApiGoldPartnerSummary, type ApiGoldReconciliation, type ApiGoldStatement, type ApiGoldStatementRow } from '../services/goldApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { inventoryApi } from '../services/inventoryApi';
-import { UsedGoldPanel } from './UsedGoldPanel';
-import { WeightCustodyPanel } from './WeightCustodyPanel';
 
 // ذمم الأوزان: a weight is only meaningful together with its karat, so every balance is
 // listed per karat and never merged. Positive means the partner owes the shop.
@@ -12,11 +10,23 @@ import { WeightCustodyPanel } from './WeightCustodyPanel';
 // Layout note: a phone gets stacked cards and a full-height sheet, a desktop gets the
 // tables. The two are the same data in the shape each screen can actually read — a seven
 // column ledger squeezed into 390px is unreadable however small the type gets.
+//
+// This screen is also the hub of the section: عهدة الأوزان لدى الأشخاص and كسر المقايضة
+// now live on their own screens, opened from here rather than stacked into this page.
 const grams = (value: number) => `${Math.abs(value).toFixed(3)} غ`;
 const balanceLabel = (value: number) => (value >= 0 ? 'المتبقي لديه ' : 'المتبقي لنا ');
 const balanceTone = (value: number) => (value >= 0 ? 'text-emerald-700' : 'text-rose-700');
 
-export const GoldWeightAccountsView: React.FC = () => {
+type Props = {
+  /** فتح شاشة «ذمم أوزان» — ليست في القائمة الجانبية، تُفتح من هنا فقط. */
+  onOpenCustody: () => void;
+  /** فتح شاشة «كسر المقايضة». */
+  onOpenUsedGold: () => void;
+  /** صلاحية gold_accounts.adjust — تُظهر زر التعديل اليدوي على إجمالي ذهب الشركة. */
+  canAdjust?: boolean;
+};
+
+export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenUsedGold, canAdjust = false }) => {
   const [summaries, setSummaries] = useState<ApiGoldPartnerSummary[]>([]);
   const [partners, setPartners] = useState<ApiPartner[]>([]);
   const [warehouseId, setWarehouseId] = useState('');
@@ -24,6 +34,8 @@ export const GoldWeightAccountsView: React.FC = () => {
   const [holdings, setHoldings] = useState<ApiGoldHoldings | null>(null);
   const [statement, setStatement] = useState<ApiGoldStatement | null>(null);
   const [showReconciliation, setShowReconciliation] = useState(false);
+  const [showAllMovements, setShowAllMovements] = useState(false);
+  const [showAdjust, setShowAdjust] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -78,6 +90,13 @@ export const GoldWeightAccountsView: React.FC = () => {
   // Suggested only — the operator still confirms the weight that was actually agreed.
   const suggestedToWeight = useMemo(() => (Number(weight) > 0 ? String(equivalentWeight(Number(weight), karat, toKarat)) : ''), [weight, karat, toKarat]);
 
+  // The row date is the UTC day the server derived from occurredAt, so «اليوم» is compared
+  // against the same UTC day rather than a locally formatted one.
+  const today = new Date().toISOString().slice(0, 10);
+  const movements = useMemo(() => holdings?.movements ?? [], [holdings]);
+  const todayMovements = useMemo(() => movements.filter(row => row.date === today), [movements, today]);
+  const shownMovements = showAllMovements ? movements : todayMovements;
+
   const printStatement = () => {
     if (!statement) return;
     const rows = statement.rows.map(row => `<tr><td>${row.date}</td><td>${row.transactionNumber}</td><td>${row.description}</td><td>${row.karat}</td><td>${row.debitGrams ? row.debitGrams.toFixed(3) : ''}</td><td>${row.creditGrams ? row.creditGrams.toFixed(3) : ''}</td><td>${row.runningBalanceGrams.toFixed(3)}</td></tr>`).join('');
@@ -98,7 +117,104 @@ export const GoldWeightAccountsView: React.FC = () => {
 
   const statementRowTone = (row: ApiGoldStatementRow) => (row.status === 'reversed' ? 'text-slate-400 line-through' : '');
 
+  const entryCard = (onClick: () => void, icon: React.ReactNode, title: string, desc: string) => (
+    <button onClick={onClick} className="flex w-full items-center gap-3 bg-white p-3.5 text-right shadow-sm transition active:scale-[.99] sm:p-4">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-sm bg-slate-900">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <b className="block text-sm text-slate-900">{title}</b>
+        <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{desc}</span>
+      </span>
+      <ChevronLeft className="h-5 w-5 shrink-0 text-slate-400" />
+    </button>
+  );
+
   return <div className="space-y-4">
+    {error && <div className="border-r-4 border-rose-500 bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</div>}
+
+    {/* ---------------------------------------------------------------- نظرة عامة */}
+    {/* الذهب الموجود فعلاً في المحل — منفصل تماماً عن ذمم الأوزان: هذا معدن في الخزنة، لا التزام على أحد. */}
+    <div className="bg-white p-3 shadow-sm sm:p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <b className="flex items-center gap-2 text-sm text-slate-900 sm:text-base"><Package className="h-4 w-4 shrink-0 text-amber-600" />ذهب الشركة الموجود فعلياً</b>
+        {canAdjust && (
+          <button onClick={() => setShowAdjust(true)} className="flex items-center gap-1.5 rounded-sm border-2 border-slate-200 px-2.5 py-1.5 text-[11px] font-black text-slate-700 transition active:scale-95">
+            <PencilLine className="h-3.5 w-3.5 text-amber-600" />إضافة / تعديل وزن يدوي
+          </button>
+        )}
+      </div>
+
+      <div className="mt-3 rounded-sm bg-slate-900 p-3.5 text-center">
+        <p className="text-[11px] font-bold text-amber-400/80">الإجمالي بالذهب الصافي المكافئ</p>
+        <p className="mt-1 font-mono text-3xl font-black leading-none text-amber-400">{(holdings?.pureGoldTotalGrams ?? 0).toFixed(3)}</p>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">غرام ذهب صافٍ (عيار 24)</p>
+      </div>
+
+      {/* العيارات لا تُجمع مع بعضها: كل عيار سطر مستقل. */}
+      <div className="mt-2.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+        {(holdings?.totals ?? []).map(row => <div key={row.karat} className="flex items-center justify-between border-r-4 border-amber-400 bg-slate-50 px-3 py-2">
+          <span className="min-w-0">
+            <b className="block text-xs text-slate-900">عيار {row.karat}</b>
+            {row.scrapGrams > 0 && <span className="block text-[10px] font-bold text-amber-800">منها {row.scrapGrams.toFixed(3)} غ كسر مقايضة</span>}
+          </span>
+          <span className="shrink-0 font-mono text-sm font-black text-amber-800">{row.grams.toFixed(3)} غ</span>
+        </div>)}
+        {!(holdings?.totals ?? []).length && <p className="border border-dashed border-slate-300 p-4 text-center text-xs font-bold text-slate-500 sm:col-span-2 lg:col-span-3">لا يوجد ذهب مسجّل في خزنة المحل بعد.</p>}
+      </div>
+    </div>
+
+    {/* حركة أوزان اليوم — القراءة اليومية، والسجل الأحدث خلف زر واحد حتى لا يضيع ما كان معروضاً. */}
+    <div className="bg-white p-3 shadow-sm sm:p-4">
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <b className="text-sm text-slate-900 sm:text-base">{showAllMovements ? 'آخر حركات الأوزان' : 'حركة أوزان اليوم'}</b>
+        {movements.length > todayMovements.length && (
+          <button onClick={() => setShowAllMovements(current => !current)} className="text-[11px] font-extrabold text-amber-700 underline">
+            {showAllMovements ? 'اليوم فقط' : `عرض آخر ${movements.length} حركة`}
+          </button>
+        )}
+      </div>
+
+      {!shownMovements.length ? (
+        <p className="mt-3 border border-dashed border-slate-300 p-6 text-center text-xs font-bold text-slate-500">لا توجد حركات أوزان اليوم.</p>
+      ) : <>
+        {/* Phone: one card per movement. Desktop: the table. */}
+        <div className="mt-3 space-y-2 sm:hidden">
+          {shownMovements.map(row => <div key={row.id} className={`border-r-4 p-2.5 ${row.status === 'reversed' ? 'border-slate-300 bg-slate-50 text-slate-400 line-through' : row.source === 'scrap_exchange' ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300 bg-slate-50'}`}>
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5">{sourceBadge(row)}{row.sourceNumber && <span className="font-mono text-[10px] text-slate-500">{row.sourceNumber}</span>}</div>
+              <span className="text-[10px] text-slate-400">{row.date}</span>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-4 text-slate-700">{row.description}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs font-black">
+              <span className="text-slate-500">عيار {row.karat}</span>
+              {row.inGrams > 0 && <span className="text-emerald-700">وارد {row.inGrams.toFixed(3)} غ</span>}
+              {row.outGrams > 0 && <span className="text-rose-700">صادر {row.outGrams.toFixed(3)} غ</span>}
+            </div>
+          </div>)}
+        </div>
+        <div className="mt-3 hidden overflow-x-auto sm:block">
+          <table className="w-full text-right text-xs">
+            <thead><tr className="bg-amber-50 text-slate-700"><th className="p-2">التاريخ</th><th className="p-2">المصدر</th><th className="p-2">البيان</th><th className="p-2">العيار</th><th className="p-2">وارد</th><th className="p-2">صادر</th></tr></thead>
+            <tbody>{shownMovements.map(row => <tr key={row.id} className={row.status === 'reversed' ? 'border-b text-slate-400 line-through' : row.source === 'scrap_exchange' ? 'border-b bg-amber-50/40' : 'border-b'}>
+              <td className="whitespace-nowrap p-2">{row.date}</td>
+              <td className="p-2">{sourceBadge(row)}{row.sourceNumber && <span className="mr-1 font-mono text-[10px] text-slate-500">{row.sourceNumber}</span>}</td>
+              <td className="p-2">{row.description}</td>
+              <td className="p-2">{row.karat}</td>
+              <td className="p-2 font-bold text-emerald-700">{row.inGrams ? row.inGrams.toFixed(3) : '—'}</td>
+              <td className="p-2 font-bold text-rose-700">{row.outGrams ? row.outGrams.toFixed(3) : '—'}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </>}
+      <p className="mt-2 text-[11px] leading-4 text-slate-400">الذهب المستلم مقايضةً يدخل خزنة الفرع ولا يُضاف كقطعة قابلة للبيع؛ تحويله إلى مخزون يحتاج قراراً صريحاً.</p>
+    </div>
+
+    {/* مدخلا الشاشتين المستقلتين — ليستا في القائمة الجانبية، فهذه هي الطريقة الوحيدة لفتحهما. */}
+    <div className="grid gap-2 sm:grid-cols-2">
+      {entryCard(onOpenCustody, <Scale className="h-5 w-5 text-amber-400" />, 'ذمم أوزان', 'وزن لنا أو علينا عند صائغ أو ملمّع أو عامل، مع كشف لكل شخص.')}
+      {entryCard(onOpenUsedGold, <Recycle className="h-5 w-5 text-violet-400" />, 'كسر المقايضة', 'الذهب المستلم مقايضةً وتحويل ما يصلح منه إلى مخزون مستعمل.')}
+    </div>
+
+    {/* ------------------------------------------------- دفتر أوزان الأطراف التجارية */}
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 className="flex items-center gap-2 text-lg font-black text-slate-900 sm:text-xl"><Coins className="h-5 w-5 shrink-0 text-amber-600" />ذمم الأوزان</h2>
@@ -112,63 +228,6 @@ export const GoldWeightAccountsView: React.FC = () => {
         {actionButton('opening', 'رصيد افتتاحي', <Plus className="inline h-4 w-4" />, 'bg-slate-100 px-3 py-2.5 text-xs font-black text-slate-700 sm:py-2 sm:text-sm')}
       </div>
     </div>
-
-    {error && <div className="border-r-4 border-rose-500 bg-rose-50 p-3 text-sm font-bold text-rose-700">{error}</div>}
-
-    {/* ذمم الأوزان بالمعنى الحقيقي: عهدة وزن لدى أشخاص، والشخص ليس بالضرورة عميلاً. */}
-    <WeightCustodyPanel warehouseId={warehouseId || undefined} />
-
-    {/* كسر المقايضة القابل للتحويل — منفصل عن ذمم الأوزان ولا يمسّها. */}
-    <UsedGoldPanel onConverted={() => { void refresh(); }} />
-
-    {/* الذهب الموجود فعلاً في المحل — منفصل تماماً عن ذمم الأوزان: هذا معدن في الخزنة، لا التزام على أحد. */}
-    {holdings && holdings.totals.length > 0 && <div className="bg-white p-3 shadow-sm sm:p-4">
-      <div className="flex flex-wrap items-center justify-between gap-1.5">
-        <b className="flex items-center gap-2 text-sm text-slate-900 sm:text-base"><Package className="h-4 w-4 shrink-0 text-amber-600" />الذهب الموجود فعلياً في المحل</b>
-        <span className="text-[11px] text-slate-400">إجمالي {holdings.pureGoldTotalGrams.toFixed(3)} غ ذهب صافٍ</span>
-      </div>
-
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {holdings.accounts.map(account => <div key={account.id} className="border-r-4 border-amber-400 bg-slate-50 p-3">
-          <b className="block text-xs text-slate-900">{account.name}</b>
-          {account.balances.map(row => <div key={row.karat} className="mt-1">
-            <span className="font-mono text-sm font-black text-amber-800">{row.grams.toFixed(3)} غ</span>
-            <span className="mr-1 text-xs font-bold text-slate-500">عيار {row.karat}</span>
-            {row.scrapGrams > 0 && <span className="mt-1 block w-fit rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-900">منها {row.scrapGrams.toFixed(3)} غ كسر مقايضة</span>}
-          </div>)}
-        </div>)}
-      </div>
-
-      {/* Phone: one card per movement. Desktop: the table. */}
-      <div className="mt-3 space-y-2 sm:hidden">
-        {holdings.movements.map(row => <div key={row.id} className={`border-r-4 p-2.5 ${row.status === 'reversed' ? 'border-slate-300 bg-slate-50 text-slate-400 line-through' : row.source === 'scrap_exchange' ? 'border-amber-400 bg-amber-50/50' : 'border-slate-300 bg-slate-50'}`}>
-          <div className="flex flex-wrap items-center justify-between gap-1.5">
-            <div className="flex items-center gap-1.5">{sourceBadge(row)}{row.sourceNumber && <span className="font-mono text-[10px] text-slate-500">{row.sourceNumber}</span>}</div>
-            <span className="text-[10px] text-slate-400">{row.date}</span>
-          </div>
-          <p className="mt-1.5 text-[11px] leading-4 text-slate-700">{row.description}</p>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs font-black">
-            <span className="text-slate-500">عيار {row.karat}</span>
-            {row.inGrams > 0 && <span className="text-emerald-700">وارد {row.inGrams.toFixed(3)} غ</span>}
-            {row.outGrams > 0 && <span className="text-rose-700">صادر {row.outGrams.toFixed(3)} غ</span>}
-          </div>
-        </div>)}
-      </div>
-      <div className="mt-3 hidden overflow-x-auto sm:block">
-        <table className="w-full text-right text-xs">
-          <thead><tr className="bg-amber-50 text-slate-700"><th className="p-2">التاريخ</th><th className="p-2">المصدر</th><th className="p-2">البيان</th><th className="p-2">العيار</th><th className="p-2">وارد</th><th className="p-2">صادر</th></tr></thead>
-          <tbody>{holdings.movements.map(row => <tr key={row.id} className={row.status === 'reversed' ? 'border-b text-slate-400 line-through' : row.source === 'scrap_exchange' ? 'border-b bg-amber-50/40' : 'border-b'}>
-            <td className="whitespace-nowrap p-2">{row.date}</td>
-            <td className="p-2">{sourceBadge(row)}{row.sourceNumber && <span className="mr-1 font-mono text-[10px] text-slate-500">{row.sourceNumber}</span>}</td>
-            <td className="p-2">{row.description}</td>
-            <td className="p-2">{row.karat}</td>
-            <td className="p-2 font-bold text-emerald-700">{row.inGrams ? row.inGrams.toFixed(3) : '—'}</td>
-            <td className="p-2 font-bold text-rose-700">{row.outGrams ? row.outGrams.toFixed(3) : '—'}</td>
-          </tr>)}</tbody>
-        </table>
-      </div>
-      <p className="mt-2 text-[11px] leading-4 text-slate-400">الذهب المستلم مقايضةً يدخل خزنة الفرع ولا يُضاف كقطعة قابلة للبيع؛ تحويله إلى مخزون يحتاج قراراً صريحاً.</p>
-    </div>}
 
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {summaries.map(account => <button key={account.accountId} onClick={() => account.partnerId && openStatement(account.partnerId)} className="border-r-4 border-amber-400 bg-white p-3 text-right shadow-sm sm:p-4">
@@ -198,6 +257,30 @@ export const GoldWeightAccountsView: React.FC = () => {
             عيار {row.karat}: وارد {row.totalDebitGrams.toFixed(3)} غ · صادر {row.totalCreditGrams.toFixed(3)} غ{row.conversionNetGrams ? ` · من التحويل ${row.conversionNetGrams.toFixed(3)} غ` : ''}
           </span>)}
         </div>
+      </div>
+    </div>}
+
+    {/* التعديل اليدوي على إجمالي ذهب الشركة: لا توجد بعد آلية خادم آمنة له، وإساءة استخدام
+        الرصيد الافتتاحي للأطراف كانت ستقيّد وزناً على طرف تجاري بدل خزنة المحل. */}
+    {showAdjust && <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
+      <div className="max-h-[92dvh] w-full overflow-y-auto bg-white p-4 sm:max-w-md sm:p-5">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="text-sm font-black text-slate-900 sm:text-base">إضافة / تعديل وزن يدوي</h3>
+          <button onClick={() => setShowAdjust(false)} aria-label="إغلاق" className="shrink-0 p-1 text-slate-500"><X className="h-5 w-5" /></button>
+        </div>
+        <p className="mt-3 flex items-start gap-2 border-r-4 border-amber-400 bg-amber-50 p-3 text-[11px] font-bold leading-5 text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          هذه الميزة غير مفعّلة بعد: لا توجد في الخادم حتى الآن حركة تعديل على إجمالي ذهب الشركة دون ربطها بطرف تجاري.
+        </p>
+        <div className="mt-3 space-y-2 text-[11px] font-bold leading-5 text-slate-600">
+          <p>زر «رصيد افتتاحي» في الأسفل ليس بديلاً عنها: فهو يقيّد الوزن على حساب طرف تجاري ويقابله بحساب الأرصدة الافتتاحية، ولا يزيد ذهب خزنة المحل إطلاقاً.</p>
+          <p>ما ينقص لتفعيل هذا الزر (مهمّة خادم مستقلة):</p>
+          <ul className="mr-4 list-disc space-y-1">
+            <li>حركة تعديل على حساب المحل نفسه (kind = company) بلا طرف، تقبل وزناً إجمالياً وأسطر ملاحظات نصية فقط.</li>
+            <li>ربط فواتير الشراء بدفتر الذهب، لأن إجمالي ذهب الشركة اليوم لا يزيد بالشراء إطلاقاً.</li>
+          </ul>
+        </div>
+        <button onClick={() => setShowAdjust(false)} className="mt-4 h-11 w-full bg-slate-100 text-sm font-black text-slate-700">إغلاق</button>
       </div>
     </div>}
 

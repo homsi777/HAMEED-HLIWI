@@ -22,6 +22,10 @@ import {
   Scale,
   Archive
 } from 'lucide-react';
+// ذمم الأوزان is a hub: two of its screens are opened from inside it and never appear as
+// menu entries, so the section stays highlighted while either of them is open.
+const GOLD_TABS = ['gold-weight-accounts', 'gold-custody', 'gold-used'];
+
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
@@ -31,6 +35,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modules }) => {
   const allows = (module: string) => modules.includes(module);
+  const isTabActive = (id: string) => (id === 'gold-weight-accounts' ? GOLD_TABS.includes(activeTab) : activeTab === id);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showFinanceDropdown, setShowFinanceDropdown] = useState(false);
   const [showMobileDrawer, setShowMobileDrawer] = useState(false);
@@ -153,7 +158,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
               if (!item.allowed) return null;
               const Icon = item.icon;
               const isFinanceActive = activeTab.startsWith('finance');
-              const isActive = item.id === 'finance' ? isFinanceActive : activeTab === item.id;
+              const isActive = item.id === 'finance' ? isFinanceActive : isTabActive(item.id);
 
               if (item.hasDropdown) {
                 return (
@@ -323,7 +328,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
                     if (!item.allowed) return null;
                     const Icon = item.icon;
                     const isFinance = item.id === 'finance';
-                    const isActive = isFinance ? activeTab.startsWith('finance') : activeTab === item.id;
+                    const isActive = isFinance ? activeTab.startsWith('finance') : isTabActive(item.id);
 
                     if (isFinance) {
                       return (
@@ -404,6 +409,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
             {activeTab === 'inventory' && 'المخزون والعيارات'}
             {activeTab === 'invoices' && 'الفواتير والمبيعات'}
             {activeTab === 'partners' && 'العملاء والموردين'}
+            {activeTab === 'gold-weight-accounts' && 'ذمم الأوزان'}
+            {activeTab === 'gold-custody' && 'ذمم أوزان — عهدة أشخاص'}
+            {activeTab === 'gold-used' && 'كسر المقايضة'}
             {activeTab === 'reports' && 'التقارير والتحليلات'}
             {activeTab === 'users' && 'الصلاحيات والمستخدمين'}
             {activeTab === 'shifts' && 'الورديات'}
