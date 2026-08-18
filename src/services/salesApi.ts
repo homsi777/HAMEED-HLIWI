@@ -2,7 +2,10 @@ import type { Invoice, InvoiceItem, PaymentMethod, ScrapGoldItem } from '../type
 const base = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '/api/v1';
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> { const response = await fetch(`${base}${path}`, { ...options, credentials: 'include', headers: { ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }), ...options.headers } }); if (!response.ok) throw { status: response.status, ...(await response.json().catch(() => ({})) as object) }; return response.json() as Promise<T>; }
 const query = (values: Record<string, string | number | undefined>) => new URLSearchParams(Object.entries(values).filter(([, value]) => value !== undefined && value !== '') as [string, string][]).toString();
-export type SalesInvoice = Invoice & { status: 'posted' | 'cancelled'; createdAt: string; cancelledAt: string | null; cancellationReason: string | null; payments?: unknown[]; itemCount?: number; customerOutstandingUSD?: number; };
+// `returnedState` is derived from the return documents that point at the invoice — a posted
+// invoice is never rewritten, so this is the only honest way for the screen to say a sale
+// has come back. `remainingDebtUSD` already has the returned share taken off it.
+export type SalesInvoice = Invoice & { status: 'posted' | 'cancelled'; createdAt: string; cancelledAt: string | null; cancellationReason: string | null; payments?: unknown[]; itemCount?: number; customerOutstandingUSD?: number; returnedState?: 'none' | 'partial' | 'full'; returnedValueUSD?: number; returnCount?: number; };
 export type SaleInput = { warehouseId: string; customerId: string; items: InvoiceItem[]; scrapGoldItems: ScrapGoldItem[]; discountUSD: number; paidUSD: number; paidSYP: number; paymentMethod: PaymentMethod; exchangeRateSypPerUsd: number; notes?: string; itemPhotoUrl?: string; idempotencyKey: string; };
 /**
  * The invoice screen works with `itemId`, the API with `inventoryItemId`. Mapping it here

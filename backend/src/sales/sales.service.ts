@@ -13,6 +13,27 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 type InputLine = { inventoryItemId?: string; itemName?: string; category?: string; karat?: string; grossWeightGrams?: unknown; stoneWeightGrams?: unknown; soldWeightGrams?: string; quantity?: string; pricePerGramUSD?: unknown; laborFeeUSDPerGram?: unknown };
 const numeric = (value: unknown, field: string, scale = 4, minimum = 0) => { const raw = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : ''; if (!new RegExp(`^\\d+(?:\\.\\d{1,${scale}})?$`).test(raw)) throw new ConflictException(`${field} is invalid.`); const parsed = Number(raw); if (!Number.isFinite(parsed) || parsed < minimum) throw new ConflictException(`${field} is invalid.`); return parsed.toFixed(scale); };
 const id = (value: unknown, field: string) => { if (typeof value !== 'string' || !UUID.test(value)) throw new ConflictException(`${field} is invalid.`); return value; };
+/**
+ * What has been returned against a sale, for the screen.
+ *
+ * The invoice row is never rewritten when a return is posted — a posted document is a fact —
+ * so "returned" is derived from the return documents that reference it. `remainingDebtUSD` is
+ * reduced by the part of those returns that was actually applied to the customer's outstanding
+ * balance (`outstanding_adjustment_usd`), not by the whole return value: a return refunded in
+ * cash never owed anything to begin with.
+ */
+const returnedSummary = (invoice: any, returnedValue: unknown, returnedOutstanding: unknown, returnCount: unknown) => {
+  const returnedValueUSD = Number(Number(returnedValue ?? 0).toFixed(4));
+  const total = Number(invoice.finalTotalUsd);
+  const remainingDebtUSD = Math.max(0, Number((Number(invoice.remainingDebtUsd) - Number(returnedOutstanding ?? 0)).toFixed(4)));
+  return {
+    returnedValueUSD,
+    returnCount: Number(returnCount ?? 0),
+    returnedState: (returnedValueUSD <= 0.0001 ? 'none' : returnedValueUSD >= total - 0.0001 ? 'full' : 'partial') as 'none' | 'partial' | 'full',
+    remainingDebtUSD,
+  };
+};
+
 const dto = (invoice: any, items: any[] = [], exchanges: any[] = [], payments: any[] = []) => ({ id: invoice.id, invoiceNumber: invoice.invoiceNumber, type: 'sale', date: invoice.createdAt.toISOString().slice(0, 10), status: invoice.status, warehouseId: invoice.warehouseId, customerOrSupplierId: invoice.customerPartnerId, customerOrSupplierName: invoice.customerNameSnapshot, customerPhone: invoice.customerPhoneSnapshot ?? '', items: items.map(item => ({ itemId: item.inventoryItemId ?? undefined, itemName: item.itemNameSnapshot, category: item.categorySnapshot, karat: item.karatSnapshot, quantity: Number(item.quantity), grossWeightGrams: Number(item.grossWeightGrams), stoneWeightGrams: Number(item.stoneWeightGrams), netWeightGrams: Number(item.netWeightGrams), laborFeeUSDPerGram: Number(item.workmanshipUsdPerGram), pricePerGramUSD: Number(item.goldPriceUsdPerGram), totalPriceUSD: Number(item.lineTotalUsd), warehouseId: invoice.warehouseId })), scrapGoldItems: exchanges.map(row => ({ karat: row.karat, weightGrams: Number(row.weightGrams), pricePerGramUSD: Number(row.evaluationPriceUsdPerGram), totalScrapValueUSD: Number(row.valueUsd) })), subtotalGoldUSD: Number(invoice.goldSubtotalUsd), totalLaborUSD: Number(invoice.workmanshipSubtotalUsd), scrapTotalValueUSD: Number(invoice.scrapTotalValueUsd), discountUSD: Number(invoice.discountUsd), finalTotalUSD: Number(invoice.finalTotalUsd), finalTotalSYP: Number(invoice.finalTotalSyp), paidUSD: Number(invoice.paidUsd), paidSYPInUSD: Number(invoice.paidSypInUsd), paidSYP: Number(invoice.paidSyp), remainingDebtUSD: Number(invoice.remainingDebtUsd), remainingDebtGold21kGrams: 0, paymentMethod: invoice.paymentMethod, notes: invoice.notes ?? '', itemPhotoUrl: invoice.itemPhotoData ?? undefined, createdBy: invoice.createdByName ?? '', createdAt: invoice.createdAt.toISOString(), cancelledAt: invoice.cancelledAt?.toISOString() ?? null, cancellationReason: invoice.cancellationReason ?? null, payments: payments.map(payment => ({ method: payment.method, amountUSD: Number(payment.amountUsd), amountSYP: Number(payment.amountSyp), exchangeRate: payment.exchangeRateSypPerUsd ? Number(payment.exchangeRateSypPerUsd) : null, appliedUSD: Number(payment.appliedUsd) })) });
 
 @Injectable() export class SalesService {
@@ -26,15 +47,20 @@ const dto = (invoice: any, items: any[] = [], exchanges: any[] = [], payments: a
     else if (typeof query.sellerId === 'string' && query.sellerId) conditions.push(eq(salesInvoices.createdByUserId, id(query.sellerId, 'sellerId')));
     if (query.customerId) conditions.push(eq(salesInvoices.customerPartnerId, id(query.customerId, 'customerId'))); if (query.status && ['posted','cancelled'].includes(String(query.status))) conditions.push(eq(salesInvoices.status, query.status as 'posted'|'cancelled')); if (typeof query.invoiceNumber === 'string' && query.invoiceNumber.trim()) conditions.push(ilike(salesInvoices.invoiceNumber, `%${query.invoiceNumber.trim()}%`)); if (typeof query.dateFrom === 'string' && !Number.isNaN(Date.parse(query.dateFrom))) conditions.push(gte(salesInvoices.createdAt, new Date(query.dateFrom))); if (typeof query.dateTo === 'string' && !Number.isNaN(Date.parse(query.dateTo))) conditions.push(lte(salesInvoices.createdAt, new Date(`${query.dateTo}T23:59:59.999Z`)));
     const where = conditions.length ? and(...conditions) : undefined; const sort = query.sort === 'invoiceNumber' ? salesInvoices.invoiceNumber : query.sort === 'finalTotalUsd' ? salesInvoices.finalTotalUsd : salesInvoices.createdAt; const order = query.order === 'asc' ? asc(sort) : desc(sort);
-    const [rows, total] = await Promise.all([this.db.select({ invoice: salesInvoices, createdByName: users.fullName, itemCount: sql<number>`(select coalesce(sum(quantity), 0)::float8 from sales_invoice_items where sales_invoice_id = ${salesInvoices.id})`, lineCount: sql<number>`(select count(*)::int from sales_invoice_items where sales_invoice_id = ${salesInvoices.id})` }).from(salesInvoices).innerJoin(users, eq(users.id, salesInvoices.createdByUserId)).where(where).orderBy(order, desc(salesInvoices.id)).limit(limit).offset((page - 1) * limit), this.db.select({ count: sql<number>`count(*)::int` }).from(salesInvoices).where(where)]);
-    return { items: rows.map(row => ({ ...dto({ ...row.invoice, createdByName: row.createdByName }), itemCount: Number(row.itemCount), lineCount: row.lineCount })), meta: { page, limit, total: total[0]?.count ?? 0 } };
+    const [rows, total] = await Promise.all([this.db.select({ invoice: salesInvoices, createdByName: users.fullName, itemCount: sql<number>`(select coalesce(sum(quantity), 0)::float8 from sales_invoice_items where sales_invoice_id = ${salesInvoices.id})`, lineCount: sql<number>`(select count(*)::int from sales_invoice_items where sales_invoice_id = ${salesInvoices.id})`, returnedValueUsd: sql<string>`(select coalesce(sum(final_total_usd), 0) from return_invoices where original_sales_invoice_id = ${salesInvoices.id} and status = 'posted')`, returnedOutstandingUsd: sql<string>`(select coalesce(sum(outstanding_adjustment_usd), 0) from return_invoices where original_sales_invoice_id = ${salesInvoices.id} and status = 'posted')`, returnCount: sql<number>`(select count(*)::int from return_invoices where original_sales_invoice_id = ${salesInvoices.id} and status = 'posted')` }).from(salesInvoices).innerJoin(users, eq(users.id, salesInvoices.createdByUserId)).where(where).orderBy(order, desc(salesInvoices.id)).limit(limit).offset((page - 1) * limit), this.db.select({ count: sql<number>`count(*)::int` }).from(salesInvoices).where(where)]);
+    return { items: rows.map(row => ({ ...dto({ ...row.invoice, createdByName: row.createdByName }), ...returnedSummary(row.invoice, row.returnedValueUsd, row.returnedOutstandingUsd, row.returnCount), itemCount: Number(row.itemCount), lineCount: row.lineCount })), meta: { page, limit, total: total[0]?.count ?? 0 } };
   }
   async get(user: AuthIdentity, invoiceId: string) { const invoice = await this.invoice(user, id(invoiceId, 'id')); const [items, exchanges, payments, customer, operationalDebt] = await Promise.all([this.db.select().from(salesInvoiceItems).where(eq(salesInvoiceItems.salesInvoiceId, invoice.id)).orderBy(asc(salesInvoiceItems.lineNumber)), this.db.select().from(salesGoldExchanges).where(eq(salesGoldExchanges.salesInvoiceId, invoice.id)), this.db.select().from(salesPayments).where(eq(salesPayments.salesInvoiceId, invoice.id)), this.db.select({ openingBalanceUsd: partners.openingBalanceUsd }).from(partners).where(eq(partners.id, invoice.customerPartnerId)).limit(1), this.db.select({ value: sql<string>`coalesce(sum(${salesInvoices.remainingDebtUsd}), 0)` }).from(salesInvoices).where(and(eq(salesInvoices.customerPartnerId, invoice.customerPartnerId), eq(salesInvoices.status, 'posted')))]);
     // The operational receivable is derived from the partner subledger, which already
     // carries every invoice, receipt, return and reversal that touched this customer.
     const ledgerNet = await this.finance.partnerNetUsd(invoice.customerPartnerId);
     const financials = await this.finance.documentFinancials(invoice.id, 'sales');
-    return { ...dto(invoice, items, exchanges, payments), customerOutstandingUSD: Number((Number(customer[0]?.openingBalanceUsd ?? 0) + ledgerNet).toFixed(4)), invoiceDebtUSD: Number(operationalDebt[0]?.value ?? 0), ...financials }; }
+    const returns = (await this.db.select({
+      value: sql<string>`coalesce(sum(${returnInvoices.finalTotalUsd}), 0)`,
+      outstanding: sql<string>`coalesce(sum(${returnInvoices.outstandingAdjustmentUsd}), 0)`,
+      count: sql<number>`count(*)::int`,
+    }).from(returnInvoices).where(and(eq(returnInvoices.originalSalesInvoiceId, invoice.id), eq(returnInvoices.status, 'posted'))))[0];
+    return { ...dto(invoice, items, exchanges, payments), ...returnedSummary(invoice, returns?.value, returns?.outstanding, returns?.count), customerOutstandingUSD: Number((Number(customer[0]?.openingBalanceUsd ?? 0) + ledgerNet).toFixed(4)), invoiceDebtUSD: Number(operationalDebt[0]?.value ?? 0), ...financials }; }
   /**
    * TASK 17 §3–§8: the stock this caller is allowed to sell, without holding `inventory.view`.
    *

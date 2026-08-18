@@ -820,6 +820,13 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                     >
                       {inv.type === 'sale' ? 'بيع' : inv.type === 'purchase' ? 'شراء' : 'مرتجع'}
                     </span>
+                    {/* الفاتورة تبقى «مسجَّلة» في الدفتر — هذه الشارة مشتقّة من مرتجعاتها، لا حالة مخزَّنة. */}
+                    {(inv as any).returnedState === 'full' && (
+                      <span className="bg-rose-600 text-white px-1.5 py-0.5 rounded text-[10px] font-black">مرتجعة بالكامل</span>
+                    )}
+                    {(inv as any).returnedState === 'partial' && (
+                      <span className="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded text-[10px] font-black">مرتجع جزئي</span>
+                    )}
                     {inv.itemPhotoUrl && (
                       <span className="bg-amber-200 text-amber-950 px-1 py-0.5 rounded text-[10px] font-bold flex items-center gap-0.5" title="مرفق صورة ضمان للقطعة">
                         <Camera className="w-3 h-3 text-amber-800" />
@@ -844,6 +851,8 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                     <div className="text-[10px]">
                       {inv.remainingDebtUSD > 0 ? (
                         <span className="text-rose-700 font-bold">باقي: ${inv.remainingDebtUSD.toFixed(0)}</span>
+                      ) : (inv as any).returnedState === 'full' ? (
+                        <span className="text-rose-700 font-bold">لا مستحقات — مرتجعة</span>
                       ) : (
                         <span className="text-emerald-600 font-bold">خالص</span>
                       )}
