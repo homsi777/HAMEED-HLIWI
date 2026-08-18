@@ -23,17 +23,21 @@ import type { Warehouse } from '../types';
  * `/gold/partners/:id/statement` — بلا واجهة تستدعيها. بقية الأزرار في تاريخ git.
  */
 const KARAT_ORDER = (a: { karat: string }, b: { karat: string }) => Number(b.karat) - Number(a.karat);
+/** أكثر من 95% من ذهب المحل عيار 21، فيتصدّر البطاقات مهما كان ترتيبه العددي. */
+const LEAD_KARAT = '21';
 
 type Props = {
   /** فتح شاشة «ذمم أوزان» — ليست في القائمة الجانبية، تُفتح من هنا فقط. */
   onOpenCustody: () => void;
   /** فتح شاشة «كسر المقايضة». */
   onOpenUsedGold: () => void;
+  /** فتح سجل الأرصدة الافتتاحية وحركات تعديل وزن المحل. */
+  onOpenOpenings: () => void;
   /** صلاحية gold_accounts.adjust — تُظهر زر التعديل اليدوي على إجمالي ذهب الشركة. */
   canAdjust?: boolean;
 };
 
-export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenUsedGold, canAdjust = false }) => {
+export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenUsedGold, onOpenOpenings, canAdjust = false }) => {
   const [holdings, setHoldings] = useState<ApiGoldHoldings | null>(null);
   const [showAllMovements, setShowAllMovements] = useState(false);
   const [showAdjust, setShowAdjust] = useState(false);
@@ -117,7 +121,10 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
   const todayMovements = useMemo(() => movements.filter(row => row.date === today), [movements, today]);
   const shownMovements = showAllMovements ? movements : todayMovements;
   // الرقم المعروض هو ذهب المحل بعد استبعاد كسر المقايضة — الكسر له شاشته، ولا يُخلط هنا.
-  const karats = useMemo(() => [...(holdings?.totalsExcludingScrap ?? [])].sort(KARAT_ORDER), [holdings]);
+  // عيار 21 أولاً بطلب المدير، ثم البقية من الأعلى إلى الأدنى.
+  const karats = useMemo(() => [...(holdings?.totalsExcludingScrap ?? [])].sort(KARAT_ORDER)
+    .sort((left, right) => (left.karat === LEAD_KARAT ? -1 : right.karat === LEAD_KARAT ? 1 : 0)), [holdings]);
+  // لم يعد يُعرض رقم مكافئ عيار 24؛ يبقى لحساب حصة الكسر المستبعدة وحدها.
   const headlineGrams = holdings?.pureGoldTotalExcludingScrapGrams ?? 0;
   const scrapPureGrams = Number(((holdings?.pureGoldTotalGrams ?? 0) - headlineGrams).toFixed(3));
 
@@ -155,27 +162,34 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
         )}
       </div>
 
-      {/* بطاقة واحدة: الإجمالي بخط كبير، وتحته مباشرة سطر لكل عيار — لا شيء غير ذلك. */}
-      <div className="mt-3 rounded-sm bg-slate-900 p-4">
-        <p className="text-center text-[11px] font-bold text-amber-400/80">الوزن الإجمالي</p>
-        <p className="mt-1 text-center font-mono text-4xl font-black leading-none text-amber-400">{headlineGrams.toFixed(3)}</p>
-        <p className="mt-1.5 text-center text-[11px] font-bold text-slate-400">غرام ذهب صافٍ (مكافئ عيار 24)</p>
-        {Math.abs(scrapPureGrams) > 0.0005 && (
-          <p className="mt-1 text-center text-[10px] font-bold text-amber-400/60">لا يشمل {scrapPureGrams.toFixed(3)} غ كسر مقايضة — لها شاشتها</p>
-        )}
-
-        <div className="mt-4 border-t border-slate-700">
-          {karats.map(row => (
-            <div key={row.karat} className="flex items-center justify-between gap-3 border-b border-slate-800 py-3 last:border-b-0">
-              <b className="text-base font-black text-white">عيار {row.karat}</b>
-              <span className="shrink-0 font-mono text-xl font-black text-amber-400">
-                {row.grams.toFixed(3)}<span className="mr-1.5 text-xs font-bold text-slate-400">غ</span>
+      {/* بطاقة لكل عيار، بلا رقم مكافئ عيار 24 إطلاقاً.
+          الغرامات هنا هي ما أُدخل فعلاً بذلك العيار — لا تحويل ولا جمع بين عيارين. وعيار 21
+          أولاً وأكبر لأنه أكثر من 95% مما يملكه المحل، فالعين تقع عليه أولاً. */}
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {karats.map((row, index) => {
+          const lead = index === 0;
+          return (
+            <button key={row.karat} onClick={onOpenOpenings}
+              className={`rounded-sm bg-slate-900 p-4 text-right transition active:scale-[.99] ${lead ? 'sm:col-span-2' : ''}`}>
+              <span className={`block font-black text-white ${lead ? 'text-lg' : 'text-sm'}`}>عيار {row.karat}</span>
+              <span className={`mt-1 block font-mono font-black leading-none text-amber-400 ${lead ? 'text-4xl' : 'text-2xl'}`}>
+                {row.grams.toFixed(3)}<span className="mr-2 text-xs font-bold text-slate-400">غ</span>
               </span>
-            </div>
-          ))}
-          {!karats.length && <p className="py-4 text-center text-xs font-bold text-slate-400">لا يوجد ذهب مسجّل في خزنة المحل بعد.</p>}
-        </div>
+            </button>
+          );
+        })}
+        {!karats.length && (
+          <p className="border border-dashed border-slate-300 p-6 text-center text-xs font-bold text-slate-500 sm:col-span-2">
+            لا يوجد ذهب مسجّل في خزنة المحل بعد. استعمل «إضافة / تعديل وزن يدوي» لتسجيل الرصيد الافتتاحي.
+          </p>
+        )}
       </div>
+
+      {Math.abs(scrapPureGrams) > 0.0005 && (
+        <p className="mt-2 text-[11px] font-bold leading-5 text-slate-500">
+          هذه الأوزان لا تشمل كسر المقايضة ({scrapPureGrams.toFixed(3)} غ صافٍ) — له شاشته المستقلة.
+        </p>
+      )}
     </div>
 
     {/* حركة أوزان اليوم — القراءة اليومية، والسجل الأحدث خلف زر واحد. */}

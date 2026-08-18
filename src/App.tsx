@@ -9,6 +9,7 @@ import { PartnersView } from './components/PartnersView';
 import { GoldWeightAccountsView } from './components/GoldWeightAccountsView';
 import { WeightCustodyView } from './components/WeightCustodyView';
 import { UsedGoldView } from './components/UsedGoldView';
+import { GoldOpeningsView } from './components/GoldOpeningsView';
 import { FinanceView } from './components/FinanceView';
 import { AccountingView } from './components/AccountingView';
 import { ReportsView } from './components/ReportsView';
@@ -27,7 +28,7 @@ import type { HistoryFilters } from './services/historyApi';
 // backend from real permission codes, so nothing here can widen access on its own.
 const TAB_MODULE: Record<string, string> = {
   dashboard: 'dashboard', inventory: 'inventory', invoices: 'invoices', partners: 'partners',
-  'gold-weight-accounts': 'gold-weight-accounts', 'gold-custody': 'gold-weight-accounts', 'gold-used': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'shifts', history: 'history', settings: 'settings',
+  'gold-weight-accounts': 'gold-weight-accounts', 'gold-custody': 'gold-weight-accounts', 'gold-used': 'gold-weight-accounts', 'gold-openings': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'shifts', history: 'history', settings: 'settings',
   'finance-accounts': 'accounting', 'finance-ledger': 'accounting',
 };
 // The order a user lands in: the most senior screen they are actually allowed to open.
@@ -99,11 +100,13 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
             <GoldWeightAccountsView
               onOpenCustody={() => setActiveTab('gold-custody')}
               onOpenUsedGold={() => setActiveTab('gold-used')}
+              onOpenOpenings={() => setActiveTab('gold-openings')}
               canAdjust={permissions.includes('gold_accounts.adjust')}
             />
           )}
           {activeTab === 'gold-custody' && <WeightCustodyView onBack={() => setActiveTab('gold-weight-accounts')} />}
           {activeTab === 'gold-used' && <UsedGoldView onBack={() => setActiveTab('gold-weight-accounts')} />}
+          {activeTab === 'gold-openings' && <GoldOpeningsView onBack={() => setActiveTab('gold-weight-accounts')} />}
 
           {(activeTab === 'finance-accounts' || activeTab === 'finance-ledger') && <AccountingView activeTab={activeTab} />}
 
@@ -122,6 +125,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
               initialTab={historyPreset?.tab}
               onOpenInvoiceNumber={openInvoice}
               onOpenShift={modules.includes('shifts') ? openShift : undefined}
+              onOpenGoldOpenings={modules.includes('gold-weight-accounts') ? () => setActiveTab('gold-openings') : undefined}
             />
           )}
 

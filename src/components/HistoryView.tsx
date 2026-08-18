@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive, Scale, Search, SlidersHorizontal, X, Loader2, AlertTriangle, ChevronRight, ChevronLeft,
-  Store, User, Clock3, RotateCcw, Ban, Package, PenLine, Calendar,
+  Store, User, Clock3, RotateCcw, Ban, Package, PenLine, PencilLine, Calendar,
 } from 'lucide-react';
 import {
   historyApi, type HistoryFilterOptions, type HistoryFilters, type HistoryInvoice,
@@ -37,7 +37,7 @@ const periods = () => {
 
 type Tab = 'invoices' | 'weights';
 
-export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab?: Tab; onOpenInvoiceNumber?: (invoiceNumber: string) => void; onOpenShift?: (shiftId: string) => void }> = ({ initialFilters, initialTab, onOpenInvoiceNumber, onOpenShift }) => {
+export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab?: Tab; onOpenInvoiceNumber?: (invoiceNumber: string) => void; onOpenShift?: (shiftId: string) => void; onOpenGoldOpenings?: () => void }> = ({ initialFilters, initialTab, onOpenInvoiceNumber, onOpenShift, onOpenGoldOpenings }) => {
   const [tab, setTab] = useState<Tab>(initialTab ?? 'invoices');
   const [filters, setFilters] = useState<HistoryFilters>({ page: 1, limit: 30, ...initialFilters });
   const [options, setOptions] = useState<HistoryFilterOptions | null>(null);
@@ -109,6 +109,22 @@ export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab
           </button>
         ))}
       </div>
+
+      {/* A shop moving off paper asked to flip straight to a page, not to configure filters.
+          Shown in both tabs, and only to someone who may actually open it. */}
+      {onOpenGoldOpenings && (
+        <button onClick={onOpenGoldOpenings}
+          className="flex w-full items-center gap-2.5 rounded-sm border-2 border-amber-300 bg-amber-50 p-3 text-right transition active:scale-[.99]">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-sm bg-slate-900">
+            <PencilLine className="h-4 w-4 text-amber-400" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <b className="block text-xs text-slate-900">سجل الأرصدة الافتتاحية</b>
+            <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">تعديلات وزن ذهب المحل والأرصدة الافتتاحية على الأطراف</span>
+          </span>
+          <ChevronLeft className="h-5 w-5 shrink-0 text-amber-700" />
+        </button>
+      )}
 
       {/* Search + one filter button. Ten controls do not belong across a phone. */}
       <div className="flex gap-2">
