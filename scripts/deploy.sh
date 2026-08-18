@@ -142,20 +142,40 @@ say "جلب الجديد من $REMOTE/$BRANCH"
 run git fetch "$REMOTE" "$BRANCH"
 TARGET=$(git rev-parse "$REMOTE/$BRANCH")
 
-if [ "$BEFORE" = "$TARGET" ]; then
-  ok "لا يوجد جديد — الخادم محدّث أصلاً."
+if [ "$BEFORE" != "$TARGET" ]; then
+  git --no-pager log --oneline "$BEFORE..$TARGET" | sed 's/^/  /'
+  # --ff-only: a deploy checkout must never produce a merge commit nobody asked for.
+  run git merge --ff-only "$TARGET" || die "لا يمكن التقديم السريع. الخادم متقدّم عن $REMOTE/$BRANCH أو متفرّع عنه."
+  ok "الكود الآن على ${TARGET:0:8}."
+else
+  ok "الكود المسحوب هو أصلاً $REMOTE/$BRANCH."
+fi
+AFTER="$TARGET"
+
+# The question this script must answer is NOT "is the checkout up to date with the remote"
+# — someone may have run `git pull` by hand and never built, which is exactly how a deploy
+# silently does nothing. It is "is the build being served the current code". So the
+# baseline is the last commit this script actually deployed, not the remote.
+DEPLOYED=""
+[ -f "$CURRENT_FILE" ] && DEPLOYED=$(cat "$CURRENT_FILE")
+
+if [ -n "$DEPLOYED" ] && [ "$DEPLOYED" = "$AFTER" ] && [ "$FORCE" = 0 ]; then
+  ok "هذا الكوميت منشور وبناؤه قائم — لا شيء ليُعمل. (--force يعيد البناء رغم ذلك)"
   exit 0
 fi
 
-git --no-pager log --oneline "$BEFORE..$TARGET" | sed 's/^/  /'
-
-# --ff-only: a deploy checkout must never produce a merge commit nobody asked for.
-run git merge --ff-only "$TARGET" || die "لا يمكن التقديم السريع. الخادم متقدّم عن $REMOTE/$BRANCH أو متفرّع عنه."
-AFTER=$(git rev-parse HEAD)
-ok "الكود الآن على ${AFTER:0:8}."
-
-CHANGED=$(git diff --name-only "$BEFORE" "$TARGET")   # same as AFTER once merged; also correct under --dry-run
-changed_in() { echo "$CHANGED" | grep -qE "$1"; }
+KNOWN_BASELINE=1
+CHANGED=""
+if [ -z "$DEPLOYED" ]; then
+  KNOWN_BASELINE=0
+  warn "لا سجل لنشر سابق بهذا السكربت، فلا سبيل لمعرفة ما تغيّر منذ آخر بناء."
+  warn "ستُبنى الواجهة ويُعاد تشغيلها فقط. إن كان backend قد تغيّر أيضاً فأعيدي بناءه وتشغيله يدوياً."
+else
+  CHANGED=$(git diff --name-only "$DEPLOYED" "$AFTER")
+  printf '  لم يُبنَ بعد: %s ← %s
+' "${DEPLOYED:0:8}" "${AFTER:0:8}"
+fi
+changed_in() { [ "$KNOWN_BASELINE" = 1 ] && echo "$CHANGED" | grep -qE "$1"; }
 
 # ------------------------------------------------------------------ dependencies
 if changed_in '^package-lock\.json$|^package\.json$'; then
@@ -210,9 +230,13 @@ if ! check_health; then
 fi
 
 trap - ERR
-echo "$BEFORE" > "$STATE_FILE"
+if [ "$DRY_RUN" = 0 ]; then
+  echo "${DEPLOYED:-$BEFORE}" > "$PREVIOUS_FILE"
+  echo "$AFTER" > "$CURRENT_FILE"
+fi
 
 say "تم النشر"
-printf '  من  %s\n  إلى %s — %s\n' "${BEFORE:0:8}" "${AFTER:0:8}" "$(git log -1 --pretty=%s)"
+FROM="${DEPLOYED:-$BEFORE}"
+printf '  من  %s\n  إلى %s — %s\n' "${FROM:0:8}" "${AFTER:0:8}" "$(git log -1 --pretty=%s "$AFTER")"
 [ -n "$DIST_BACKUP" ] && [ -d "$DIST_BACKUP" ] && rm -rf "$DIST_BACKUP"
 ok "للتراجع في أي وقت:  bash scripts/deploy.sh --rollback"
