@@ -3,6 +3,7 @@ import {
   Archive, Scale, Search, SlidersHorizontal, X, Loader2, AlertTriangle, ChevronRight, ChevronLeft,
   Store, User, Clock3, RotateCcw, Ban, Package, PenLine, PencilLine, Calendar,
 } from 'lucide-react';
+import { goldApi, type ApiGoldTransaction } from '../services/goldApi';
 import {
   historyApi, type HistoryFilterOptions, type HistoryFilters, type HistoryInvoice,
   type SoldWeightLine, type SoldWeightSummary,
@@ -35,10 +36,32 @@ const periods = () => {
   ];
 };
 
-type Tab = 'invoices' | 'weights';
+// دفتر الأوزان تبويب مستقل عن «الأوزان المباعة» عمداً: الثاني وزنُ بيعٍ على سطر فاتورة،
+// والأول حركة معدن في دفتر الذهب. خلطهما في قائمة واحدة يوحي بأنهما دفتر واحد.
+type Tab = 'invoices' | 'weights' | 'ledger';
+
+/** أنواع حركات دفتر الذهب كما يسمّيها الخادم، بالترتيب الذي يهمّ الموظف. */
+const LEDGER_TYPES: ReadonlyArray<readonly [string, string]> = [
+  ['opening', 'رصيد افتتاحي وتعديل يدوي'],
+  ['sale_exchange', 'كسر مقايضة من فاتورة بيع'],
+  ['receipt', 'استلام وزن'],
+  ['payment', 'تسليم وزن'],
+  ['conversion', 'تحويل عيار'],
+  ['used_inventory_conversion', 'تحويل كسر إلى مخزون'],
+  ['sales_return_obligation', 'التزام عن مرتجع'],
+  ['reversal', 'عكس حركة'],
+];
+
+/** من أين جاءت الحركة — تُقرأ من sourceType لأن النوع وحده لا يميّز العهدة عن التسليم اليدوي. */
+const LEDGER_SOURCE: Record<string, string> = {
+  weight_custody: 'عهدة شخص', sale: 'فاتورة بيع', sales_return: 'مرتجع مبيعات',
+  gold_inventory_conversion: 'تحويل للمخزون', gold_inventory_conversion_reversal: 'تراجع تحويل', manual: 'يدوي',
+};
 
 export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab?: Tab; onOpenInvoiceNumber?: (invoiceNumber: string) => void; onOpenShift?: (shiftId: string) => void; onOpenGoldOpenings?: () => void }> = ({ initialFilters, initialTab, onOpenInvoiceNumber, onOpenShift, onOpenGoldOpenings }) => {
   const [tab, setTab] = useState<Tab>(initialTab ?? 'invoices');
+  const [ledger, setLedger] = useState<ApiGoldTransaction[]>([]);
+  const [ledgerType, setLedgerType] = useState('');
   const [filters, setFilters] = useState<HistoryFilters>({ page: 1, limit: 30, ...initialFilters });
   const [options, setOptions] = useState<HistoryFilterOptions | null>(null);
   const [invoices, setInvoices] = useState<HistoryInvoice[]>([]);
@@ -58,6 +81,14 @@ export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab
       if (tab === 'invoices') {
         const result = await historyApi.invoices(filters);
         setInvoices(result.items); setTotal(result.meta.total);
+      } else if (tab === 'ledger') {
+        // The gold ledger is its own book: read straight from it, not through the sales history.
+        const result = await goldApi.transactions({
+          page: filters.page ?? 1, limit: filters.limit ?? 30,
+          dateFrom: filters.dateFrom, dateTo: filters.dateTo,
+          type: ledgerType || undefined, search: filters.invoiceNumber,
+        });
+        setLedger(result.items); setTotal(result.meta.total);
       } else {
         // The summary covers the whole filtered set, so it is fetched beside the page.
         const [result, totals] = await Promise.all([historyApi.soldWeights(filters), historyApi.soldWeightSummary(filters)]);
@@ -65,7 +96,7 @@ export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab
       }
     } catch (reason: any) { setError(reason?.message || 'تعذر تحميل السجل.'); }
     finally { setLoading(false); }
-  }, [tab, filters]);
+  }, [tab, filters, ledgerType]);
   useEffect(() => { void load(); }, [load]);
 
   const set = (patch: Partial<HistoryFilters>) => setFilters(previous => ({ ...previous, ...patch, page: patch.page ?? 1 }));
@@ -101,8 +132,8 @@ export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-1 rounded-sm bg-slate-100 p-1">
-        {([['invoices', 'سجل الفواتير'], ['weights', 'سجل الأوزان المباعة']] as const).map(([id, label]) => (
+      <div className="grid grid-cols-3 gap-1 rounded-sm bg-slate-100 p-1">
+        {([['invoices', 'سجل الفواتير'], ['weights', 'الأوزان المباعة'], ['ledger', 'دفتر الأوزان']] as const).map(([id, label]) => (
           <button key={id} onClick={() => { setTab(id); setFilters(previous => ({ ...previous, page: 1 })); }}
             className={`rounded-sm px-2 py-2 text-[11px] sm:text-xs font-extrabold transition ${tab === id ? 'bg-amber-400 text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
             {label}
@@ -166,6 +197,14 @@ export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab
 
       {tab === 'weights' && summary && <WeightSummary summary={summary} />}
 
+      {tab === 'ledger' && (
+        <select value={ledgerType} onChange={event => { setLedgerType(event.target.value); setFilters(previous => ({ ...previous, page: 1 })); }}
+          className="h-11 w-full rounded-sm border-2 border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 outline-none focus:border-amber-400">
+          <option value="">كل أنواع الحركات</option>
+          {LEDGER_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      )}
+
       {error && (
         <p role="alert" className="flex items-start gap-2 rounded-sm border-2 border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-bold leading-5 text-rose-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}
@@ -178,6 +217,10 @@ export const HistoryView: React.FC<{ initialFilters?: HistoryFilters; initialTab
         invoices.length === 0
           ? <Empty message="لا توجد فواتير ضمن الفترة المحددة" />
           : <InvoiceList invoices={invoices} onOpenInvoice={onOpenInvoiceNumber} onOpenShift={onOpenShift} />
+      ) : tab === 'ledger' ? (
+        ledger.length === 0
+          ? <Empty message="لا توجد حركات أوزان ضمن الفترة المحددة" />
+          : <LedgerList rows={ledger} />
       ) : (
         lines.length === 0
           ? <Empty message="لا توجد أوزان مباعة مطابقة للفلاتر" />
@@ -370,6 +413,43 @@ const SourceBadge: React.FC<{ source: 'stock' | 'manual'; cancelled: boolean }> 
       : source === 'stock' ? 'border-slate-200 bg-slate-50 text-slate-700' : 'border-violet-200 bg-violet-50 text-violet-700'}`}>
     {cancelled ? <><Ban className="h-3 w-3" />ملغاة</> : source === 'stock' ? <><Package className="h-3 w-3" />مخزون</> : <><PenLine className="h-3 w-3" />بيع يدوي</>}
   </span>
+);
+
+// ---------------------------------------------------------------- gold ledger records
+
+/**
+ * حركات دفتر الأوزان كسجلات تُتصفَّح، لا كزر يقود إلى مكان آخر.
+ *
+ * الوزن والعيار يأتيان ضمن `description` من الخادم — قائمة الحركات لا تُرجع الأسطر التفصيلية،
+ * وهذا مذكور في التقرير بدل إضافة نقطة نهاية جديدة لأجله.
+ */
+const LedgerList: React.FC<{ rows: ApiGoldTransaction[] }> = ({ rows }) => (
+  <div className="space-y-2">
+    {rows.map(row => {
+      const reversed = row.status === 'reversed';
+      const source = LEDGER_SOURCE[row.sourceType] ?? row.sourceType;
+      return (
+        <div key={row.id} className={`rounded-sm border-2 bg-white p-3 shadow-sm ${reversed ? 'border-slate-200 text-slate-400' : 'border-slate-200'}`}>
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-black ${reversed ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-900'}`}>{row.typeLabel}</span>
+              <span className="rounded-sm bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{source}</span>
+              {reversed && <span className="rounded-sm bg-rose-100 px-1.5 py-0.5 text-[10px] font-black text-rose-700">معكوسة</span>}
+            </span>
+            <span className="font-mono text-[10px] text-slate-400">{row.date}</span>
+          </div>
+
+          <p className={`mt-1.5 text-xs font-bold leading-5 text-slate-800 ${reversed ? 'line-through' : ''}`}>{row.description}</p>
+          {row.userNote && <p className="mt-1 rounded-sm bg-slate-50 px-2 py-1.5 text-[11px] font-bold leading-5 text-slate-600">{row.userNote}</p>}
+
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] font-bold text-slate-400">
+            <span className="selectable font-mono">{row.transactionNumber}{row.sourceNumber ? ` · ${row.sourceNumber}` : ''}</span>
+            <span>{row.createdBy}</span>
+          </div>
+        </div>
+      );
+    })}
+  </div>
 );
 
 // ---------------------------------------------------------------- filter sheet

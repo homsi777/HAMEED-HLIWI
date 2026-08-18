@@ -220,6 +220,10 @@ export class GoldService {
     if (query.type) conditions.push(eq(goldTransactions.type, String(query.type) as any));
     if (query.status && ['posted', 'reversed'].includes(String(query.status))) conditions.push(eq(goldTransactions.status, query.status as any));
     if (typeof query.search === 'string' && query.search.trim()) conditions.push(or(ilike(goldTransactions.transactionNumber, `%${query.search.trim()}%`), ilike(goldTransactions.sourceNumber, `%${query.search.trim()}%`), ilike(goldTransactions.description, `%${query.search.trim()}%`)));
+    // Same date handling the partner statement already uses, so a records screen can ask
+    // for a period the way every other list in this system does. Read-side only.
+    if (typeof query.dateFrom === 'string' && !Number.isNaN(Date.parse(query.dateFrom))) conditions.push(gte(goldTransactions.occurredAt, new Date(query.dateFrom)));
+    if (typeof query.dateTo === 'string' && !Number.isNaN(Date.parse(query.dateTo))) conditions.push(lte(goldTransactions.occurredAt, new Date(`${query.dateTo}T23:59:59.999Z`)));
     const where = conditions.length ? and(...conditions) : undefined;
     const [rows, total] = await Promise.all([
       this.db.select({ transaction: goldTransactions, createdByName: users.fullName }).from(goldTransactions).innerJoin(users, eq(users.id, goldTransactions.createdByUserId)).where(where).orderBy(desc(goldTransactions.occurredAt), desc(goldTransactions.sequenceNumber)).limit(limit).offset((page - 1) * limit),
