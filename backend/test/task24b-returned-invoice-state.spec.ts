@@ -2,7 +2,7 @@ import 'dotenv/config';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 
-// TASK 25: a sale that has been returned must say so on screen.
+// TASK 24b: a sale that has been returned must say so on screen.
 //
 // The invoice row itself is never rewritten — sales_invoice_status only has posted/cancelled,
 // and a posted document is a fact, not a mutable record. So the state is derived from the
@@ -74,7 +74,7 @@ try {
   const returnable = await json(await api(`/returns/returnable?type=sales_return&invoiceId=${sale.id}`));
   const partial = await ok(await api('/returns', 'POST', {
     type: 'sales_return', originalInvoiceId: sale.id, partnerId: customer.id,
-    reason: 'TASK 25 partial', exchangeRateSypPerUsd: RATE,
+    reason: 'TASK 24b partial', exchangeRateSypPerUsd: RATE,
     items: [{ sourceLineId: returnable.lines[0].sourceLineId, quantity: '1.000', netWeightGrams: '10.000' }],
     refundUSD: '0', refundSYP: '0', idempotencyKey: crypto.randomUUID(),
   }));
@@ -92,7 +92,7 @@ try {
   assert.ok(remainingLine, 'the second line must still be returnable');
   await ok(await api('/returns', 'POST', {
     type: 'sales_return', originalInvoiceId: sale.id, partnerId: customer.id,
-    reason: 'TASK 25 full', exchangeRateSypPerUsd: RATE,
+    reason: 'TASK 24b full', exchangeRateSypPerUsd: RATE,
     items: [{ sourceLineId: remainingLine.sourceLineId, quantity: '1.000', netWeightGrams: '10.000' }],
     refundUSD: '0', refundSYP: '0', idempotencyKey: crypto.randomUUID(),
   }));
@@ -105,7 +105,7 @@ try {
   }
   step('second return → full, owed $0, and the invoice is still posted');
 
-  console.log('\nTASK 25 — a returned sale now says so, on the card and in the detail.');
+  console.log('\nTASK 24b — a returned sale now says so, on the card and in the detail.');
 } finally {
   await app.close();
 }
