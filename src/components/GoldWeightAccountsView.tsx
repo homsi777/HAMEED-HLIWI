@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronLeft, Package, PencilLine, Recycle, Scale, X } from 'lucide-react';
-import { goldApi, type ApiGoldHoldings, type ApiGoldHoldingMovement } from '../services/goldApi';
+import { AlertTriangle, ChevronLeft, Loader2, Package, PencilLine, Plus, Recycle, Scale, X } from 'lucide-react';
+import { goldApi, GOLD_KARATS, type ApiGoldHoldings, type ApiGoldHoldingMovement } from '../services/goldApi';
+import { partnersApi, type ApiPartner } from '../services/partnersApi';
 
 /**
  * شاشة القسم (ذمم الأوزان) — لوحة دخول لا دفتر.
@@ -14,9 +15,10 @@ import { goldApi, type ApiGoldHoldings, type ApiGoldHoldingMovement } from '../s
  *
  * ملاحظة لمن يقرأ هذا لاحقاً: كان في هذه الشاشة قسمٌ لأوزان الأطراف التجارية (استلام/تسليم/
  * تحويل عيار/رصيد افتتاحي، بطاقات أرصدة الأطراف، كشف الحساب وطباعته، ولوحة مطابقة الأوزان).
- * أُزيل بقرار صريح من المدير لأنه بدا له تكراراً لشاشة «ذمم أوزان». الخادم لم يُمسّ: حركات
- * الذهب عن فواتير البيع والمرتجعات ما زالت تُرحَّل كما هي، وما زال بالإمكان قراءتها من
- * `/gold/partners` و`/gold/partners/:id/statement`. لإعادة الواجهة استرجعي الكود من التاريخ.
+ * أُزيل بقرار صريح من المدير لأنه بدا له تكراراً لشاشة «ذمم أوزان»، ثم أُعيد منه «رصيد
+ * افتتاحي» وحده بطلبه. الخادم لم يُمسّ في الحالتين: حركات الذهب عن فواتير البيع والمرتجعات
+ * ما زالت تُرحَّل كما هي، وما زال بالإمكان قراءة أرصدة الأطراف من `/gold/partners` ومن
+ * `/gold/partners/:id/statement` — بلا واجهة تستدعيها. بقية الأزرار في تاريخ git.
  */
 const KARAT_ORDER = (a: { karat: string }, b: { karat: string }) => Number(b.karat) - Number(a.karat);
 
@@ -35,11 +37,42 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
   const [showAdjust, setShowAdjust] = useState(false);
   const [error, setError] = useState('');
 
+  // رصيد الأوزان الافتتاحي — حركة على طرف تجاري، بنفس نقطة النهاية ونفس الحقول التي كانت.
+  const [showOpening, setShowOpening] = useState(false);
+  const [partners, setPartners] = useState<ApiPartner[]>([]);
+  const [openingPartnerId, setOpeningPartnerId] = useState('');
+  const [openingKarat, setOpeningKarat] = useState('21');
+  const [openingWeight, setOpeningWeight] = useState('');
+  const [openingDirection, setOpeningDirection] = useState<'partner_owes_shop' | 'shop_owes_partner'>('partner_owes_shop');
+  const [openingNote, setOpeningNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
   const refresh = async () => {
     try { setHoldings(await goldApi.holdings({ limit: 50 })); }
     catch (reason: any) { setError(reason?.message || 'تعذر تحميل أوزان الذهب من الخادم.'); }
   };
   useEffect(() => { void refresh(); }, []);
+  // The partner list is only fetched when the sheet is actually opened: the screen itself
+  // no longer shows partners, so loading 500 of them on every visit would be waste.
+  useEffect(() => {
+    if (!showOpening || partners.length) return;
+    void partnersApi.list({ page: 1, limit: 500 }).then(result => setPartners(result.items)).catch(() => undefined);
+  }, [showOpening, partners.length]);
+
+  const submitOpening = async () => {
+    if (!openingPartnerId) { setError('اختر الطرف أولاً.'); return; }
+    if (!(Number(openingWeight) > 0)) { setError('أدخل وزناً أكبر من صفر.'); return; }
+    setBusy(true); setError('');
+    try {
+      await goldApi.opening({
+        partnerId: openingPartnerId, karat: openingKarat, weightGrams: openingWeight,
+        direction: openingDirection, note: openingNote || undefined, idempotencyKey: crypto.randomUUID(),
+      });
+      await refresh();
+      setShowOpening(false); setOpeningWeight(''); setOpeningNote('');
+    } catch (reason: any) { setError(reason?.message || 'تعذر تسجيل الرصيد الافتتاحي.'); }
+    finally { setBusy(false); }
+  };
 
   // The row date is the UTC day the server derived from occurredAt, so «اليوم» is compared
   // against the same UTC day rather than a locally formatted one.
@@ -72,9 +105,14 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
       <div className="flex flex-wrap items-start justify-between gap-2">
         <b className="flex items-center gap-2 text-sm text-slate-900 sm:text-base"><Package className="h-4 w-4 shrink-0 text-amber-600" />وزن الذهب في الشركة</b>
         {canAdjust && (
-          <button onClick={() => setShowAdjust(true)} className="flex items-center gap-1.5 rounded-sm border-2 border-slate-200 px-2.5 py-1.5 text-[11px] font-black text-slate-700 transition active:scale-95">
-            <PencilLine className="h-3.5 w-3.5 text-amber-600" />إضافة / تعديل وزن يدوي
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => { setShowOpening(true); setError(''); }} className="flex items-center gap-1.5 rounded-sm border-2 border-slate-200 px-2.5 py-1.5 text-[11px] font-black text-slate-700 transition active:scale-95">
+              <Plus className="h-3.5 w-3.5 text-amber-600" />رصيد افتتاحي
+            </button>
+            <button onClick={() => setShowAdjust(true)} className="flex items-center gap-1.5 rounded-sm border-2 border-slate-200 px-2.5 py-1.5 text-[11px] font-black text-slate-700 transition active:scale-95">
+              <PencilLine className="h-3.5 w-3.5 text-amber-600" />إضافة / تعديل وزن يدوي
+            </button>
+          </div>
         )}
       </div>
 
@@ -148,6 +186,48 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
       {entryCard(onOpenCustody, <Scale className="h-5 w-5 text-amber-400" />, 'ذمم أوزان', 'وزن لنا أو علينا عند صائغ أو ملمّع أو عامل، مع كشف لكل شخص.')}
       {entryCard(onOpenUsedGold, <Recycle className="h-5 w-5 text-violet-400" />, 'كسر المقايضة', 'الذهب المستلم مقايضةً وتحويل ما يصلح منه إلى مخزون مستعمل.')}
     </div>
+
+    {/* رصيد أوزان افتتاحي — نفس نقطة النهاية ونفس الحقول التي كانت قبل تبسيط الشاشة.
+        الملاحظة داخل الورقة مقصودة: هذه الحركة تقيّد الوزن على طرف تجاري ولا تحرّك الرقم
+        المعروض في الأعلى، وهي أكثر نقطة يسهل فيها سوء الفهم. */}
+    {showOpening && <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
+      <div className="max-h-[92dvh] w-full overflow-y-auto bg-white p-4 sm:max-w-sm sm:p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-black text-slate-900 sm:text-base">رصيد أوزان افتتاحي</h3>
+          <button onClick={() => { setShowOpening(false); setError(''); }} aria-label="إغلاق" className="p-1 text-slate-500"><X className="h-5 w-5" /></button>
+        </div>
+
+        <p className="mt-3 border-r-4 border-slate-300 bg-slate-50 p-2.5 text-[11px] font-bold leading-5 text-slate-600">
+          يُسجَّل هذا الرصيد على <b className="text-slate-900">طرف تجاري</b> (عميل أو مورّد): وزن له علينا أو علينا له عند بدء العمل بالنظام. لا يزيد «الوزن الإجمالي» المعروض في الأعلى ولا ينقصه.
+        </p>
+
+        <select value={openingPartnerId} onChange={event => setOpeningPartnerId(event.target.value)} className="mt-3 w-full border p-2.5 text-sm">
+          <option value="">اختر الطرف</option>
+          {partners.map(partner => <option key={partner.id} value={partner.id}>{partner.name}</option>)}
+        </select>
+        {!partners.length && <p className="mt-1 text-[10px] font-bold text-slate-400">جارِ تحميل الأطراف…</p>}
+
+        <select value={openingKarat} onChange={event => setOpeningKarat(event.target.value)} className="mt-2 w-full border p-2.5 text-sm">
+          {GOLD_KARATS.map(value => <option key={value} value={value}>عيار {value}</option>)}
+        </select>
+
+        <input value={openingWeight} onChange={event => setOpeningWeight(event.target.value)} type="number" inputMode="decimal" step="0.001" placeholder="الوزن بالغرام" className="mt-2 w-full border p-2.5 text-sm" />
+
+        <select value={openingDirection} onChange={event => setOpeningDirection(event.target.value as typeof openingDirection)} className="mt-2 w-full border p-2.5 text-sm">
+          <option value="partner_owes_shop">عليه لنا (مدين بالوزن)</option>
+          <option value="shop_owes_partner">لنا عليه (المحل مدين بالوزن)</option>
+        </select>
+
+        <input value={openingNote} onChange={event => setOpeningNote(event.target.value)} placeholder="ملاحظة (اختياري)" className="mt-2 w-full border p-2.5 text-sm" />
+
+        <div className="mt-4 flex gap-2">
+          <button disabled={busy} onClick={() => void submitOpening()} className="flex flex-1 items-center justify-center gap-2 bg-amber-400 px-4 py-2.5 text-sm font-black text-slate-900 disabled:opacity-50">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}حفظ
+          </button>
+          <button onClick={() => { setShowOpening(false); setError(''); }} className="flex-1 bg-slate-100 px-4 py-2.5 text-sm font-bold">إلغاء</button>
+        </div>
+      </div>
+    </div>}
 
     {/* التعديل اليدوي على إجمالي ذهب الشركة: لا توجد بعد آلية خادم آمنة له. */}
     {showAdjust && <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
