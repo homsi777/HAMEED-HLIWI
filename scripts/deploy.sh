@@ -18,6 +18,7 @@
 # Options:
 #   --rollback     undo the last deploy this script performed
 #   --dry-run      show what would happen, change nothing
+#   --force        rebuild even when the checkout is already the deployed commit
 #   --skip-health  deploy without the post-deploy health check (not recommended)
 #
 set -Eeuo pipefail
@@ -29,17 +30,21 @@ API_PROCESS="${API_PROCESS:-hameed-hliwi-api}"
 WEB_PROCESS="${WEB_PROCESS:-hameed-hliwi}"
 HEALTH_URL="${HEALTH_URL:-https://hameed-hliwi.org/api/v1/health}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-10}"
-STATE_FILE=""   # resolved to a path inside .git/ once we know we are in the repo
+# Both live inside .git/ so they are never part of the working tree.
+CURRENT_FILE=""   # the commit whose build is actually serving right now
+PREVIOUS_FILE=""  # where --rollback goes
 
 MODE="deploy"
 DRY_RUN=0
 SKIP_HEALTH=0
+FORCE=0
 for argument in "$@"; do
   case "$argument" in
     --rollback) MODE="rollback" ;;
     --dry-run) DRY_RUN=1 ;;
+    --force) FORCE=1 ;;
     --skip-health) SKIP_HEALTH=1 ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) echo "خيار غير معروف: $argument" >&2; exit 2 ;;
   esac
 done
@@ -55,7 +60,8 @@ cd "$APP_DIR" 2>/dev/null || die "المجلد غير موجود: $APP_DIR"
 [ -d .git ] || die "$APP_DIR ليس مستودع git."
 [ -f package.json ] || die "لا يوجد package.json في $APP_DIR — هل المسار صحيح؟"
 GIT_DIR_PATH=$(git rev-parse --git-dir)
-STATE_FILE="$GIT_DIR_PATH/deploy-last-commit"
+CURRENT_FILE="$GIT_DIR_PATH/deploy-current"
+PREVIOUS_FILE="$GIT_DIR_PATH/deploy-previous"
 command -v git >/dev/null || die "git غير مثبّت."
 command -v npm >/dev/null || die "npm غير مثبّت."
 HAS_PM2=0; command -v pm2 >/dev/null && HAS_PM2=1
@@ -113,13 +119,14 @@ check_health() {
 
 # ------------------------------------------------------------------ rollback mode
 if [ "$MODE" = "rollback" ]; then
-  [ -f "$STATE_FILE" ] || die "لا يوجد $STATE_FILE — لا أعرف إلى أين أعود. استعملي: git reset --hard <commit>"
-  PREVIOUS=$(cat "$STATE_FILE")
+  [ -f "$PREVIOUS_FILE" ] || die "لا يوجد سجل نشر سابق — لا أعرف إلى أين أعود. استعملي: git reset --hard <commit>"
+  PREVIOUS=$(cat "$PREVIOUS_FILE")
   say "تراجع إلى $PREVIOUS"
   run git reset --hard "$PREVIOUS"
   run npm run build
   restart_processes "$WEB_PROCESS" "$API_PROCESS"
   check_health || die "التراجع تم لكن الموقع لا يستجيب. راجعي: pm2 logs"
+  [ "$DRY_RUN" = 1 ] || echo "$PREVIOUS" > "$CURRENT_FILE"
   ok "تم التراجع."
   exit 0
 fi
