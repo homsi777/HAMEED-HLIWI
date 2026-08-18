@@ -3,7 +3,7 @@ import { and, asc, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm
 import { AuditService } from '../audit/audit.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import { publicImageUrl } from '../config/upload-path.js';
-import { inventoryItems, inventoryMovements, stocktakes } from '../database/schema.js';
+import { inventoryItems, inventoryMovements, salesInvoiceItems, salesInvoices, stocktakes } from '../database/schema.js';
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js';
@@ -116,7 +116,35 @@ export class InventoryService {
     if (!updated[0]) throw new ConflictException('Inventory item changed by another user.'); await this.audit.record({ actorUserId: user.id, action: 'inventory.update', module: 'inventory', entityId: id, warehouseId: current.warehouseId }); this.realtime.emitToWarehouse(current.warehouseId, 'inventory.updated', { id }); return itemDto(updated[0]);
   }
 
-  async archive(user: AuthIdentity, id: string, version: number) { id = this.uuid(id, 'id'); const current = await this.findAccessible(user, id); if (version !== current.version) throw new ConflictException('Inventory item changed by another user.'); const rows = await this.db.update(inventoryItems).set({ archivedAt: new Date(), archivedByUserId: user.id, updatedByUserId: user.id, version: sql`${inventoryItems.version} + 1` }).where(and(eq(inventoryItems.id, id), eq(inventoryItems.version, version))).returning(); if (!rows[0]) throw new ConflictException('Inventory item changed by another user.'); await this.audit.record({ actorUserId: user.id, action: 'inventory.archive', module: 'inventory', entityId: id, warehouseId: current.warehouseId }); this.realtime.emitToWarehouse(current.warehouseId, 'inventory.archived', { id }); return { success: true }; }
+  /**
+   * "Delete" in the inventory screen is an archive, not a removal — the row stays as the
+   * evidence behind every document that used it.
+   *
+   * It is refused while a posted sale still points at the item. Archiving a sold piece used to
+   * be allowed, and it quietly made that sale impossible to cancel and impossible to return
+   * against: both paths restore stock, and both require a row that is not archived. The item
+   * became unreachable from either direction with no way back (TASK 24).
+   */
+  async archive(user: AuthIdentity, id: string, version: number) {
+    id = this.uuid(id, 'id');
+    const current = await this.findAccessible(user, id);
+    if (version !== current.version) throw new ConflictException('Inventory item changed by another user.');
+
+    const blocking = (await this.db.select({ invoiceNumber: salesInvoices.invoiceNumber })
+      .from(salesInvoiceItems)
+      .innerJoin(salesInvoices, eq(salesInvoices.id, salesInvoiceItems.salesInvoiceId))
+      .where(and(eq(salesInvoiceItems.inventoryItemId, id), eq(salesInvoices.status, 'posted')))
+      .limit(1))[0];
+    if (blocking) {
+      throw new ConflictException(`لا يمكن حذف هذا الصنف: هو مباع ضمن الفاتورة ${blocking.invoiceNumber} وهي غير ملغاة. ألغِ الفاتورة أو سجّل مرتجعاً أولاً، ثم احذفه.`);
+    }
+
+    const rows = await this.db.update(inventoryItems).set({ archivedAt: new Date(), archivedByUserId: user.id, updatedByUserId: user.id, version: sql`${inventoryItems.version} + 1` }).where(and(eq(inventoryItems.id, id), eq(inventoryItems.version, version))).returning();
+    if (!rows[0]) throw new ConflictException('Inventory item changed by another user.');
+    await this.audit.record({ actorUserId: user.id, action: 'inventory.archive', module: 'inventory', entityId: id, warehouseId: current.warehouseId });
+    this.realtime.emitToWarehouse(current.warehouseId, 'inventory.archived', { id });
+    return { success: true };
+  }
 
   async transfer(user: AuthIdentity, id: string, input: Record<string, unknown>) { id = this.uuid(id, 'id'); const destination = this.uuid(this.text(input.destinationWarehouseId, 'destinationWarehouseId'), 'destinationWarehouseId'); this.scope.assertAccess(user, destination); const expected = Number(input.version); return this.db.transaction(async tx => { const current = (await tx.select().from(inventoryItems).where(and(eq(inventoryItems.id, id), isNull(inventoryItems.archivedAt))).limit(1))[0]; if (!current) throw new NotFoundException('Inventory item not found.'); this.scope.assertAccess(user, current.warehouseId); if (expected !== current.version) throw new ConflictException('Inventory item changed by another user.'); if (current.warehouseId === destination) throw new ConflictException('Destination warehouse is the current warehouse.'); const updated = (await tx.update(inventoryItems).set({ warehouseId: destination, version: sql`${inventoryItems.version} + 1`, updatedByUserId: user.id, updatedAt: new Date() }).where(and(eq(inventoryItems.id, id), eq(inventoryItems.version, expected))).returning())[0]; if (!updated) throw new ConflictException('Inventory item changed by another user.'); await tx.insert(inventoryMovements).values({ inventoryItemId: id, type: 'transfer', fromWarehouseId: current.warehouseId, toWarehouseId: destination, actorUserId: user.id, note: this.optional(input.note) }); await this.audit.record({ actorUserId: user.id, action: 'inventory.transfer', module: 'inventory', entityId: id, warehouseId: destination, metadata: { fromWarehouseId: current.warehouseId, toWarehouseId: destination } }); this.realtime.emitToWarehouse(current.warehouseId, 'inventory.transferred', { id, fromWarehouseId: current.warehouseId }); this.realtime.emitToWarehouse(destination, 'inventory.transferred', { id, toWarehouseId: destination }); return itemDto(updated); }); }
 
