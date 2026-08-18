@@ -58,6 +58,9 @@ export class GoldController {
   @Get('transactions') @RequirePermissions('gold_accounts.view') listTransactions(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.gold.listTransactions(request.identity!, query); }
   @Get('transactions/:id') @RequirePermissions('gold_accounts.view') getTransaction(@Req() request: FastifyRequest, @Param('id') id: string) { return this.gold.getTransaction(request.identity!, id); }
 
+  // Company-level weight correction: no partner on either side. Same permission as an
+  // opening balance, because it is the same kind of authority over a balance.
+  @Post('company-adjustment') @RequirePermissions('gold_accounts.adjust') companyAdjustment(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.gold.createCompanyAdjustment(request.identity!, body); }
   @Post('opening') @RequirePermissions('gold_accounts.adjust') opening(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.gold.createOpening(request.identity!, body); }
   @Post('receipt') @RequirePermissions('gold_accounts.transaction.create') receipt(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.gold.createReceipt(request.identity!, body); }
   @Post('payment') @RequirePermissions('gold_accounts.transaction.create') payment(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.gold.createPayment(request.identity!, body); }

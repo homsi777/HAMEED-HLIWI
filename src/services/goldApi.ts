@@ -43,7 +43,19 @@ export type ApiGoldHoldingMovement = {
 export type ApiGoldHoldings = {
   accounts: Array<{ id: string; name: string; warehouseId: string | null; balances: ApiGoldHoldingBalance[]; pureGoldTotalGrams: number }>;
   totals: ApiGoldHoldingBalance[]; pureGoldTotalGrams: number; movements: ApiGoldHoldingMovement[];
+  /** The same totals with the barter-scrap share removed. Scrap is real metal and stays in
+   *  `totals`; these are offered beside them for the screen that reads the headline as
+   *  "gold the shop bought and owns". Neither figure redefines the other. */
+  totalsExcludingScrap: ApiGoldHoldingBalance[]; pureGoldTotalExcludingScrapGrams: number;
 };
+/** A manual correction to the shop's own metal — no partner, one line per karat, notes free text. */
+export interface CompanyAdjustmentInput {
+  direction: 'increase' | 'decrease';
+  warehouseId?: string;
+  note?: string;
+  lines: Array<{ karat: string; weightGrams: string; note?: string }>;
+  idempotencyKey: string;
+}
 
 export const goldApi = {
   holdings: (filters: Record<string, string | number | undefined> = {}) => request<ApiGoldHoldings>(`/gold/holdings?${query(filters)}`),
@@ -70,6 +82,7 @@ export const goldApi = {
   payment: (input: { partnerId: string; karat: string; weightGrams: string | number; warehouseId?: string; goldPriceUsdPerGram?: string | number; note?: string; allowReverseBalance?: boolean; idempotencyKey: string }) => request<ApiGoldTransaction>('/gold/payment', { method: 'POST', body: JSON.stringify(input) }),
   conversion: (input: { partnerId: string; fromKarat: string; toKarat: string; fromWeightGrams: string | number; toWeightGrams: string | number; note?: string; idempotencyKey: string }) => request<ApiGoldTransaction>('/gold/conversion', { method: 'POST', body: JSON.stringify(input) }),
   reverse: (id: string, reason: string) => request<ApiGoldTransaction>(`/gold/transactions/${id}/reverse`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  companyAdjustment: (input: CompanyAdjustmentInput) => request<ApiGoldTransaction>('/gold/company-adjustment', { method: 'POST', body: JSON.stringify(input) }),
   reconciliation: () => request<ApiGoldReconciliation>('/gold/reconciliation'),
 };
 

@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronLeft, Loader2, Package, PencilLine, Plus, Recycle, Scale, X } from 'lucide-react';
+import { ChevronLeft, Loader2, Package, PencilLine, Plus, Recycle, Scale, Trash2, X } from 'lucide-react';
 import { goldApi, GOLD_KARATS, type ApiGoldHoldings, type ApiGoldHoldingMovement } from '../services/goldApi';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
+import { inventoryApi } from '../services/inventoryApi';
+import type { Warehouse } from '../types';
 
 /**
  * شاشة القسم (ذمم الأوزان) — لوحة دخول لا دفتر.
@@ -47,6 +49,13 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
   const [openingNote, setOpeningNote] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // التعديل اليدوي على ذهب المحل — عدة عيارات في حركة واحدة، ولكل سطر ملاحظة نصية حرة.
+  const [adjustDirection, setAdjustDirection] = useState<'increase' | 'decrease'>('increase');
+  const [adjustLines, setAdjustLines] = useState<Array<{ karat: string; weightGrams: string; note: string }>>([{ karat: '21', weightGrams: '', note: '' }]);
+  const [adjustNote, setAdjustNote] = useState('');
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [adjustWarehouseId, setAdjustWarehouseId] = useState('');
+
   const refresh = async () => {
     try { setHoldings(await goldApi.holdings({ limit: 50 })); }
     catch (reason: any) { setError(reason?.message || 'تعذر تحميل أوزان الذهب من الخادم.'); }
@@ -58,6 +67,33 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
     if (!showOpening || partners.length) return;
     void partnersApi.list({ page: 1, limit: 500 }).then(result => setPartners(result.items)).catch(() => undefined);
   }, [showOpening, partners.length]);
+
+  useEffect(() => {
+    if (!showAdjust || warehouses.length) return;
+    void inventoryApi.warehouses().then(rows => { setWarehouses(rows); setAdjustWarehouseId(current => current || rows[0]?.id || ''); }).catch(() => undefined);
+  }, [showAdjust, warehouses.length]);
+
+  const setLine = (index: number, patch: Partial<{ karat: string; weightGrams: string; note: string }>) =>
+    setAdjustLines(current => current.map((line, position) => (position === index ? { ...line, ...patch } : line)));
+
+  const submitAdjustment = async () => {
+    const lines = adjustLines.filter(line => Number(line.weightGrams) > 0);
+    if (!lines.length) { setError('أدخل وزناً واحداً على الأقل.'); return; }
+    if (new Set(lines.map(line => line.karat)).size !== lines.length) { setError('لا تكرر العيار نفسه في أكثر من سطر.'); return; }
+    setBusy(true); setError('');
+    try {
+      await goldApi.companyAdjustment({
+        direction: adjustDirection,
+        warehouseId: adjustWarehouseId || undefined,
+        note: adjustNote || undefined,
+        lines: lines.map(line => ({ karat: line.karat, weightGrams: Number(line.weightGrams).toFixed(3), note: line.note || undefined })),
+        idempotencyKey: crypto.randomUUID(),
+      });
+      await refresh();
+      setShowAdjust(false); setAdjustLines([{ karat: '21', weightGrams: '', note: '' }]); setAdjustNote('');
+    } catch (reason: any) { setError(reason?.message || 'تعذر تسجيل التعديل.'); }
+    finally { setBusy(false); }
+  };
 
   const submitOpening = async () => {
     if (!openingPartnerId) { setError('اختر الطرف أولاً.'); return; }
@@ -80,7 +116,10 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
   const movements = useMemo(() => holdings?.movements ?? [], [holdings]);
   const todayMovements = useMemo(() => movements.filter(row => row.date === today), [movements, today]);
   const shownMovements = showAllMovements ? movements : todayMovements;
-  const karats = useMemo(() => [...(holdings?.totals ?? [])].sort(KARAT_ORDER), [holdings]);
+  // الرقم المعروض هو ذهب المحل بعد استبعاد كسر المقايضة — الكسر له شاشته، ولا يُخلط هنا.
+  const karats = useMemo(() => [...(holdings?.totalsExcludingScrap ?? [])].sort(KARAT_ORDER), [holdings]);
+  const headlineGrams = holdings?.pureGoldTotalExcludingScrapGrams ?? 0;
+  const scrapPureGrams = Number(((holdings?.pureGoldTotalGrams ?? 0) - headlineGrams).toFixed(3));
 
   const sourceBadge = (row: ApiGoldHoldingMovement) => (row.source === 'scrap_exchange'
     ? <span className="rounded-sm bg-amber-200 px-1.5 py-0.5 text-[10px] font-black text-amber-900">كسر مقايضة</span>
@@ -119,8 +158,11 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
       {/* بطاقة واحدة: الإجمالي بخط كبير، وتحته مباشرة سطر لكل عيار — لا شيء غير ذلك. */}
       <div className="mt-3 rounded-sm bg-slate-900 p-4">
         <p className="text-center text-[11px] font-bold text-amber-400/80">الوزن الإجمالي</p>
-        <p className="mt-1 text-center font-mono text-4xl font-black leading-none text-amber-400">{(holdings?.pureGoldTotalGrams ?? 0).toFixed(3)}</p>
+        <p className="mt-1 text-center font-mono text-4xl font-black leading-none text-amber-400">{headlineGrams.toFixed(3)}</p>
         <p className="mt-1.5 text-center text-[11px] font-bold text-slate-400">غرام ذهب صافٍ (مكافئ عيار 24)</p>
+        {Math.abs(scrapPureGrams) > 0.0005 && (
+          <p className="mt-1 text-center text-[10px] font-bold text-amber-400/60">لا يشمل {scrapPureGrams.toFixed(3)} غ كسر مقايضة — لها شاشتها</p>
+        )}
 
         <div className="mt-4 border-t border-slate-700">
           {karats.map(row => (
@@ -229,25 +271,73 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
       </div>
     </div>}
 
-    {/* التعديل اليدوي على إجمالي ذهب الشركة: لا توجد بعد آلية خادم آمنة له. */}
+    {/* التعديل اليدوي على ذهب المحل — صار حقيقياً بعد إضافة نقطة النهاية على مستوى الشركة.
+        عدة عيارات في حركة واحدة لأن الإضافة الواقعية تأتي مختلطة، ولكل سطر ملاحظة نصية حرة
+        هي توثيق فقط: لا تُنشئ شخصاً ولا عهدة ولا التزاماً على أحد. */}
     {showAdjust && <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
-      <div className="max-h-[92dvh] w-full overflow-y-auto bg-white p-4 sm:max-w-md sm:p-5">
-        <div className="flex items-start justify-between gap-2">
+      <div className="flex max-h-[92dvh] w-full flex-col bg-white sm:max-w-md">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 p-4">
           <h3 className="text-sm font-black text-slate-900 sm:text-base">إضافة / تعديل وزن يدوي</h3>
-          <button onClick={() => setShowAdjust(false)} aria-label="إغلاق" className="shrink-0 p-1 text-slate-500"><X className="h-5 w-5" /></button>
+          <button onClick={() => { setShowAdjust(false); setError(''); }} aria-label="إغلاق" className="p-1 text-slate-500"><X className="h-5 w-5" /></button>
         </div>
-        <p className="mt-3 flex items-start gap-2 border-r-4 border-amber-400 bg-amber-50 p-3 text-[11px] font-bold leading-5 text-amber-900">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          هذه الميزة غير مفعّلة بعد: لا توجد في الخادم حتى الآن حركة تعديل على إجمالي ذهب الشركة دون ربطها بطرف تجاري.
-        </p>
-        <div className="mt-3 space-y-2 text-[11px] font-bold leading-5 text-slate-600">
-          <p>ما ينقص لتفعيل هذا الزر (مهمّة خادم مستقلة):</p>
-          <ul className="mr-4 list-disc space-y-1">
-            <li>حركة تعديل على حساب المحل نفسه (kind = company) بلا طرف، تقبل وزناً إجمالياً وأسطر ملاحظات نصية فقط.</li>
-            <li>ربط فواتير الشراء بدفتر الذهب، لأن إجمالي ذهب الشركة اليوم لا يزيد بالشراء إطلاقاً.</li>
-          </ul>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <div className="grid grid-cols-2 gap-2">
+            {([['increase', 'إضافة وزن'], ['decrease', 'خصم وزن']] as const).map(([value, label]) => (
+              <button key={value} onClick={() => setAdjustDirection(value)}
+                className={`h-11 rounded-sm border-2 text-xs font-black transition ${adjustDirection === value ? 'border-amber-400 bg-amber-50 text-slate-900' : 'border-slate-200 bg-white text-slate-600'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {warehouses.length > 1 && (
+            <select value={adjustWarehouseId} onChange={event => setAdjustWarehouseId(event.target.value)} className="mt-3 w-full border p-2.5 text-sm">
+              {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}
+            </select>
+          )}
+
+          {/* سطر لكل عيار — العيارات لا تُجمع في رقم واحد هنا كما لا تُجمع في أي مكان آخر. */}
+          <div className="mt-3 space-y-2">
+            {adjustLines.map((line, index) => (
+              <div key={index} className="border-r-4 border-amber-400 bg-slate-50 p-2.5">
+                <div className="flex items-center gap-2">
+                  <select value={line.karat} onChange={event => setLine(index, { karat: event.target.value })} className="h-10 w-24 shrink-0 border bg-white px-2 text-sm font-bold">
+                    {GOLD_KARATS.map(value => <option key={value} value={value}>عيار {value}</option>)}
+                  </select>
+                  <input value={line.weightGrams} onChange={event => setLine(index, { weightGrams: event.target.value.replace(/[^\d.]/g, '') })}
+                    inputMode="decimal" dir="ltr" placeholder="0.000" className="h-10 min-w-0 flex-1 border bg-white px-2 text-left font-mono text-sm" />
+                  {adjustLines.length > 1 && (
+                    <button onClick={() => setAdjustLines(current => current.filter((_, position) => position !== index))} aria-label="حذف السطر" className="shrink-0 p-2 text-slate-400">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <input value={line.note} onChange={event => setLine(index, { note: event.target.value })}
+                  placeholder="ملاحظة لهذا السطر (اختياري)" className="mt-2 h-10 w-full border bg-white px-2 text-sm" />
+              </div>
+            ))}
+          </div>
+
+          <button onClick={() => setAdjustLines(current => [...current, { karat: '21', weightGrams: '', note: '' }])}
+            className="mt-2 flex items-center gap-1.5 text-xs font-extrabold text-amber-700">
+            <Plus className="h-3.5 w-3.5" />إضافة عيار آخر
+          </button>
+
+          <input value={adjustNote} onChange={event => setAdjustNote(event.target.value)} placeholder="ملاحظة عامة (اختياري)" className="mt-3 h-11 w-full border px-3 text-sm" />
+
+          <p className="mt-3 rounded-sm bg-slate-50 px-3 py-2 text-[11px] font-bold leading-5 text-slate-600">
+            هذا تصحيح على ذهب المحل نفسه، بلا طرف تجاري. الملاحظات نصّ توثيقي فقط — لا تُنشئ عهدة ولا ذمّة على أحد. الحركة تُسجَّل كاملة ويمكن عكسها لاحقاً، ولا تُحذف.
+          </p>
+          {error && <p role="alert" className="mt-2 border-r-4 border-rose-500 bg-rose-50 p-2.5 text-xs font-bold text-rose-700">{error}</p>}
         </div>
-        <button onClick={() => setShowAdjust(false)} className="mt-4 h-11 w-full bg-slate-100 text-sm font-black text-slate-700">إغلاق</button>
+
+        <div className="shrink-0 border-t border-slate-200 p-4">
+          <button disabled={busy} onClick={() => void submitAdjustment()}
+            className="flex h-11 w-full items-center justify-center gap-2 bg-amber-400 text-sm font-black text-slate-900 disabled:opacity-50">
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}{adjustDirection === 'increase' ? 'تأكيد الإضافة' : 'تأكيد الخصم'}
+          </button>
+        </div>
       </div>
     </div>}
   </div>;

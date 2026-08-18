@@ -110,7 +110,7 @@ export class GoldService {
     if (query.warehouseId) { const warehouseId = uuid(query.warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); accountConditions.push(eq(goldAccounts.warehouseId, warehouseId)); }
     else if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; accountConditions.push(ids.length ? or(inArray(goldAccounts.warehouseId, ids), isNull(goldAccounts.warehouseId))! : isNull(goldAccounts.warehouseId)); }
     const accounts = await this.db.select().from(goldAccounts).where(and(...accountConditions)).orderBy(asc(goldAccounts.name));
-    if (!accounts.length) return { accounts: [], movements: [], totals: [], pureGoldTotalGrams: 0 };
+    if (!accounts.length) return { accounts: [], movements: [], totals: [], pureGoldTotalGrams: 0, totalsExcludingScrap: [], pureGoldTotalExcludingScrapGrams: 0 };
     const accountIds = accounts.map(account => account.id);
 
     const [balances, movements] = await Promise.all([
@@ -143,10 +143,24 @@ export class GoldService {
       return { id: account.id, name: account.name, warehouseId: account.warehouseId, balances: rows, pureGoldTotalGrams: Number(rows.reduce((sum, row) => sum + row.pureGoldGrams, 0).toFixed(4)) };
     });
 
+    // Barter scrap is metal the shop physically holds, so it belongs in the totals above and
+    // they keep their meaning. But it is managed on its own screen and the manager reads the
+    // headline as "gold the shop bought and owns", so the same figures are offered a second
+    // time with the scrap share removed. Two named numbers, neither one silently redefined.
+    const totalsExcludingScrap = [...totals.values()]
+      .map(row => {
+        const grams = Number((row.grams - row.scrapGrams).toFixed(3));
+        return { karat: row.karat, grams, pureGoldGrams: Number(((grams * Number(row.karat)) / 24).toFixed(4)), scrapGrams: 0 };
+      })
+      .filter(row => Math.abs(row.grams) > 0.0005)
+      .sort((a, b) => Number(b.karat) - Number(a.karat));
+
     return {
       accounts: accountRows,
       totals: [...totals.values()].sort((a, b) => Number(b.karat) - Number(a.karat)),
       pureGoldTotalGrams: Number([...totals.values()].reduce((sum, row) => sum + row.pureGoldGrams, 0).toFixed(4)),
+      totalsExcludingScrap,
+      pureGoldTotalExcludingScrapGrams: Number(totalsExcludingScrap.reduce((sum, row) => sum + row.pureGoldGrams, 0).toFixed(4)),
       movements: movements.map(row => ({
         id: row.entry.id, date: row.entry.occurredAt.toISOString().slice(0, 10), accountId: row.entry.goldAccountId, accountName: row.accountName,
         transactionNumber: row.transaction.transactionNumber, transactionType: row.transaction.type, status: row.transaction.status,
@@ -380,6 +394,72 @@ export class GoldService {
     });
     const result = await this.getTransaction(user, transactionId);
     this.realtime.emitToPermissions(['gold_accounts.view'], 'gold_account.updated', { partnerId });
+    return result;
+  }
+
+  /**
+   * A manual correction to the metal the shop itself holds — no partner on either side.
+   *
+   * This is the gap TASK 22 §3.3 documented and deliberately refused to fake: every other
+   * write here requires a partnerId, so there was no honest way to state "the shop has this
+   * much gold". The counter-entry goes to the `opening_gold` system account, which holdings()
+   * excludes, so only the company side counts as metal.
+   *
+   * Several karats may be adjusted in one transaction, each with its own free-text note. The
+   * notes are documentation and nothing else: they create no person, no custody record and no
+   * obligation on anyone. Karats are never merged — one ledger line per karat, as everywhere.
+   */
+  async createCompanyAdjustment(user: AuthIdentity, input: Record<string, unknown>) {
+    const direction = input.direction === 'decrease' ? 'decrease' : 'increase';
+    const warehouseId = input.warehouseId ? uuid(input.warehouseId, 'warehouseId') : null;
+    if (warehouseId) this.scope.assertAccess(user, warehouseId);
+    const idempotencyKey = uuid(input.idempotencyKey, 'idempotencyKey');
+    const note = this.optional(input.note, 1000);
+
+    if (!Array.isArray(input.lines) || !input.lines.length) throw new ConflictException('أدخل وزناً واحداً على الأقل.');
+    if (input.lines.length > 20) throw new ConflictException('عدد الأسطر أكبر من المسموح.');
+    const lines = (input.lines as Array<Record<string, unknown>>).map((line, index) => ({
+      karat: this.posting.assertKarat(line.karat, `lines[${index}].karat`),
+      grams: weight(line.weightGrams, `lines[${index}].weightGrams`),
+      note: this.optional(line.note, 500),
+    }));
+    // One line per karat: two lines of the same karat would post twice against one balance
+    // and read as a single figure on the screen.
+    const karats = new Set(lines.map(line => line.karat));
+    if (karats.size !== lines.length) throw new ConflictException('لا تكرر العيار نفسه في أكثر من سطر.');
+
+    const existing = await this.db.select({ id: goldTransactions.id }).from(goldTransactions).where(eq(goldTransactions.idempotencyKey, idempotencyKey)).limit(1);
+    if (existing[0]) return this.getTransaction(user, existing[0].id);
+
+    const total = lines.reduce((sum, line) => sum + line.grams, 0);
+    const transactionId = await this.db.transaction(async tx => {
+      const transaction = await this.posting.post(tx, user, {
+        type: 'opening', sourceType: 'manual', postingEvent: `company_adjustment:${idempotencyKey}`, idempotencyKey,
+        description: direction === 'increase'
+          ? `إضافة وزن يدوية إلى ذهب المحل — ${lines.length} عيار، ${total.toFixed(3)} غ`
+          : `خصم وزن يدوي من ذهب المحل — ${lines.length} عيار، ${total.toFixed(3)} غ`,
+        userNote: note, warehouseId,
+        lines: lines.flatMap(line => {
+          const description = `${direction === 'increase' ? 'إضافة' : 'خصم'} ${line.grams.toFixed(3)} غ عيار ${line.karat}${line.note ? ` — ${line.note}` : ''}`;
+          return direction === 'increase'
+            ? [
+                { companyWarehouseId: warehouseId, karat: line.karat, debitGrams: line.grams, warehouseId, description } as any,
+                { systemCode: 'opening_gold', karat: line.karat, creditGrams: line.grams, description: `مقابل ${description}` } as any,
+              ]
+            : [
+                { systemCode: 'opening_gold', karat: line.karat, debitGrams: line.grams, description: `مقابل ${description}` } as any,
+                { companyWarehouseId: warehouseId, karat: line.karat, creditGrams: line.grams, warehouseId, description } as any,
+              ];
+        }),
+      });
+      await this.audit.record({
+        actorUserId: user.id, action: 'gold.company_adjustment', module: 'gold', entityId: transaction.id, warehouseId: warehouseId ?? undefined,
+        metadata: { transactionNumber: transaction.transactionNumber, direction, totalGrams: total.toFixed(3), lines: lines.map(line => ({ karat: line.karat, weightGrams: line.grams.toFixed(3), note: line.note })) },
+      }, tx);
+      return transaction.id;
+    });
+    const result = await this.getTransaction(user, transactionId);
+    this.realtime.emitToPermissions(['gold_accounts.view'], 'gold_transaction.created', { id: transactionId, partnerId: null });
     return result;
   }
 
