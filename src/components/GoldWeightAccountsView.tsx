@@ -143,22 +143,25 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
         )}
       </div>
 
-      <div className="mt-3 rounded-sm bg-slate-900 p-3.5 text-center">
-        <p className="text-[11px] font-bold text-amber-400/80">الإجمالي بالذهب الصافي المكافئ</p>
-        <p className="mt-1 font-mono text-3xl font-black leading-none text-amber-400">{(holdings?.pureGoldTotalGrams ?? 0).toFixed(3)}</p>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">غرام ذهب صافٍ (عيار 24)</p>
-      </div>
+      {/* بطاقة واحدة لا بطاقات: الإجمالي في الأعلى بخط كبير، ثم سطر مستقل لكل عيار تحته
+          مباشرة. الإجمالي بالذهب الصافي المكافئ لأن غرامات عيارات مختلفة لا تُجمع. */}
+      <div className="mt-3 rounded-sm bg-slate-900 p-4">
+        <p className="text-center text-[11px] font-bold text-amber-400/80">إجمالي ذهب الشركة</p>
+        <p className="mt-1 text-center font-mono text-4xl font-black leading-none text-amber-400">{(holdings?.pureGoldTotalGrams ?? 0).toFixed(3)}</p>
+        <p className="mt-1.5 text-center text-[11px] font-bold text-slate-400">غرام ذهب صافٍ (مكافئ عيار 24)</p>
 
-      {/* العيارات لا تُجمع مع بعضها: كل عيار سطر مستقل. */}
-      <div className="mt-2.5 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-        {(holdings?.totals ?? []).map(row => <div key={row.karat} className="flex items-center justify-between border-r-4 border-amber-400 bg-slate-50 px-3 py-2">
-          <span className="min-w-0">
-            <b className="block text-xs text-slate-900">عيار {row.karat}</b>
-            {row.scrapGrams > 0 && <span className="block text-[10px] font-bold text-amber-800">منها {row.scrapGrams.toFixed(3)} غ كسر مقايضة</span>}
-          </span>
-          <span className="shrink-0 font-mono text-sm font-black text-amber-800">{row.grams.toFixed(3)} غ</span>
-        </div>)}
-        {!(holdings?.totals ?? []).length && <p className="border border-dashed border-slate-300 p-4 text-center text-xs font-bold text-slate-500 sm:col-span-2 lg:col-span-3">لا يوجد ذهب مسجّل في خزنة المحل بعد.</p>}
+        <div className="mt-3.5 border-t border-slate-700">
+          {(holdings?.totals ?? []).map(row => <div key={row.karat} className="flex items-center justify-between gap-3 border-b border-slate-800 py-2.5 last:border-b-0">
+            <span className="min-w-0">
+              <b className="block text-sm font-black text-white">عيار {row.karat}</b>
+              {row.scrapGrams > 0 && <span className="mt-0.5 block text-[10px] font-bold text-amber-400/70">منها {row.scrapGrams.toFixed(3)} غ كسر مقايضة</span>}
+            </span>
+            <span className="shrink-0 font-mono text-lg font-black text-amber-400">
+              {row.grams.toFixed(3)}<span className="mr-1 text-xs font-bold text-slate-400">غ</span>
+            </span>
+          </div>)}
+          {!(holdings?.totals ?? []).length && <p className="py-4 text-center text-xs font-bold text-slate-400">لا يوجد ذهب مسجّل في خزنة المحل بعد.</p>}
+        </div>
       </div>
     </div>
 
@@ -215,10 +218,13 @@ export const GoldWeightAccountsView: React.FC<Props> = ({ onOpenCustody, onOpenU
     </div>
 
     {/* ------------------------------------------------- دفتر أوزان الأطراف التجارية */}
+    {/* كان عنوان هذا القسم «ذمم الأوزان» أيضاً، فصار الاسم مكرراً على الشاشة نفسها بعد
+        ظهور زر الشاشة المستقلة. العنوان وحده تغيّر ليصف ما تحته فعلاً — الحركات والحقول
+        ونداءات الـ API كما هي حرفياً. */}
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h2 className="flex items-center gap-2 text-lg font-black text-slate-900 sm:text-xl"><Coins className="h-5 w-5 shrink-0 text-amber-600" />ذمم الأوزان</h2>
-        <p className="mt-0.5 text-[11px] leading-4 text-slate-500 sm:text-xs">دفتر أوزان الذهب بالغرام وبالعيار، مرتبط بفواتير البيع والمرتجعات.</p>
+        <h2 className="flex items-center gap-2 text-lg font-black text-slate-900 sm:text-xl"><Coins className="h-5 w-5 shrink-0 text-amber-600" />أوزان الأطراف التجارية</h2>
+        <p className="mt-0.5 text-[11px] leading-4 text-slate-500 sm:text-xs">دفتر أوزان الذهب مع العملاء والموردين بالغرام وبالعيار، مرتبط بفواتير البيع والمرتجعات.</p>
       </div>
       {/* Two rows of two on a phone: four buttons in one row is what crushed this header. */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
