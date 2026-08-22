@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { DecodeHintType } from '@zxing/library';
 import { useStore } from '../context/StoreContext';
 import { 
   FileText, 
@@ -428,16 +428,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
     let cancelled = false;
     let cameraTuningTimer: number | undefined;
-    // Prefer a focused 1D configuration. Gold tags are normally Code 128/EAN labels;
-    // limiting formats and enabling TRY_HARDER makes these narrow printed bars much more
-    // reliable than the library's broad default scan on a mobile camera stream.
+    // Keep every supported format enabled. The prior narrow list blocked the actual label
+    // format even though its camera stream was correct; TRY_HARDER improves small labels
+    // without rejecting valid 6- or 14-digit barcodes.
     const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-      BarcodeFormat.CODE_128,
-      BarcodeFormat.CODE_39,
-      BarcodeFormat.CODE_93,
-      BarcodeFormat.ITF,
-    ]);
     hints.set(DecodeHintType.TRY_HARDER, true);
     const reader = new BrowserMultiFormatReader(hints, {
       delayBetweenScanAttempts: 45,
@@ -474,18 +468,16 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
         return;
       }
 
-      // When a phone exposes optical zoom/focus controls, use a gentle zoom and continuous
-      // focus. This is especially helpful for the very small 6-digit gold labels without
-      // making the user change the invoice layout or choose a device setting manually.
+      // Optical zoom changes the real camera stream (not only its displayed size), making a
+      // small gold label occupy more pixels for the decoder on phones that support it.
       cameraTuningTimer = window.setTimeout(() => {
         const stream = barcodeVideoRef.current?.srcObject as MediaStream | null;
         const track = stream?.getVideoTracks()[0] as (MediaStreamTrack & { getCapabilities?: () => { zoom?: { min: number; max: number }; focusMode?: string[] } }) | undefined;
         if (!track?.getCapabilities) return;
         const capabilities = track.getCapabilities();
-        const advanced: Record<string, number | string> = {};
-        if (capabilities.focusMode?.includes('continuous')) advanced.focusMode = 'continuous';
-        if (capabilities.zoom) advanced.zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, 1.5));
-        if (Object.keys(advanced).length > 0) void track.applyConstraints({ advanced: [advanced as MediaTrackConstraintSet] });
+        if (!capabilities.zoom) return;
+        const opticalZoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, 2));
+        void track.applyConstraints({ advanced: [{ zoom: opticalZoom } as MediaTrackConstraintSet] }).catch(() => { /* The scanner remains usable on cameras that reject zoom changes. */ });
       }, 250);
     }).catch(() => {
       if (!cancelled) setBarcodeScannerError('تعذر تشغيل الكاميرا. تأكد من منح المتصفح إذن استخدام الكاميرا.');
