@@ -41,6 +41,7 @@ const settingsDto = (row: AppSettingsRow, prices: GoldPriceRow[]) => ({
   baseGoldOunceUSD: Number(row.baseGoldOunceUsd), baseGoldGram24kUSD: Number(row.baseGoldGram24kUsd),
   buyMarginPercent: Number(row.buyMarginPercent), sellMarginPercent: Number(row.sellMarginPercent),
   taxRatePercent: Number(row.taxRatePercent), autoSyncGoldPrices: row.autoSyncGoldPrices,
+  backupReminderEnabled: row.backupReminderEnabled, backupReminderIntervalHours: row.backupReminderIntervalHours,
   // TASK 18 §5: true while the values are the ones the migration derived from past documents
   // rather than ones a human confirmed. The UI says so loudly until it is cleared.
   isProvisional: row.isProvisional,
@@ -99,6 +100,12 @@ export class SettingsService {
       changes[field] = decimal(input[field], field, scale, field === 'usdToSypRate' ? 0.0001 : 0);
     }
     if (input.autoSyncGoldPrices !== undefined) changes.autoSyncGoldPrices = input.autoSyncGoldPrices === true;
+    if (input.backupReminderEnabled !== undefined) changes.backupReminderEnabled = input.backupReminderEnabled === true;
+    if (input.backupReminderIntervalHours !== undefined) {
+      const hours = Number(input.backupReminderIntervalHours);
+      if (!Number.isInteger(hours) || hours < 1 || hours > 168) throw new ConflictException('backupReminderIntervalHours is invalid.');
+      changes.backupReminderIntervalHours = String(hours);
+    }
     if (!Object.keys(changes).length) throw new ConflictException('No settings were supplied.');
 
     const updated = await this.db.transaction(async tx => {

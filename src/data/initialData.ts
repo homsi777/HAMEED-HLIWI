@@ -26,7 +26,9 @@ export const initialSettings: GeneralSettings = {
   buyMarginPercent: 0.5,
   sellMarginPercent: 1.5,
   autoSyncGoldPrices: true,
-  taxRatePercent: 0
+  taxRatePercent: 0,
+  backupReminderEnabled: true,
+  backupReminderIntervalHours: 6
 };
 
 export const initialGoldPrices: GoldPriceSetting[] = [

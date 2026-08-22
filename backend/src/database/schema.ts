@@ -272,6 +272,15 @@ export const documentSequences = pgTable('document_sequences', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// A browser/device subscription belongs to one authenticated user. It contains public
+// encryption material only; the VAPID private key stays in the server environment.
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: id(), userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  endpoint: text('endpoint').notNull(), p256dh: text('p256dh').notNull(), auth: text('auth').notNull(),
+  userAgent: text('user_agent'), lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  ...timestamps,
+}, table => [uniqueIndex('push_subscriptions_endpoint_unique').on(table.endpoint), index('push_subscriptions_user_idx').on(table.userId)]);
+
 // Sales are immutable posted facts. Amounts are stored as PostgreSQL numerics;
 // the service calculates them in SQL and never accepts client totals as truth.
 export const salesInvoiceSequences = pgTable('sales_invoice_sequences', { year: integer('year').primaryKey(), lastNumber: integer('last_number').notNull().default(0), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow() });
@@ -542,6 +551,9 @@ export const appSettings = pgTable('app_settings', {
   sellMarginPercent: numeric('sell_margin_percent', { precision: 9, scale: 4 }).notNull().default('0'),
   taxRatePercent: numeric('tax_rate_percent', { precision: 9, scale: 4 }).notNull().default('0'),
   autoSyncGoldPrices: boolean('auto_sync_gold_prices').notNull().default(false),
+  backupReminderEnabled: boolean('backup_reminder_enabled').notNull().default(true),
+  backupReminderIntervalHours: integer('backup_reminder_interval_hours').notNull().default(6),
+  backupReminderLastSentAt: timestamp('backup_reminder_last_sent_at', { withTimezone: true }),
   isProvisional: boolean('is_provisional').notNull().default(true),
   version: integer('version').notNull().default(1),
   updatedByUserId: uuid('updated_by_user_id').references(() => users.id, { onDelete: 'restrict' }),

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module.js'; import { AuthModule } from '../auth/auth.module.js'; import { PermissionsModule } from '../permissions/permissions.module.js'; import { RealtimeModule } from '../realtime/realtime.module.js'; import { WarehousesModule } from '../warehouses/warehouses.module.js'; import { FinanceModule } from '../finance/finance.module.js'; import { AccountingModule } from '../accounting/accounting.module.js'; import { GoldModule } from '../gold/gold.module.js'; import { ShiftsModule } from '../shifts/shifts.module.js';
 import { SalesController } from './sales.controller.js'; import { SalesService } from './sales.service.js';
-@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule, RealtimeModule, FinanceModule, AccountingModule, GoldModule, ShiftsModule], controllers: [SalesController], providers: [SalesService] })
+import { NotificationsModule } from '../notifications/notifications.module.js';
+@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule, RealtimeModule, FinanceModule, AccountingModule, GoldModule, ShiftsModule, NotificationsModule], controllers: [SalesController], providers: [SalesService] })
 export class SalesModule {}

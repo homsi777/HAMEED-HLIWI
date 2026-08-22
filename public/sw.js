@@ -19,3 +19,15 @@ self.addEventListener('fetch', event => {
     return response;
   }).catch(() => caches.match(event.request).then(cached => cached || caches.match('/index.html'))));
 });
+
+self.addEventListener('push', event => {
+  const data = event.data ? event.data.json() : {};
+  event.waitUntil(self.registration.showNotification(data.title || 'حميد حليوي', {
+    body: data.body || '', icon: '/icon-192.svg', badge: '/icon-192.svg', tag: data.tag || 'hameed-notification', data: { url: data.url || '/' }, renotify: true,
+  }));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil(clients.openWindow(event.notification.data?.url || '/'));
+});

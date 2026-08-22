@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { BackupPanel } from './BackupPanel';
 import { GoldPriceSetting } from '../types';
+import { enablePushNotifications } from '../services/notificationsApi';
 import { 
   Settings, 
   Save, 
@@ -12,7 +13,8 @@ import {
   Building2, 
   CheckCircle2, 
   ShieldAlert,
-  Percent
+  Percent,
+  Bell
 } from 'lucide-react';
 
 type GoldPriceInputField = 'buyPriceUSDPerGram' | 'sellPriceUSDPerGram' | 'laborFeeUSDPerGram';
@@ -40,6 +42,8 @@ export const SettingsView: React.FC = () => {
   const [sellMargin, setSellMargin] = useState(settings.sellMarginPercent.toString());
   const [priceDraft, setPriceDraft] = useState(() => goldPrices.map(price => ({ ...price })));
   const [priceInputValues, setPriceInputValues] = useState(() => priceInputValuesFrom(goldPrices));
+  const [backupReminderEnabled, setBackupReminderEnabled] = useState(settings.backupReminderEnabled ?? true);
+  const [backupReminderIntervalHours, setBackupReminderIntervalHours] = useState(String(settings.backupReminderIntervalHours ?? 6));
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -62,7 +66,11 @@ export const SettingsView: React.FC = () => {
       baseGoldOunceUSD: ounce,
       buyMarginPercent: bMargin,
       sellMarginPercent: sMargin
+      ,backupReminderEnabled,
+      backupReminderIntervalHours: Number(backupReminderIntervalHours)
     });
+
+    if (backupReminderEnabled) await enablePushNotifications();
 
     await updateGoldPrices(priceDraft.map(price => ({
       ...price,
@@ -289,6 +297,15 @@ export const SettingsView: React.FC = () => {
               </table>
             </div>
           </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-sm border border-slate-200 shadow-sm space-y-4">
+          <h3 className="font-black text-slate-900 text-base flex items-center gap-2 border-b border-slate-200 pb-3"><Bell className="w-5 h-5 text-amber-600" /><span>تذكير النسخة الاحتياطية وإشعارات المدير</span></h3>
+          <div className="flex items-center justify-between gap-3 rounded-sm border border-amber-200 bg-amber-50 p-3 text-xs">
+            <label className="flex items-center gap-2 font-bold text-slate-800"><input type="checkbox" checked={backupReminderEnabled} onChange={event => setBackupReminderEnabled(event.target.checked)} />تفعيل إشعار النسخة الاحتياطية على هاتف المدير</label>
+            <select value={backupReminderIntervalHours} disabled={!backupReminderEnabled} onChange={event => setBackupReminderIntervalHours(event.target.value)} className="border border-amber-300 bg-white px-2 py-1.5 font-bold text-slate-800"><option value="1">كل ساعة</option><option value="3">كل 3 ساعات</option><option value="6">كل 6 ساعات</option><option value="12">كل 12 ساعة</option><option value="24">كل يوم</option><option value="48">كل يومين</option></select>
+          </div>
+          <p className="text-[11px] font-bold text-slate-500">عند الحفظ سيطلب الهاتف إذن الإشعارات. كما يصل المدير إشعار فوري عندما يحفظ حساب بائع فاتورة بيع.</p>
         </div>
 
         {/* Company & Store Identity */}

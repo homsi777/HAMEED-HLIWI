@@ -245,4 +245,6 @@ export interface GeneralSettings {
   
   autoSyncGoldPrices: boolean; // تحديث مستمر
   taxRatePercent: number; // نسبة الضريبة إن وجدت
+  backupReminderEnabled: boolean;
+  backupReminderIntervalHours: number;
 }

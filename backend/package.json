@@ -37,6 +37,7 @@
     "test:task16a": "tsx test/task16a-logout-browser-path.spec.ts",
     "test:task17": "tsx test/task17-partner-reconciliation.spec.ts",
     "backup:scheduled": "tsx src/database/scheduled-backup.ts",
+    "notifications:dispatch": "tsx src/database/dispatch-backup-reminders.ts",
     "test:task20": "tsx test/task20-backups.spec.ts"
   },
   "dependencies": {
@@ -60,11 +61,13 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1"
+    "socket.io-client": "^4.8.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^22.14.1",
+    "@types/web-push": "^3.6.4",
     "drizzle-kit": "^0.31.8",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2"
