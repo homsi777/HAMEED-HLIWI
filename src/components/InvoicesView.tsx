@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
 import { useStore } from '../context/StoreContext';
 import { 
   FileText, 
@@ -392,6 +393,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   // Temp form for adding an item into invoice
   const [selectedStockItemId, setSelectedStockItemId] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [barcodeScannerError, setBarcodeScannerError] = useState('');
+  const barcodeVideoRef = useRef<HTMLVideoElement>(null);
+  const barcodeScannerControlsRef = useRef<IScannerControls | null>(null);
   const [stockSalePricePerGram, setStockSalePricePerGram] = useState('');
   const [aggregateSoldWeight, setAggregateSoldWeight] = useState('');
   const [aggregateSoldQuantity, setAggregateSoldQuantity] = useState('1');
@@ -414,6 +419,44 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const [paidUSD, setPaidUSD] = useState('');
   const [paidSYP, setPaidSYP] = useState('');
   const [itemPhotoUrl, setItemPhotoUrl] = useState(''); // صورة ضمان القطعة المباعة/المشتراة
+
+  // The scanner deliberately lives inside the stock picker: closing it stops only its camera
+  // stream and leaves the invoice form, entered prices, and the approved layout untouched.
+  useEffect(() => {
+    if (!isBarcodeScannerOpen || !barcodeVideoRef.current) return;
+
+    let cancelled = false;
+    const reader = new BrowserMultiFormatReader();
+    void reader.decodeFromConstraints(
+      { audio: false, video: { facingMode: { ideal: 'environment' } } },
+      barcodeVideoRef.current,
+      (result) => {
+        const barcode = result?.getText().trim();
+        if (!barcode || cancelled) return;
+
+        const matchedItem = inventory.find(item =>
+          item.status === 'in_stock' &&
+          item.warehouseId === invWarehouseId &&
+          item.code.trim().toLowerCase() === barcode.toLowerCase()
+        );
+        setStockSearchQuery(barcode);
+        setSelectedStockItemId(matchedItem?.id ?? '');
+        setBarcodeScannerError(matchedItem ? '' : 'لم يتم العثور على قطعة بهذا الرمز في المستودع الحالي.');
+        setIsBarcodeScannerOpen(false);
+      },
+    ).then((controls) => {
+      barcodeScannerControlsRef.current = controls;
+      if (cancelled) controls.stop();
+    }).catch(() => {
+      if (!cancelled) setBarcodeScannerError('تعذر تشغيل الكاميرا. تأكد من منح المتصفح إذن استخدام الكاميرا.');
+    });
+
+    return () => {
+      cancelled = true;
+      barcodeScannerControlsRef.current?.stop();
+      barcodeScannerControlsRef.current = null;
+    };
+  }, [isBarcodeScannerOpen, inventory, invWarehouseId]);
 
   // Photo Capture/Upload handler (with automatic canvas optimization for clear printing)
   const handleCaptureItemPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1076,18 +1119,40 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                         placeholder="ابحث بكود أو اسم القطعة أو العيار..."
                         value={stockSearchQuery}
                         onChange={e => setStockSearchQuery(e.target.value)}
-                        className="w-full pr-8 pl-7 py-1.5 sm:py-2 bg-white border border-amber-300 rounded-sm text-slate-900 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                        className="w-full pr-8 pl-14 py-1.5 sm:py-2 bg-white border border-amber-300 rounded-sm text-slate-900 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
                       />
+                      <button
+                        type="button"
+                        onClick={() => { setBarcodeScannerError(''); setIsBarcodeScannerOpen(true); }}
+                        className="absolute left-2 top-1.5 text-amber-700 hover:text-amber-900 p-0.5 rounded-sm hover:bg-amber-100"
+                        aria-label="مسح باركود بالكاميرا"
+                        title="مسح باركود بالكاميرا"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
                       {stockSearchQuery && (
                         <button
                           type="button"
                           onClick={() => setStockSearchQuery('')}
-                          className="absolute left-2 top-2 text-slate-400 hover:text-slate-700"
+                          className="absolute left-8 top-2 text-slate-400 hover:text-slate-700"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
+
+                    {isBarcodeScannerOpen && (
+                      <div className="mt-1.5 overflow-hidden rounded-sm border-2 border-amber-400 bg-slate-950 shadow-lg">
+                        <div className="flex items-center justify-between bg-amber-50 px-2 py-1 text-[10px] font-bold text-slate-800">
+                          <span>وجّه الكاميرا الخلفية نحو الباركود</span>
+                          <button type="button" onClick={() => setIsBarcodeScannerOpen(false)} className="text-slate-500 hover:text-slate-900" aria-label="إغلاق ماسح الباركود"><X className="h-3.5 w-3.5" /></button>
+                        </div>
+                        <video ref={barcodeVideoRef} className="block aspect-video w-full object-cover" muted playsInline />
+                      </div>
+                    )}
+                    {barcodeScannerError && !isBarcodeScannerOpen && (
+                      <p className="mt-1 text-[10px] font-medium text-rose-700">{barcodeScannerError}</p>
+                    )}
 
                     {/* Predictive Live List Dropdown */}
                     {stockSearchQuery.trim().length > 0 && (
