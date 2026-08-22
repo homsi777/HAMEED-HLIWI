@@ -84,9 +84,16 @@ gunzip -t /home/ubuntu/backups/<file>.sql.gz && echo "archive is intact"
 Never restore straight over production. Prove the file first.
 
 ```bash
+RESTORE_FILE=/home/ubuntu/backups/<file>.sql.gz
+RESTORE_STAGE=/var/tmp/hameed_restore_check.sql.gz
+sudo install -o postgres -g postgres -m 600 "$RESTORE_FILE" "$RESTORE_STAGE"
 sudo -u postgres createdb hameed_restore_check
-gunzip -c /home/ubuntu/backups/<file>.sql.gz | sudo -u postgres psql hameed_restore_check
+sudo -u postgres bash -c "gunzip -c '$RESTORE_STAGE' | psql hameed_restore_check"
 ```
+
+The backups directory belongs to `ubuntu`, while PostgreSQL runs as `postgres`. The protected
+temporary copy above is required on this server; do not loosen the permissions of the backups
+directory just to make the restore command shorter.
 
 Then check the books balance in the restored copy:
 
@@ -109,12 +116,16 @@ Drop the scratch copy when you are satisfied:
 sudo -u postgres dropdb hameed_restore_check
 ```
 
+Keep `$RESTORE_STAGE` only while proceeding immediately to step 5; otherwise remove it with
+`sudo rm -f "$RESTORE_STAGE"`.
+
 ### 5. Restore over production
 
 Only after step 4 passed.
 
 ```bash
-gunzip -c /home/ubuntu/backups/<file>.sql.gz | sudo -u postgres psql hameed_hliwi_production
+sudo -u postgres bash -c "gunzip -c '$RESTORE_STAGE' | psql hameed_hliwi_production"
+sudo rm -f "$RESTORE_STAGE"
 ```
 
 The dumps are taken with `--clean --if-exists`, so the file drops and recreates the objects it
