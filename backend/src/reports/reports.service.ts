@@ -1,9 +1,9 @@
 import { ConflictException, Inject, Injectable } from '@nestjs/common';
-import { and, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
 import {
-  cashMovements, cashboxes, goldAccounts, goldLedgerEntries, goldTransactions, inventoryItems,
+  auditLogs, cashMovements, cashboxes, goldAccounts, goldLedgerEntries, goldTransactions, goldPrices, inventoryItems,
   partnerLedgerEntries, partners, purchaseInvoices, returnInvoiceItems, returnInvoices, salesInvoiceItems, salesInvoices,
   shifts, users, warehouses, weightCustodyPeople,
 } from '../database/schema.js';
@@ -282,15 +282,20 @@ export class ReportsService {
   /** §14: pieces and weight by karat, warehouse and origin. Weight only — no valuation (§5). */
   async inventory(user: AuthIdentity, query: Record<string, unknown>) {
     const ids = this.warehouseIds(user, query);
-    if (ids && !ids.length) return { byKarat: [], byWarehouse: [], byOrigin: [], pureGoldGrams: 0 };
+    if (ids && !ids.length) return { byKarat: [], byWarehouse: [], byOrigin: [], pureGoldGrams: 0, totalGrossWeightGrams: 0, estimatedSellValueUSD: 0 };
     const scope = ids ? inArray(inventoryItems.warehouseId, ids) : undefined;
     const inStock = and(eq(inventoryItems.status, 'in_stock'), sql`${inventoryItems.archivedAt} is null`, scope)!;
 
     const byKarat = await this.db.select({
       karat: inventoryItems.karat,
       pieces: sql<string>`coalesce(sum(${inventoryItems.quantity}), 0)`,
+      grossWeightGrams: sql<string>`coalesce(sum(${inventoryItems.grossWeightGrams}), 0)`,
       weightGrams: sql<string>`coalesce(sum(${inventoryItems.netWeightGrams}), 0)`,
     }).from(inventoryItems).where(inStock).groupBy(inventoryItems.karat);
+
+    const [estimate] = await this.db.select({
+      valueUSD: sql<string>`coalesce(sum(${inventoryItems.netWeightGrams} * coalesce(${goldPrices.sellPriceUsdPerGram}, 0) + ${inventoryItems.totalLaborFeeUsd}), 0)`,
+    }).from(inventoryItems).leftJoin(goldPrices, eq(goldPrices.karat, inventoryItems.karat)).where(inStock);
 
     const byWarehouse = await this.db.select({
       warehouseId: inventoryItems.warehouseId, warehouseName: warehouses.name,
@@ -314,7 +319,7 @@ export class ReportsService {
          ${ids ? sql`and item.warehouse_id in (${sql.join(ids.map(value => sql`${value}::uuid`), sql`, `)})` : sql``}
        group by 1`);
 
-    const karats = byKarat.map(row => ({ karat: row.karat, pieces: grams(row.pieces), weightGrams: grams(row.weightGrams) }))
+    const karats = byKarat.map(row => ({ karat: row.karat, pieces: grams(row.pieces), grossWeightGrams: grams(row.grossWeightGrams), weightGrams: grams(row.weightGrams) }))
       .sort((a, b) => Number(b.karat) - Number(a.karat));
 
     return {
@@ -324,6 +329,8 @@ export class ReportsService {
         .map(row => ({ origin: row.origin, items: row.items, weightGrams: grams(row.weight) })),
       // §3: the one figure karats may share, and it is labelled.
       pureGoldGrams: grams(karats.reduce((sum, row) => sum + row.weightGrams * (PURITY[row.karat] ?? 0), 0)),
+      totalGrossWeightGrams: grams(karats.reduce((sum, row) => sum + row.grossWeightGrams, 0)),
+      estimatedSellValueUSD: money(estimate?.valueUSD),
     };
   }
 
@@ -461,13 +468,43 @@ export class ReportsService {
       people.set(row.personId, entry);
     }
 
+    // A positive partner balance is gold the partner owes the shop. It is kept per karat;
+    // combining different karats into one raw-gram number would be misleading.
+    const partnerRows = await this.db.select({
+      karat: goldLedgerEntries.karat,
+      grams: sql<string>`coalesce(sum(${goldLedgerEntries.debitGrams} - ${goldLedgerEntries.creditGrams}), 0)`,
+    }).from(goldAccounts)
+      .innerJoin(goldLedgerEntries, eq(goldLedgerEntries.goldAccountId, goldAccounts.id))
+      .innerJoin(goldTransactions, eq(goldTransactions.id, goldLedgerEntries.goldTransactionId))
+      .where(and(eq(goldAccounts.kind, 'partner'), eq(goldTransactions.status, 'posted'), ids ? inArray(goldLedgerEntries.warehouseId, ids) : undefined))
+      .groupBy(goldLedgerEntries.karat);
+
     return {
       note: 'الذهب الفعلي وذمم الأوزان نطاقان منفصلان ولا يُجمعان',
       physicalByKarat: physical.map(row => ({ karat: row.karat, grams: grams(Number(row.debit) - Number(row.credit)) }))
         .sort((a, b) => Number(b.karat) - Number(a.karat)),
       custody: [...people.values()].map(person => ({ ...person, balances: person.balances.filter((row: any) => row.outstandingGrams !== 0) }))
         .filter(person => person.balances.length),
+      partnerOwedToShopByKarat: partnerRows.map(row => ({ karat: row.karat, grams: grams(row.grams) })).filter(row => row.grams > 0)
+        .sort((a, b) => Number(b.karat) - Number(a.karat)),
     };
+  }
+
+  /** Latest persisted audit events; dashboard history must never come from browser storage. */
+  async activity(user: AuthIdentity, query: Record<string, unknown>) {
+    const ids = this.warehouseIds(user, query);
+    if (ids && !ids.length) return [];
+    const rawLimit = Number(query.limit ?? 5);
+    const limit = Number.isFinite(rawLimit) ? Math.min(20, Math.max(1, Math.floor(rawLimit))) : 5;
+    const scope = ids ? or(inArray(auditLogs.warehouseId, ids), isNull(auditLogs.warehouseId)) : undefined;
+    const rows = await this.db.select({
+      id: auditLogs.id, action: auditLogs.action, module: auditLogs.module, createdAt: auditLogs.createdAt,
+      actorName: users.fullName, warehouseName: warehouses.name,
+    }).from(auditLogs)
+      .leftJoin(users, eq(users.id, auditLogs.actorUserId))
+      .leftJoin(warehouses, eq(warehouses.id, auditLogs.warehouseId))
+      .where(scope).orderBy(desc(auditLogs.createdAt)).limit(limit);
+    return rows.map(row => ({ ...row, actorName: row.actorName ?? 'النظام', warehouseName: row.warehouseName ?? null, createdAt: row.createdAt.toISOString() }));
   }
 
   // ---------------------------------------------------------------- shifts

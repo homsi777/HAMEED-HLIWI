@@ -29,7 +29,6 @@ import {
   Cell, 
   Legend 
 } from 'recharts';
-import { GoldKarat } from '../types';
 
 interface DashboardProps {
   setActiveTab: (tab: string) => void;
@@ -45,15 +44,9 @@ const CHART_HEIGHT = 260;
 
 export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInvoiceClick }) => {
   const { 
-    inventory, 
-    invoices, 
-    partners, 
-    cashBoxes, 
     goldPrices,
     updateGoldPrices,
-    activityLogs, 
     formatMoney, 
-    activeCurrency,
     settings 
   } = useStore();
   // TASK 21: the dashboard reads the same server aggregates the reports do, so the manager's
@@ -66,9 +59,9 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
     let cancelled = false;
     void Promise.all([
       reportsApi.overview(), reportsApi.receivables(), reportsApi.cash(),
-      reportsApi.inventory(), reportsApi.salesTimeline(14), reportsApi.workmanship(),
-    ]).then(([overview, receivables, cash, inventory, timeline, workmanship]) => {
-      if (!cancelled) setLive({ overview, receivables, cash, inventory, timeline, workmanship });
+      reportsApi.purchases(), reportsApi.inventory(), reportsApi.gold(), reportsApi.salesTimeline(14), reportsApi.activity(5),
+    ]).then(([overview, receivables, cash, purchases, inventory, gold, timeline, activity]) => {
+      if (!cancelled) setLive({ overview, receivables, cash, purchases, inventory, gold, timeline, activity });
     }).catch((reason: any) => {
       // A manager without `reports.view` simply sees the screen without these figures.
       if (!cancelled) setLiveError(reason?.status === 403 ? '' : 'تعذر تحميل أرقام لوحة القيادة من الخادم.');
@@ -126,8 +119,9 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
     });
   };
 
-  // Calculate total stock weights in grams per karat
-  const stockByKarat: Record<GoldKarat, number> = {
+  // The dashboard must never total the browser cache: all stock figures below originate in
+  // the server's inventory report, which sees every item within the user's warehouse scope.
+  const stockByKarat: Record<string, number> = {
     '24': 0,
     '22': 0,
     '21': 0,
@@ -135,40 +129,30 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
     '14': 0
   };
 
-  let totalGrossWeight = 0;
-  let totalNetWeight = 0;
-  let totalStockValueUSD = 0;
-
-  inventory.forEach(item => {
-    if (item.status === 'in_stock') {
-      stockByKarat[item.karat] = (stockByKarat[item.karat] || 0) + item.netWeightGrams;
-      totalGrossWeight += item.grossWeightGrams;
-      totalNetWeight += item.netWeightGrams;
-
-      const p = goldPrices.find(g => g.karat === item.karat);
-      const pricePerGram = p ? p.sellPriceUSDPerGram : 70;
-      totalStockValueUSD += item.netWeightGrams * pricePerGram + item.totalLaborFeeUSD;
-    }
-  });
+  (live?.inventory?.byKarat ?? []).forEach((row: any) => { stockByKarat[row.karat] = row.weightGrams; });
+  const totalGrossWeight = live?.inventory?.totalGrossWeightGrams ?? 0;
+  const totalNetWeight = (live?.inventory?.byKarat ?? []).reduce((sum: number, row: any) => sum + row.weightGrams, 0);
+  const totalStockValueUSD = live?.inventory?.estimatedSellValueUSD ?? 0;
 
   // Every figure below is the server's, aggregated from the authoritative records.
   const totalSalesUSD = live?.overview?.sales?.valueUSD ?? 0;
-  const totalPurchasesUSD = live?.overview?.purchases?.valueUSD ?? 0;
+  const totalPurchasesUSD = live?.purchases?.totals?.valueUSD ?? 0;
 
   // §24 sign convention, corrected. A positive subledger balance means the partner owes the shop.
   // The previous code read `balanceUSD < 0` as a customer debt, which has been backwards since
   // the balance started coming from the ledger in TASK 17.
   const customerDebtsUSD = live?.receivables?.totalOwedToShopUSD ?? 0;
   const supplierDebtsUSD = live?.receivables?.totalOwedByShopUSD ?? 0;
-  const customerGoldDebtsGrams = (live?.overview?.gold ?? [])
-    .reduce((sum: number, row: any) => sum + (row.grams > 0 ? row.grams : 0), 0);
+  const customerGoldDebtsGrams = (live?.gold?.partnerOwedToShopByKarat ?? [])
+    .find((row: any) => row.karat === '21')?.grams ?? 0;
 
   // Cashboxes are matched by currency rather than by hardcoded legacy ids, and each stays in its
   // own currency — a dollar total and a lira total are never added together.
   const boxes = live?.cash?.boxes ?? [];
   const usdCash = boxes.filter((box: any) => box.currency === 'USD').reduce((sum: number, box: any) => sum + box.closingBalance, 0);
   const sypCash = boxes.filter((box: any) => box.currency === 'SYP').reduce((sum: number, box: any) => sum + box.closingBalance, 0);
-  const safeCash = 0;
+  const showMoney = (value: number, currency?: 'USD' | 'SYP') => live ? formatMoney(value, currency) : '—';
+  const showWeight = (value: number, digits = 1) => live ? value.toLocaleString('ar-SY', { maximumFractionDigits: digits }) : '—';
 
   // Pie chart data for Karat distribution
   const pieData = [
@@ -261,6 +245,8 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
         </div>
       </section>
 
+      {liveError && <div role="alert" className="border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{liveError}</div>}
+
       {showShortcutSettings && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setShowShortcutSettings(false)}>
           <div role="dialog" aria-modal="true" onClick={event => event.stopPropagation()} className="w-full max-w-md rounded-sm border-2 border-amber-400 bg-white p-4 text-right shadow-2xl">
@@ -301,12 +287,12 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
             </div>
           </div>
           <div className="flex items-baseline gap-2 font-mono">
-            <span className="text-2xl font-black text-slate-900">{totalNetWeight.toLocaleString('ar-SY', { maximumFractionDigits: 2 })}</span>
+            <span className="text-2xl font-black text-slate-900">{showWeight(totalNetWeight, 2)}</span>
             <span className="text-xs font-bold text-amber-700 font-sans">غرام صافي</span>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-mono">
             <span className="font-sans">الوزن القائم (مع الأحجار):</span>
-            <span className="font-bold text-slate-800">{totalGrossWeight.toFixed(1)} غ</span>
+            <span className="font-bold text-slate-800">{showWeight(totalGrossWeight)} غ</span>
           </div>
         </div>
 
@@ -319,11 +305,11 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900 font-mono">
-            {formatMoney(totalStockValueUSD)}
+            {showMoney(totalStockValueUSD)}
           </div>
           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-mono">
             <span className="font-sans">العملة الثانوية:</span>
-            <span className="font-bold text-slate-800">{formatMoney(totalStockValueUSD, 'SYP')}</span>
+            <span className="font-bold text-slate-800">{showMoney(totalStockValueUSD, 'SYP')}</span>
           </div>
         </div>
 
@@ -336,11 +322,11 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
             </div>
           </div>
           <div className="text-2xl font-black text-emerald-700 font-mono">
-            {formatMoney(totalSalesUSD)}
+            {showMoney(totalSalesUSD)}
           </div>
           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-mono">
             <span className="font-sans">فواتير الشراء:</span>
-            <span className="font-bold text-slate-800">{formatMoney(totalPurchasesUSD)}</span>
+            <span className="font-bold text-slate-800">{showMoney(totalPurchasesUSD)}</span>
           </div>
         </div>
 
@@ -353,11 +339,11 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
             </div>
           </div>
           <div className="text-2xl font-black text-slate-900 font-mono">
-            {formatMoney(customerDebtsUSD)}
+            {showMoney(customerDebtsUSD)}
           </div>
           <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-mono">
             <span className="text-slate-500 font-sans">ذمم ذهب للعملاء:</span>
-            <span className="font-bold text-amber-700">{customerGoldDebtsGrams} غ عيار 21</span>
+            <span className="font-bold text-amber-700">{showWeight(customerGoldDebtsGrams, 3)} غ عيار 21</span>
           </div>
         </div>
       </div>
@@ -373,28 +359,28 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
           <div className="bg-slate-950 border-r-4 border-r-amber-400 border border-slate-800 rounded-sm p-3 text-center">
             <span className="text-[10px] text-slate-400 block mb-1 font-sans font-medium">عيار 21 (مجوهرات)</span>
             <span className="text-lg font-black text-amber-400">
-              {stockByKarat['21'].toFixed(1)} <span className="text-xs font-normal font-sans">غرام</span>
+              {showWeight(stockByKarat['21'])} <span className="text-xs font-normal font-sans">غرام</span>
             </span>
           </div>
 
           <div className="bg-slate-950 border-r-4 border-r-amber-400 border border-slate-800 rounded-sm p-3 text-center">
             <span className="text-[10px] text-slate-400 block mb-1 font-sans font-medium">عيار 24 (سبائك صافية)</span>
             <span className="text-lg font-black text-amber-400">
-              {stockByKarat['24'].toFixed(1)} <span className="text-xs font-normal font-sans">غرام</span>
+              {showWeight(stockByKarat['24'])} <span className="text-xs font-normal font-sans">غرام</span>
             </span>
           </div>
 
           <div className="bg-slate-950 border-r-4 border-r-amber-400 border border-slate-800 rounded-sm p-3 text-center">
             <span className="text-[10px] text-slate-400 block mb-1 font-sans font-medium">عيار 18 (صياغة)</span>
             <span className="text-lg font-black text-amber-400">
-              {stockByKarat['18'].toFixed(1)} <span className="text-xs font-normal font-sans">غرام</span>
+              {showWeight(stockByKarat['18'])} <span className="text-xs font-normal font-sans">غرام</span>
             </span>
           </div>
 
           <div className="bg-slate-950 border-r-4 border-r-amber-400 border border-slate-800 rounded-sm p-3 text-center">
             <span className="text-[10px] text-slate-400 block mb-1 font-sans font-medium">عيار 22</span>
             <span className="text-lg font-black text-amber-400">
-              {stockByKarat['22'].toFixed(1)} <span className="text-xs font-normal font-sans">غرام</span>
+              {showWeight(stockByKarat['22'])} <span className="text-xs font-normal font-sans">غرام</span>
             </span>
           </div>
         </div>
@@ -519,7 +505,7 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
                 <span className="font-bold text-slate-900 text-xs block font-sans">صندوق الدولار الرئيسي ($)</span>
                 <span className="text-[10px] text-slate-500 font-sans">سيولة النقد للعمليات اليومية</span>
               </div>
-              <span className="text-lg font-black text-slate-900">$ {usdCash.toLocaleString()}</span>
+              <span className="text-lg font-black text-slate-900">{live ? `$ ${usdCash.toLocaleString()}` : '—'}</span>
             </div>
 
             <div className="p-3.5 rounded-sm bg-slate-50 border border-slate-200 border-r-4 border-r-slate-800 flex items-center justify-between">
@@ -527,7 +513,7 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
                 <span className="font-bold text-slate-900 text-xs block font-sans">صندوق الليرة السورية (ل.س)</span>
                 <span className="text-[10px] text-slate-500 font-sans">سيولة المحل بالليرة السورية</span>
               </div>
-              <span className="text-lg font-black text-slate-900">{sypCash.toLocaleString('ar-SY')} ل.س</span>
+              <span className="text-lg font-black text-slate-900">{live ? `${sypCash.toLocaleString('ar-SY')} ل.س` : '—'}</span>
             </div>
 
             <div className="p-3.5 rounded-sm bg-slate-900 text-white flex items-center justify-between border-r-4 border-r-amber-400">
@@ -535,7 +521,7 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
                 <span className="font-bold text-amber-400 text-xs block font-sans">الخزنة المركزية ($)</span>
                 <span className="text-[10px] text-slate-400 font-sans">الأمانات الاحتياطية</span>
               </div>
-              <span className="text-lg font-black text-amber-400">$ {safeCash.toLocaleString()}</span>
+              <span className="text-lg font-black text-amber-400">{live ? 'غير مسجل' : '—'}</span>
             </div>
           </div>
         </div>
@@ -547,23 +533,24 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
               <Clock className="w-5 h-5 text-amber-600" />
               <h3 className="font-bold text-slate-900 text-sm">أحدث النشاطات والحركات بالنظام</h3>
             </div>
-            <span className="text-xs text-slate-400 font-mono">سجل لحظي مباشر</span>
+            <span className="text-xs text-slate-400 font-mono">آخر الحركات المسجلة</span>
           </div>
 
           <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
-            {activityLogs.slice(0, 5).map(log => (
+            {(live?.activity ?? []).map((log: any) => (
               <div key={log.id} className="p-2.5 rounded-sm bg-slate-50 border border-slate-200 text-xs flex items-start gap-3">
                 <div className="w-2 h-2 rounded-sm bg-amber-400 mt-1.5 shrink-0"></div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-800">{log.action}</span>
-                    <span className="text-[10px] text-slate-400 font-mono">{log.timestamp}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">{new Date(log.createdAt).toLocaleString('ar-SY', { hour12: false })}</span>
                   </div>
-                  <p className="text-slate-600 mt-0.5">{log.details}</p>
-                  <span className="text-[10px] text-amber-700 font-semibold mt-1 block">بواسطة: {log.userName}</span>
+                  <p className="text-slate-600 mt-0.5">{log.module}{log.warehouseName ? ` • ${log.warehouseName}` : ''}</p>
+                  <span className="text-[10px] text-amber-700 font-semibold mt-1 block">بواسطة: {log.actorName}</span>
                 </div>
               </div>
             ))}
+            {live && live.activity.length === 0 && <div className="border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">لا توجد حركات مسجلة بعد.</div>}
           </div>
         </div>
       </div>

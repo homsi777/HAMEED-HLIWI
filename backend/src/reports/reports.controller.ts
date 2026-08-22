@@ -41,6 +41,9 @@ export class ReportsController {
   @Get('gold') @RequirePermissions('reports.view')
   gold(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.reports.gold(request.identity!, query); }
 
+  @Get('activity') @RequirePermissions('reports.view')
+  activity(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.reports.activity(request.identity!, query); }
+
   // A real daily series, because the dashboard used to draw invented numbers.
   @Get('sales-timeline') @RequirePermissions('reports.view')
   salesTimeline(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.reports.salesTimeline(request.identity!, query); }

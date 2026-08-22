@@ -24,10 +24,10 @@ export type SalesReport = {
   cancelled: { count: number; valueUSD: number };
 };
 export type InventoryReport = {
-  byKarat: Array<{ karat: string; pieces: number; weightGrams: number }>;
+  byKarat: Array<{ karat: string; pieces: number; grossWeightGrams: number; weightGrams: number }>;
   byWarehouse: Array<{ warehouseId: string; warehouseName: string; pieces: number; weightGrams: number }>;
   byOrigin: Array<{ origin: 'purchase' | 'direct' | 'historical' | 'used_gold'; items: number; weightGrams: number }>;
-  pureGoldGrams: number;
+  pureGoldGrams: number; totalGrossWeightGrams: number; estimatedSellValueUSD: number;
 };
 export type ReceivablesReport = {
   totalOwedToShopUSD: number; totalOwedByShopUSD: number;
@@ -35,8 +35,9 @@ export type ReceivablesReport = {
     aging: { currentUSD: number; days30USD: number; days60USD: number; days90PlusUSD: number } }>;
 };
 export type CashReport = { note: string; boxes: Array<{ cashboxId: string; name: string; currency: 'USD' | 'SYP'; openingBalance: number; periodInflow: number; periodOutflow: number; closingBalance: number }> };
-export type GoldReport = { note: string; physicalByKarat: Array<{ karat: string; grams: number }>; custody: Array<{ personId: string; name: string; partnerId: string | null; balances: Array<{ karat: string; outstandingGrams: number }> }> };
+export type GoldReport = { note: string; physicalByKarat: Array<{ karat: string; grams: number }>; custody: Array<{ personId: string; name: string; partnerId: string | null; balances: Array<{ karat: string; outstandingGrams: number }> }>; partnerOwedToShopByKarat: Array<{ karat: string; grams: number }> };
 export type WorkmanshipReport = { note: string; totalUSD: number; byKarat: Array<{ karat: string; weightGrams: number; workmanshipUSD: number }> };
+export type DashboardActivity = { id: string; action: string; module: string; actorName: string; warehouseName: string | null; createdAt: string };
 
 export const reportsApi = {
   overview: (filters: ReportFilters = {}) => request<any>(`/reports/overview?${query(filters)}`),
@@ -48,6 +49,7 @@ export const reportsApi = {
   receivables: (filters: ReportFilters = {}) => request<ReceivablesReport>(`/reports/receivables?${query(filters)}`),
   cash: (filters: ReportFilters = {}) => request<CashReport>(`/reports/cash?${query(filters)}`),
   gold: (filters: ReportFilters = {}) => request<GoldReport>(`/reports/gold?${query(filters)}`),
+  activity: (limit = 5) => request<DashboardActivity[]>(`/reports/activity?${query({ limit: String(limit) })}`),
   /** A real daily series. The dashboard used to draw a hardcoded week with one real point. */
   salesTimeline: (days = 14, filters: ReportFilters = {}) => request<Array<{ date: string; salesUSD: number; purchasesUSD: number; invoices: number }>>(`/reports/sales-timeline?${query({ ...filters, days: String(days) })}`),
   shifts: (filters: ReportFilters = {}) => request<any[]>(`/reports/shifts?${query(filters)}`),
