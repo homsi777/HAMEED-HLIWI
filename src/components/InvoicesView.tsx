@@ -412,6 +412,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const [purchaseReconciliationTargetId, setPurchaseReconciliationTargetId] = useState('');
 
   // Scrap Gold Items (ذهب كسر بديل)
+  const [showScrapTradeIn, setShowScrapTradeIn] = useState(false);
   const [scrapItems, setScrapItems] = useState<ScrapGoldItem[]>([]);
   const [scrapKarat, setScrapKarat] = useState<GoldKarat>('21');
   const [scrapWeight, setScrapWeight] = useState('');
@@ -558,6 +559,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     setInvDiscountUSD('');
     setInvItems([]);
     setScrapItems([]);
+    setShowScrapTradeIn(false);
     setPaidUSD('');
     setPaidSYP('');
     setItemPhotoUrl('');
@@ -1490,16 +1492,20 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
             {/* Step 3: Scrap Gold Trade-in (مقايضة ذهب كسر بديل) */}
             <div className="bg-amber-50 p-2.5 sm:p-4 rounded-sm border border-amber-200 space-y-2 sm:space-y-3 text-xs">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h4 className="font-bold text-slate-900 flex items-center gap-1.5">
                   <Coins className="w-4 h-4 text-amber-600" />
                   <span>مقايضة ذهب كسر مستلم خصماً من الفاتورة:</span>
                 </h4>
-                <span className="text-[11px] text-amber-800 font-mono font-bold">
-                  خصم: ${scrapTotalValueUSD.toFixed(2)}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {scrapItems.length > 0 && <span className="text-[11px] text-amber-800 font-mono font-bold">خصم: ${scrapTotalValueUSD.toFixed(2)}</span>}
+                  <button type="button" onClick={() => setShowScrapTradeIn(previous => !previous)} className="border border-amber-300 bg-white px-2 py-1 text-[10px] font-bold text-amber-900 rounded-sm hover:bg-amber-100">
+                    {showScrapTradeIn ? 'إخفاء' : '+ إضافة'}
+                  </button>
+                </div>
               </div>
 
+              {showScrapTradeIn && <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end">
                 <div>
                   <label className="block text-[10px] sm:text-[11px] font-bold text-slate-700 mb-0.5">العيار:</label>
@@ -1574,6 +1580,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                   ))}
                 </div>
               )}
+              </>}
             </div>
 
             {/* Step 4: Payments & Totals */}
