@@ -1,4 +1,4 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -30,7 +30,17 @@ export class AuthService {
 
   async login(username: string, password: string, warehouseId: string, context: SessionContext): Promise<AuthSessionResult> {
     const user = await this.findUserByUsername(username);
-    if (!user || !user.isActive || !(await bcrypt.compare(password, user.passwordHash))) throw new UnauthorizedException('Invalid username or password.');
+    if (!user || !user.isActive) throw new UnauthorizedException('اسم المستخدم أو كلمة المرور غير صحيحة.');
+    const now = new Date();
+    if (user.loginLockedUntil && user.loginLockedUntil > now) throw this.loginLocked(user.loginLockedUntil);
+    if (!(await bcrypt.compare(password, user.passwordHash))) {
+      const lockedUntil = await this.recordFailedPassword(user, now);
+      if (lockedUntil) throw this.loginLocked(lockedUntil);
+      throw new UnauthorizedException('اسم المستخدم أو كلمة المرور غير صحيحة.');
+    }
+    if (user.failedLoginAttempts || user.loginLockedUntil) {
+      await this.db.update(users).set({ failedLoginAttempts: 0, loginLockedUntil: null, updatedAt: now }).where(eq(users.id, user.id));
+    }
     const identity = await this.getIdentity(user.id);
     if (!identity) throw new UnauthorizedException('User is unavailable.');
     const canAccessAll = identity.permissions.includes('warehouses.scope.all');
@@ -42,6 +52,9 @@ export class AuthService {
       const warehouse = await this.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, warehouseId), eq(warehouses.isActive, true))).limit(1);
       if (!warehouse[0]) throw new UnauthorizedException('The selected warehouse is unavailable.');
     }
+    // A username has only one active session. A new login ends any older session.
+    await this.db.update(authSessions).set({ revokedAt: now, revokedReason: 'replaced_by_new_login' })
+      .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt)));
     return this.createSession(identity, context);
   }
 
@@ -114,7 +127,27 @@ export class AuthService {
       roles: [...new Set(roleRows.map(value => value.name))], permissions: [...new Set(permissionRows.map(value => value.code))], warehouses: warehouseRows };
   }
 
-  private async findUserByUsername(username: string) { const rows = await this.db.select().from(users).where(eq(users.username, username)).limit(1); return rows[0]; }
+  private async findUserByUsername(username: string) {
+    const normalized = username.trim().toLowerCase();
+    const rows = await this.db.select().from(users).where(sql`lower(${users.username}) = ${normalized}`).limit(1);
+    return rows[0];
+  }
+
+  private async recordFailedPassword(user: typeof users.$inferSelect, now: Date): Promise<Date | null> {
+    const attempts = user.failedLoginAttempts + 1;
+    if (attempts < 3) {
+      await this.db.update(users).set({ failedLoginAttempts: attempts, updatedAt: now }).where(eq(users.id, user.id));
+      return null;
+    }
+    const lockedUntil = new Date(now.getTime() + 5 * 60 * 1000);
+    await this.db.update(users).set({ failedLoginAttempts: 0, loginLockedUntil: lockedUntil, updatedAt: now }).where(eq(users.id, user.id));
+    return lockedUntil;
+  }
+
+  private loginLocked(lockedUntil: Date) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((lockedUntil.getTime() - Date.now()) / 1000));
+    return new HttpException({ message: 'تم حظر تسجيل الدخول مؤقتاً بعد 3 محاولات خاطئة. حاول مجدداً بعد انتهاء العدّاد.', retryAfterSeconds }, HttpStatus.TOO_MANY_REQUESTS);
+  }
 
   private async createSession(identity: AuthIdentity, context: SessionContext): Promise<AuthSessionResult> {
     const refreshToken = this.createRefreshToken();

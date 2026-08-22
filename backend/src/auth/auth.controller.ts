@@ -51,8 +51,9 @@ export class AuthController {
   private setSessionCookies(response: FastifyReply, accessToken: string, refreshToken: string) {
     const config = appConfig();
     const common = { httpOnly: true, sameSite: 'strict' as const, secure: config.cookieSecure };
-    response.setCookie('hh_access', accessToken, { ...common, path: '/', maxAge: 15 * 60 });
-    response.setCookie('hh_refresh', refreshToken, { ...common, path: '/api/v1/auth', maxAge: config.refreshSessionDays * 24 * 60 * 60 });
+    // No Max-Age/Expires: closing the browser ends the session on shared phones.
+    response.setCookie('hh_access', accessToken, { ...common, path: '/' });
+    response.setCookie('hh_refresh', refreshToken, { ...common, path: '/api/v1/auth' });
   }
 
   private clearSessionCookies(response: FastifyReply) {

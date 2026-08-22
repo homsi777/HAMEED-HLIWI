@@ -54,6 +54,7 @@ export const infrastructureApi = {
   loginWarehouses: () => request<LoginWarehouse[]>('/auth/login-warehouses', {}, false),
   logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
   logoutAll: () => request<{ success: boolean }>('/auth/logout-all', { method: 'POST' }),
+  endBrowserSession: () => { void rawRequest('/auth/logout', { method: 'POST', keepalive: true }).catch(() => undefined); },
   currentUser: () => request<{ user: InfrastructureUser; scope: SessionScope }>('/auth/me'),
   warehouseScope: () => request<WarehouseScope>('/warehouses/scope'),
 };

@@ -19,6 +19,11 @@ export function useInfrastructureSession() {
       else setMode(import.meta.env.PROD ? 'unavailable' : 'legacy');
     }
   };
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void refresh();
+    const endSession = () => infrastructureApi.endBrowserSession();
+    window.addEventListener('pagehide', endSession);
+    return () => window.removeEventListener('pagehide', endSession);
+  }, []);
   return { user, scope, warehouseScope, mode, refresh };
 }

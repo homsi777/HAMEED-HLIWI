@@ -14,6 +14,8 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   isActive: boolean('is_active').notNull().default(true),
   sessionVersion: integer('session_version').notNull().default(1),
+  failedLoginAttempts: integer('failed_login_attempts').notNull().default(0),
+  loginLockedUntil: timestamp('login_locked_until', { withTimezone: true }),
   ...timestamps,
 }, table => [uniqueIndex('users_username_unique').on(table.username), index('users_active_idx').on(table.isActive)]);
 

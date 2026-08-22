@@ -10,7 +10,14 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
   const [warehouseLoading, setWarehouseLoading] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [lockedSeconds, setLockedSeconds] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (lockedSeconds <= 0) return;
+    const timer = window.setInterval(() => setLockedSeconds(value => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [lockedSeconds > 0]);
 
   useEffect(() => {
     void infrastructureApi.loginWarehouses()
@@ -22,9 +29,14 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!warehouseId) { setError('اختر المستودع أولاً.'); return; }
+    if (lockedSeconds > 0) return;
     setLoading(true); setError('');
     try { await infrastructureApi.login(username.trim(), password, warehouseId); await onLoggedIn(); }
-    catch (reason: any) { setError(reason?.message || 'تعذر تسجيل الدخول. تحقق من البيانات والمستودع وحاول مجدداً.'); }
+    catch (reason: any) {
+      const retryAfter = Number(reason?.retryAfterSeconds);
+      if (Number.isFinite(retryAfter) && retryAfter > 0) setLockedSeconds(Math.ceil(retryAfter));
+      setError(reason?.message || 'تعذر تسجيل الدخول. تحقق من البيانات والمستودع وحاول مجدداً.');
+    }
     finally { setLoading(false); }
   };
 
@@ -46,6 +58,7 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
           </div>
 
           <form onSubmit={submit} className="space-y-4">
+            {lockedSeconds > 0 && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-xs font-bold text-rose-700">تم حظر الدخول مؤقتاً. حاول مجدداً بعد {Math.floor(lockedSeconds / 60)}:{String(lockedSeconds % 60).padStart(2, '0')}</p>}
             <label className="block text-xs font-extrabold text-slate-700">المستودع / الفرع <span className="text-violet-600">*</span>
               <span className="relative mt-2 block"><Building2 className="pointer-events-none absolute right-4 top-3.5 h-5 w-5 text-violet-600" /><ChevronDown className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-slate-400" />
                 <select required disabled={warehouseLoading} value={warehouseId} onChange={event => setWarehouseId(event.target.value)} className={`${fieldClass} appearance-none`}>
