@@ -27,5 +27,12 @@ export function useInfrastructureSession() {
     window.addEventListener('pagehide', endSession);
     return () => window.removeEventListener('pagehide', endSession);
   }, [refresh]);
+  useEffect(() => {
+    if (mode !== 'authenticated') return;
+    const pulse = () => { void infrastructureApi.heartbeat().catch(() => invalidate()); };
+    pulse();
+    const timer = window.setInterval(pulse, 30 * 1000);
+    return () => window.clearInterval(timer);
+  }, [mode, invalidate]);
   return { user, scope, warehouseScope, mode, refresh, invalidate };
 }

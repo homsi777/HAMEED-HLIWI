@@ -53,6 +53,7 @@ export const infrastructureApi = {
   login: (username: string, password: string, warehouseId: string) => request<{ user: InfrastructureUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password, warehouseId }) }),
   loginWarehouses: () => request<LoginWarehouse[]>('/auth/login-warehouses', {}, false),
   logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }),
+  heartbeat: () => request<{ success: boolean }>('/auth/heartbeat', { method: 'POST' }),
   logoutAll: () => request<{ success: boolean }>('/auth/logout-all', { method: 'POST' }),
   endBrowserSession: () => { void rawRequest('/auth/logout', { method: 'POST', keepalive: true }).catch(() => undefined); },
   currentUser: () => request<{ user: InfrastructureUser; scope: SessionScope }>('/auth/me'),

@@ -35,6 +35,8 @@ export class AuthController {
     await this.audit.record({ actorUserId: request.identity!.id, action: 'auth.logout', module: 'auth', entityId: request.identity!.id });
     return { success: true };
   }
+  @Post('heartbeat') @UseGuards(AuthGuard)
+  heartbeat(@Req() request: FastifyRequest) { return this.auth.heartbeat(request.identity!); }
   @Post('logout-all') @UseGuards(AuthGuard)
   async logoutAll(@Req() request: FastifyRequest, @Res({ passthrough: true }) response: FastifyReply) {
     await this.auth.revokeAllSessions(request.identity!.id);

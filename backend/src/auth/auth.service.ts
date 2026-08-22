@@ -52,9 +52,14 @@ export class AuthService {
       const warehouse = await this.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, warehouseId), eq(warehouses.isActive, true))).limit(1);
       if (!warehouse[0]) throw new UnauthorizedException('The selected warehouse is unavailable.');
     }
+    // A browser that was closed or lost its network cannot send a logout request. It stops
+    // sending the heartbeat, so it releases the account after a short grace period.
+    const activeSessionCutoff = new Date(now.getTime() - 90 * 1000);
     const activeSession = (await this.db.select({ id: authSessions.id }).from(authSessions)
-      .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, now))).limit(1))[0];
+      .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, now), gt(authSessions.lastUsedAt, activeSessionCutoff))).limit(1))[0];
     if (activeSession) throw new ConflictException('هذا الحساب قيد التشغيل بالفعل على جهاز آخر. سجّل الخروج من الجهاز الأول ثم حاول مجدداً.');
+    await this.db.update(authSessions).set({ revokedAt: now, revokedReason: 'inactive_session_replaced' })
+      .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt)));
     return this.createSession(identity, context);
   }
 
@@ -90,6 +95,13 @@ export class AuthService {
     if (!identity.sessionId) throw new UnauthorizedException('Session identity is required.');
     await this.db.update(authSessions).set({ revokedAt: new Date(), revokedReason: 'logout_current' })
       .where(and(eq(authSessions.id, identity.sessionId), eq(authSessions.userId, identity.id), isNull(authSessions.revokedAt)));
+  }
+
+  async heartbeat(identity: AuthIdentity) {
+    if (!identity.sessionId) throw new UnauthorizedException('Session identity is required.');
+    await this.db.update(authSessions).set({ lastUsedAt: new Date() })
+      .where(and(eq(authSessions.id, identity.sessionId), eq(authSessions.userId, identity.id), isNull(authSessions.revokedAt)));
+    return { success: true };
   }
 
   async revokeAllSessions(userId: string) {
