@@ -128,7 +128,7 @@ export const InventoryView: React.FC = () => {
     setFormStoneWeight('0');
     setFormLaborFeePerGram('');
     setFormWarehouseId(warehouses[0]?.id || '');
-    setFormCode(`GLD-21-${Math.floor(100 + Math.random() * 900)}`);
+    setFormCode('');
     setFormNotes('');
     setFormInventoryMode('individual');
     setFormQuantity('1');
@@ -221,7 +221,7 @@ export const InventoryView: React.FC = () => {
         laborFeeUSDPerGram: labor.toFixed(4),
         totalLaborFeeUSD: totalLabor.toFixed(4),
         warehouseId: formWarehouseId,
-        code: formCode,
+        ...(editingItem ? { code: formCode } : {}),
         notes: formNotes,
         inventoryMode: formInventoryMode,
         quantity: enteredQuantity.toFixed(3),
@@ -742,12 +742,11 @@ export const InventoryView: React.FC = () => {
 
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">الكود / الباركود</label>
-                  <input
-                    type="text"
-                    value={formCode}
-                    onChange={e => setFormCode(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-sm font-mono text-slate-800"
-                  />
+                  {editingItem ? (
+                    <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)} className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-sm font-mono text-slate-800" />
+                  ) : (
+                    <div className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-sm font-mono text-slate-500">يُولَّد تلقائياً: 6 أرقام</div>
+                  )}
                 </div>
 
                 <div>
