@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { useStore } from '../context/StoreContext';
 import { 
   FileText, 
@@ -426,9 +427,36 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     if (!isBarcodeScannerOpen || !barcodeVideoRef.current) return;
 
     let cancelled = false;
-    const reader = new BrowserMultiFormatReader();
+    // Prefer a focused 1D configuration. Gold tags are normally Code 128/EAN labels;
+    // limiting formats and enabling TRY_HARDER makes these narrow printed bars much more
+    // reliable than the library's broad default scan on a mobile camera stream.
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.CODE_93,
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.ITF,
+      BarcodeFormat.CODABAR,
+      BarcodeFormat.QR_CODE,
+    ]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+    const reader = new BrowserMultiFormatReader(hints, {
+      delayBetweenScanAttempts: 80,
+      delayBetweenScanSuccess: 250,
+    });
     void reader.decodeFromConstraints(
-      { audio: false, video: { facingMode: { ideal: 'environment' } } },
+      {
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      },
       barcodeVideoRef.current,
       (result) => {
         const barcode = result?.getText().trim();
@@ -1147,7 +1175,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                           <span>وجّه الكاميرا الخلفية نحو الباركود</span>
                           <button type="button" onClick={() => setIsBarcodeScannerOpen(false)} className="text-slate-500 hover:text-slate-900" aria-label="إغلاق ماسح الباركود"><X className="h-3.5 w-3.5" /></button>
                         </div>
-                        <video ref={barcodeVideoRef} className="block aspect-video w-full object-cover" muted playsInline />
+                        <video ref={barcodeVideoRef} className="block h-48 w-full object-cover sm:h-56" muted playsInline />
                       </div>
                     )}
                     {barcodeScannerError && !isBarcodeScannerOpen && (
