@@ -427,6 +427,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     if (!isBarcodeScannerOpen || !barcodeVideoRef.current) return;
 
     let cancelled = false;
+    let cameraTuningTimer: number | undefined;
     // Prefer a focused 1D configuration. Gold tags are normally Code 128/EAN labels;
     // limiting formats and enabling TRY_HARDER makes these narrow printed bars much more
     // reliable than the library's broad default scan on a mobile camera stream.
@@ -435,18 +436,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       BarcodeFormat.CODE_128,
       BarcodeFormat.CODE_39,
       BarcodeFormat.CODE_93,
-      BarcodeFormat.EAN_13,
-      BarcodeFormat.EAN_8,
-      BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E,
       BarcodeFormat.ITF,
-      BarcodeFormat.CODABAR,
-      BarcodeFormat.QR_CODE,
     ]);
     hints.set(DecodeHintType.TRY_HARDER, true);
     const reader = new BrowserMultiFormatReader(hints, {
-      delayBetweenScanAttempts: 80,
-      delayBetweenScanSuccess: 250,
+      delayBetweenScanAttempts: 45,
+      delayBetweenScanSuccess: 120,
     });
     void reader.decodeFromConstraints(
       {
@@ -474,13 +469,31 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       },
     ).then((controls) => {
       barcodeScannerControlsRef.current = controls;
-      if (cancelled) controls.stop();
+      if (cancelled) {
+        controls.stop();
+        return;
+      }
+
+      // When a phone exposes optical zoom/focus controls, use a gentle zoom and continuous
+      // focus. This is especially helpful for the very small 6-digit gold labels without
+      // making the user change the invoice layout or choose a device setting manually.
+      cameraTuningTimer = window.setTimeout(() => {
+        const stream = barcodeVideoRef.current?.srcObject as MediaStream | null;
+        const track = stream?.getVideoTracks()[0] as (MediaStreamTrack & { getCapabilities?: () => { zoom?: { min: number; max: number }; focusMode?: string[] } }) | undefined;
+        if (!track?.getCapabilities) return;
+        const capabilities = track.getCapabilities();
+        const advanced: Record<string, number | string> = {};
+        if (capabilities.focusMode?.includes('continuous')) advanced.focusMode = 'continuous';
+        if (capabilities.zoom) advanced.zoom = Math.min(capabilities.zoom.max, Math.max(capabilities.zoom.min, 1.5));
+        if (Object.keys(advanced).length > 0) void track.applyConstraints({ advanced: [advanced as MediaTrackConstraintSet] });
+      }, 250);
     }).catch(() => {
       if (!cancelled) setBarcodeScannerError('تعذر تشغيل الكاميرا. تأكد من منح المتصفح إذن استخدام الكاميرا.');
     });
 
     return () => {
       cancelled = true;
+      if (cameraTuningTimer !== undefined) window.clearTimeout(cameraTuningTimer);
       barcodeScannerControlsRef.current?.stop();
       barcodeScannerControlsRef.current = null;
     };
@@ -1172,10 +1185,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                     {isBarcodeScannerOpen && (
                       <div className="mt-1.5 overflow-hidden rounded-sm border-2 border-amber-400 bg-slate-950 shadow-lg">
                         <div className="flex items-center justify-between bg-amber-50 px-2 py-1 text-[10px] font-bold text-slate-800">
-                          <span>وجّه الكاميرا الخلفية نحو الباركود</span>
+                          <span>قرّب الباركود الصغير داخل الإطار</span>
                           <button type="button" onClick={() => setIsBarcodeScannerOpen(false)} className="text-slate-500 hover:text-slate-900" aria-label="إغلاق ماسح الباركود"><X className="h-3.5 w-3.5" /></button>
                         </div>
-                        <video ref={barcodeVideoRef} className="block h-48 w-full object-cover sm:h-56" muted playsInline />
+                        <video ref={barcodeVideoRef} className="block h-24 w-full object-cover sm:h-28" muted playsInline />
                       </div>
                     )}
                     {barcodeScannerError && !isBarcodeScannerOpen && (
