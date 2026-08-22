@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, HttpException, HttpStatus, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -52,9 +52,9 @@ export class AuthService {
       const warehouse = await this.db.select({ id: warehouses.id }).from(warehouses).where(and(eq(warehouses.id, warehouseId), eq(warehouses.isActive, true))).limit(1);
       if (!warehouse[0]) throw new UnauthorizedException('The selected warehouse is unavailable.');
     }
-    // A username has only one active session. A new login ends any older session.
-    await this.db.update(authSessions).set({ revokedAt: now, revokedReason: 'replaced_by_new_login' })
-      .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt)));
+    const activeSession = (await this.db.select({ id: authSessions.id }).from(authSessions)
+      .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, now))).limit(1))[0];
+    if (activeSession) throw new ConflictException('هذا الحساب قيد التشغيل بالفعل على جهاز آخر. سجّل الخروج من الجهاز الأول ثم حاول مجدداً.');
     return this.createSession(identity, context);
   }
 
