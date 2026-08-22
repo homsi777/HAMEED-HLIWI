@@ -399,6 +399,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const barcodeVideoRef = useRef<HTMLVideoElement>(null);
   const barcodeScannerControlsRef = useRef<IScannerControls | null>(null);
   const [stockSalePricePerGram, setStockSalePricePerGram] = useState('');
+  const [stockLaborFeeUSDPerGram, setStockLaborFeeUSDPerGram] = useState('');
   const [aggregateSoldWeight, setAggregateSoldWeight] = useState('');
   const [aggregateSoldQuantity, setAggregateSoldQuantity] = useState('1');
   const [customItemName, setCustomItemName] = useState('');
@@ -456,8 +457,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
           item.warehouseId === invWarehouseId &&
           item.code.trim().toLowerCase() === barcode.toLowerCase()
         );
-        setStockSearchQuery(barcode);
+        // Scanning selects the physical stock piece only. Its financial values remain editable
+        // in the stock form below, so a scan never creates a sale on its own.
+        setStockSearchQuery(matchedItem ? '' : barcode);
         setSelectedStockItemId(matchedItem?.id ?? '');
+        if (matchedItem) {
+          setStockSalePricePerGram('');
+          setStockLaborFeeUSDPerGram(matchedItem.laborFeeUSDPerGram?.toString() ?? '');
+        }
         setBarcodeScannerError(matchedItem ? '' : 'لم يتم العثور على قطعة بهذا الرمز في المستودع الحالي.');
         setIsBarcodeScannerOpen(false);
       },
@@ -557,6 +564,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     setStockSearchQuery('');
     setSelectedStockItemId('');
     setStockSalePricePerGram('');
+    setStockLaborFeeUSDPerGram('');
     setAggregateSoldWeight('');
     setAggregateSoldQuantity('1');
     const default21KPrice = goldPrices.find(g => g.karat === '21')?.buyPriceUSDPerGram;
@@ -582,9 +590,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       alert('أدخل سعر البيع للغرام قبل إضافة القطعة.');
       return;
     }
+    const enteredLaborFee = parseFloat(stockLaborFeeUSDPerGram);
+    if (invType === 'sale' && (!Number.isFinite(enteredLaborFee) || enteredLaborFee < 0)) {
+      alert('أدخل أجرة الصياغة للغرام قبل إضافة القطعة.');
+      return;
+    }
     const p = goldPrices.find(g => g.karat === stockItem.karat);
     const goldPricePerGram = invType === 'sale' ? enteredSalePrice : (p?.buyPriceUSDPerGram ?? 75);
-    const laborFeePerGram = invType === 'sale' ? (p?.laborFeeUSDPerGram ?? stockItem.laborFeeUSDPerGram) : stockItem.laborFeeUSDPerGram;
+    const laborFeePerGram = invType === 'sale' ? enteredLaborFee : stockItem.laborFeeUSDPerGram;
     const isAggregate = stockItem.inventoryMode === 'aggregate';
     const soldWeight = isAggregate ? parseFloat(aggregateSoldWeight) : stockItem.netWeightGrams;
     const soldQuantity = isAggregate ? parseFloat(aggregateSoldQuantity) : 1;
@@ -609,7 +622,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     setInvItems(prev => [...prev, newItem]);
     setSelectedStockItemId('');
     setStockSearchQuery('');
-    if (invType === 'sale') setStockSalePricePerGram('');
+    if (invType === 'sale') {
+      setStockSalePricePerGram('');
+      setStockLaborFeeUSDPerGram('');
+    }
     setAggregateSoldWeight('');
     setAggregateSoldQuantity('1');
   };
@@ -1278,6 +1294,21 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                         placeholder="أدخل سعر البيع الذي تحدده الإدارة"
                         value={stockSalePricePerGram}
                         onChange={e => setStockSalePricePerGram(e.target.value)}
+                        className="w-full border border-amber-300 bg-white p-1.5 font-mono font-bold text-xs text-slate-900"
+                      />
+                    </div>
+                  )}
+
+                  {invType === 'sale' && (
+                    <div>
+                      <label className="mb-0.5 block text-[10px] font-bold text-amber-950">أجرة غ/$</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="أدخل أجرة صياغة الغرام"
+                        value={stockLaborFeeUSDPerGram}
+                        onChange={e => setStockLaborFeeUSDPerGram(e.target.value)}
                         className="w-full border border-amber-300 bg-white p-1.5 font-mono font-bold text-xs text-slate-900"
                       />
                     </div>
