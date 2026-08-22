@@ -69,7 +69,7 @@ export class AuthController {
 
   private validateLoginBody(body: LoginDto) {
     const unexpected = Object.keys(body).filter(key => key !== 'username' && key !== 'password' && key !== 'warehouseId');
-    if (unexpected.length || typeof body.username !== 'string' || !/^[\p{L}\p{M}\p{N}_.-]{3,80}$/u.test(body.username) || typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 200 || typeof body.warehouseId !== 'string' || !/^(system|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(body.warehouseId)) {
+    if (unexpected.length || typeof body.username !== 'string' || !/^[\p{L}\p{M}\p{N}_.-]+(?: [\p{L}\p{M}\p{N}_.-]+)*$/u.test(body.username.trim().replace(/\s+/g, ' ')) || typeof body.password !== 'string' || body.password.length < 8 || body.password.length > 200 || typeof body.warehouseId !== 'string' || !/^(system|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(body.warehouseId)) {
       throw new BadRequestException('Invalid login request.');
     }
   }

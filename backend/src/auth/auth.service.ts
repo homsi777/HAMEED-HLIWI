@@ -128,7 +128,7 @@ export class AuthService {
   }
 
   private async findUserByUsername(username: string) {
-    const normalized = username.trim().toLowerCase();
+    const normalized = username.trim().replace(/\s+/g, ' ').toLowerCase();
     const rows = await this.db.select().from(users).where(sql`lower(${users.username}) = ${normalized}`).limit(1);
     return rows[0];
   }

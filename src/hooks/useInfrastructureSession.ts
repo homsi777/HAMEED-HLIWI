@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { infrastructureApi, type InfrastructureUser, type SessionScope, type WarehouseScope } from '../services/infrastructureApi';
 
 export function useInfrastructureSession() {
@@ -8,22 +8,24 @@ export function useInfrastructureSession() {
   const [scope, setScope] = useState<SessionScope | null>(null);
   const [warehouseScope, setWarehouseScope] = useState<WarehouseScope | null>(null);
   const [mode, setMode] = useState<'loading' | 'authenticated' | 'unauthenticated' | 'legacy' | 'unavailable'>('loading');
-  const refresh = async () => {
+  const invalidate = useCallback(() => {
+    setUser(null); setScope(null); setWarehouseScope(null); setMode('unauthenticated');
+  }, []);
+  const refresh = useCallback(async () => {
     try {
       const result = await infrastructureApi.currentUser();
       const warehouses = await infrastructureApi.warehouseScope();
       setUser(result.user); setScope(result.scope); setWarehouseScope(warehouses); setMode('authenticated');
     } catch (error: any) {
-      setUser(null); setScope(null); setWarehouseScope(null);
-      if (error?.status === 401 || error?.status === 403) setMode('unauthenticated');
+      if (error?.status === 401 || error?.status === 403) invalidate();
       else setMode(import.meta.env.PROD ? 'unavailable' : 'legacy');
     }
-  };
+  }, [invalidate]);
   useEffect(() => {
     void refresh();
     const endSession = () => infrastructureApi.endBrowserSession();
     window.addEventListener('pagehide', endSession);
     return () => window.removeEventListener('pagehide', endSession);
-  }, []);
-  return { user, scope, warehouseScope, mode, refresh };
+  }, [refresh]);
+  return { user, scope, warehouseScope, mode, refresh, invalidate };
 }

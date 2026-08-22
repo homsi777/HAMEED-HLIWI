@@ -154,6 +154,20 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 export default function App() {
   const session = useInfrastructureSession();
   const [loggingOut, setLoggingOut] = useState(false);
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = (async (...args: Parameters<typeof fetch>) => {
+      const response = await originalFetch(...args);
+      const input = args[0];
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : input.url;
+      // Any protected API request that has lost its server session must return the browser
+      // to login immediately. This prevents stale local React state from showing a user who
+      // no longer has a valid session (for example after an administrator clears sessions).
+      if (response.status === 401 && url.includes('/api/v1/') && !/\/auth\/(login|refresh|login-warehouses)/.test(url)) session.invalidate();
+      return response;
+    }) as typeof fetch;
+    return () => { window.fetch = originalFetch; };
+  }, [session.invalidate]);
   /**
    * A real server logout. The session is revoked on the server first; whatever happens, the
    * local session state is then re-read, so the screen can never sit authenticated while the
