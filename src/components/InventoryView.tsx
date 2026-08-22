@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useInventoryModule } from '../hooks/useInventoryModule';
 import { inventoryApi } from '../services/inventoryApi';
+import { downloadBarcodeLabelsPdf } from '../lib/barcodeLabelsPdf';
 import { 
   PackageSearch, 
   Plus, 
@@ -455,7 +456,7 @@ export const InventoryView: React.FC = () => {
           </div>
 
           {(loading || error) && <div className={`rounded-sm border px-3 py-2 text-xs font-bold ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{error || 'يتم تحميل بيانات المخزون من الخادم...'}</div>}
-          <div className="flex justify-end"><button type="button" onClick={() => { if (selectedWarehouse !== 'all') setShowStocktakeModal(true); }} disabled={selectedWarehouse === 'all'} className="rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50" title={selectedWarehouse === 'all' ? 'اختر مستودعاً أولاً لإجراء الجرد' : undefined}><Scale className="w-4 h-4" />جرد</button></div>
+          <div className="flex justify-end gap-2"><button type="button" onClick={() => downloadBarcodeLabelsPdf(filteredInventory)} disabled={!filteredInventory.length} className="rounded-sm border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-800 flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50"><Download className="w-4 h-4" />تصدير باركودات PDF</button><button type="button" onClick={() => { if (selectedWarehouse !== 'all') setShowStocktakeModal(true); }} disabled={selectedWarehouse === 'all'} className="rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-black text-amber-900 flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50" title={selectedWarehouse === 'all' ? 'اختر مستودعاً أولاً لإجراء الجرد' : undefined}><Scale className="w-4 h-4" />جرد</button></div>
 
           {/* Filter Summary Banner */}
           <div className="hidden sm:flex bg-slate-900 border border-slate-800 text-white rounded-sm p-3 px-4 flex-wrap items-center justify-between text-xs gap-3">
