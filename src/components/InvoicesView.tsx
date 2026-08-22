@@ -1285,32 +1285,31 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                   </div>
 
                   {invType === 'sale' && (
-                    <div>
-                      <label className="mb-0.5 block text-[10px] font-bold text-amber-950">سعر البيع الحر للغرام ($)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="أدخل سعر البيع الذي تحدده الإدارة"
-                        value={stockSalePricePerGram}
-                        onChange={e => setStockSalePricePerGram(e.target.value)}
-                        className="w-full border border-amber-300 bg-white p-1.5 font-mono font-bold text-xs text-slate-900"
-                      />
-                    </div>
-                  )}
-
-                  {invType === 'sale' && (
-                    <div>
-                      <label className="mb-0.5 block text-[10px] font-bold text-amber-950">أجرة غ/$</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="أدخل أجرة صياغة الغرام"
-                        value={stockLaborFeeUSDPerGram}
-                        onChange={e => setStockLaborFeeUSDPerGram(e.target.value)}
-                        className="w-full border border-amber-300 bg-white p-1.5 font-mono font-bold text-xs text-slate-900"
-                      />
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div>
+                        <label className="mb-0.5 block text-[10px] font-bold text-amber-950">سعر غ/$</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="سعر البيع"
+                          value={stockSalePricePerGram}
+                          onChange={e => setStockSalePricePerGram(e.target.value)}
+                          className="w-full border border-amber-300 bg-white p-1.5 font-mono font-bold text-xs text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-0.5 block text-[10px] font-bold text-amber-950">أجرة غ/$</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="أجرة الصياغة"
+                          value={stockLaborFeeUSDPerGram}
+                          onChange={e => setStockLaborFeeUSDPerGram(e.target.value)}
+                          className="w-full border border-amber-300 bg-white p-1.5 font-mono font-bold text-xs text-slate-900"
+                        />
+                      </div>
                     </div>
                   )}
 
