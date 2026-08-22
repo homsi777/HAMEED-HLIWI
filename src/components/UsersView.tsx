@@ -212,7 +212,7 @@ const UserWizard: React.FC<{ catalog: UsersCatalog; editing: ManagedUser | null;
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm(previous => ({ ...previous, [key]: value }));
 
   const stepValid = (index: number) => {
-    if (index === 0) return form.fullName.trim().length > 1 && /^[A-Za-z0-9_.-]{3,80}$/.test(form.username.trim()) && (editing ? true : form.password.length >= 8);
+    if (index === 0) return form.fullName.trim().length > 1 && /^[\p{L}\p{M}\p{N}_.-]{3,80}$/u.test(form.username.trim()) && (editing ? true : form.password.length >= 8);
     if (index === 1) return Boolean(preset);
     if (index === 2) return preset?.warehouseSelection === 'none' || form.warehouseIds.length > 0;
     return true;
@@ -253,7 +253,7 @@ const UserWizard: React.FC<{ catalog: UsersCatalog; editing: ManagedUser | null;
             <label className="block text-xs font-extrabold text-slate-700">اسم المستخدم
               <input value={form.username} onChange={event => set('username', event.target.value)} disabled={Boolean(editing)} dir="ltr" autoComplete="off"
                 placeholder="ahmad_seller" className={`${field} mt-1.5 text-left disabled:bg-slate-100 disabled:text-slate-500`} />
-              <span className="mt-1 block text-[10px] font-medium text-slate-400">حروف إنكليزية وأرقام و . _ - فقط، ولا يمكن تغييره لاحقاً.</span>
+              <span className="mt-1 block text-[10px] font-medium text-slate-400">حروف عربية أو إنكليزية وأرقام و . _ - فقط، ولا يمكن تغييره لاحقاً.</span>
             </label>
             {!editing && (
               <label className="block text-xs font-extrabold text-slate-700">كلمة المرور

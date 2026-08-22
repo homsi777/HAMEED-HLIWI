@@ -13,7 +13,7 @@ import { DATABASE, type Database } from '../database/database.module.js';
 import { authSessions, permissions, rolePermissions, roles, userRoles, userWarehouses, users, warehouses } from '../database/schema.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const USERNAME = /^[A-Za-z0-9_.-]{3,80}$/;
+const USERNAME = /^[\p{L}\p{M}\p{N}_.-]{3,80}$/u;
 const PERMISSION_SET = new Set<string>(ALL_PERMISSION_CODES);
 
 export interface UserSummary {
@@ -269,7 +269,7 @@ export class UsersService {
 
   private username(value: unknown) {
     const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (!USERNAME.test(raw)) throw new ConflictException('اسم المستخدم يجب أن يكون 3-80 حرفاً إنكليزياً أو رقماً أو . _ - فقط.');
+    if (!USERNAME.test(raw)) throw new ConflictException('اسم المستخدم يجب أن يكون 3-80 حرفاً عربياً أو إنكليزياً أو رقماً أو . _ - فقط.');
     return raw;
   }
 

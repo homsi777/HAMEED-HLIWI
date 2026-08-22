@@ -20,7 +20,7 @@ async function main() {
   const username = required('PRODUCTION_BOOTSTRAP_USERNAME');
   const fullName = required('PRODUCTION_BOOTSTRAP_FULL_NAME');
   const password = required('PRODUCTION_BOOTSTRAP_PASSWORD');
-  if (!/^[A-Za-z0-9_.-]{3,80}$/.test(username) || password.length < 16) throw new Error('Bootstrap username or password does not meet the production policy.');
+  if (!/^[\p{L}\p{M}\p{N}_.-]{3,80}$/u.test(username) || password.length < 16) throw new Error('Bootstrap username or password does not meet the production policy.');
   const config = appConfig();
   const sql = postgres(config.databaseUrl, { max: 1 });
   const db = drizzle(sql);
