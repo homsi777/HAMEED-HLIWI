@@ -255,6 +255,19 @@
 }
 .invoice-paper-remaining { margin-top: 4px; text-align: center; color: #9f2f23; font-weight: 900; font-size: 12px; }
 
+/* Financial vouchers render as a standalone A5 document, never as the Finance screen. */
+.voucher-print-sheet { box-sizing: border-box; min-height: 194mm; padding: 8mm; background: #fffdf8; color: #273244; font-family: 'Cairo', sans-serif; }
+.voucher-paper-header { display: grid; grid-template-columns: 1fr 30mm 1.4fr; align-items: center; gap: 4mm; border-bottom: 1.2px solid #a98248; padding-bottom: 4mm; }
+.voucher-paper-contact { display: grid; gap: 1mm; color: #5e6775; font-family: Arial, sans-serif; font-size: 3mm; line-height: 1.25; text-align: left; }
+.voucher-paper-contact small { font-family: 'Cairo', sans-serif; font-size: 2.4mm; text-align: right; }
+.voucher-paper-logo { width: 26mm; max-height: 22mm; object-fit: contain; justify-self: center; }
+.voucher-paper-brand { display: grid; justify-items: end; gap: 1mm; text-align: right; }.voucher-paper-brand strong { color: #6d4d22; font-size: 4.5mm; line-height: 1.2; }.voucher-paper-brand span { color: #7b6b55; font-size: 2.5mm; font-weight: 700; }.voucher-paper-brand small { color: #a98248; font-size: 2.3mm; font-weight: 800; }
+.voucher-paper-title { display: flex; align-items: center; justify-content: space-between; margin: 5mm 0 3mm; border: 1px solid #b69259; border-radius: 2mm; padding: 3mm 4mm; color: #4d381d; font-size: 4.5mm; font-weight: 900; }.voucher-paper-title b { border-radius: 10mm; padding: 1mm 4mm; color: #fff; font-size: 2.8mm; }.voucher-print-receipt .voucher-paper-title { background: #eaf8f0; border-color: #69b993; }.voucher-print-receipt .voucher-paper-title b { background: #15845a; }.voucher-print-payment .voucher-paper-title { background: #fff1ee; border-color: #d78d7c; }.voucher-print-payment .voucher-paper-title b { background: #b84836; }
+.voucher-paper-meta { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 2mm; border-bottom: 1px dashed #cbb58c; padding: 2.5mm 1mm; color: #455164; font-size: 2.7mm; }.voucher-paper-meta b { color: #6d4d22; }
+.voucher-paper-body { margin-top: 5mm; border: 1px solid #dec9a8; border-radius: 2mm; overflow: hidden; }.voucher-paper-row { display: grid; grid-template-columns: 34mm 1fr; gap: 3mm; padding: 3.5mm 4mm; border-bottom: 1px solid #eadcc6; font-size: 3.4mm; }.voucher-paper-row b { color: #6d4d22; }.voucher-paper-party strong { color: #182234; font-size: 3.8mm; }
+.voucher-paper-amounts { display: grid; grid-template-columns: repeat(3, 1fr); background: #fffaf0; }.voucher-paper-amounts > div { display: grid; gap: 1.5mm; min-height: 19mm; padding: 3mm; border-left: 1px solid #eadcc6; text-align: center; }.voucher-paper-amounts > div:last-child { border-left: 0; }.voucher-paper-amounts span { color: #766955; font-size: 2.5mm; font-weight: 700; }.voucher-paper-amounts b { color: #1f3146; font-family: Arial, sans-serif; font-size: 3.5mm; }.voucher-paper-statement { min-height: 20mm; align-items: start; border-bottom: 0; }.voucher-paper-statement span { color: #273244; line-height: 1.8; }.voucher-paper-source { border-top: 1px dashed #dec9a8; padding: 2.5mm 4mm; color: #766955; font-size: 2.5mm; font-weight: 700; }
+.voucher-paper-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7mm; margin-top: 12mm; color: #455164; font-size: 2.6mm; font-weight: 800; text-align: center; }.voucher-paper-signatures div { display: grid; gap: 9mm; }.voucher-paper-signatures span { border-bottom: 1px dashed #9ea9b8; }.voucher-paper-footer { margin: 8mm 0 0; border-top: 1px solid #cbb58c; padding-top: 2.5mm; color: #8c795a; font-size: 2.2mm; font-weight: 700; text-align: center; }
+
 /* ─────────────────────────────────────────────────────────────────────────────
    Operational text selection (TASK 15)
 
@@ -293,4 +306,41 @@ select,
 /* Printing must never inherit a selection restriction. */
 @media print {
   body, body * { -webkit-user-select: text; user-select: text; }
+
+  html:has(body.voucher-print-active),
+  body.voucher-print-active {
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    background: #fff !important;
+  }
+
+  /* Hide every application layer first, then reveal only the A5 voucher sheet. */
+  body.voucher-print-active * { visibility: hidden !important; }
+  body.voucher-print-active .voucher-print-overlay,
+  body.voucher-print-active .voucher-print-preview,
+  body.voucher-print-active .voucher-print-sheet,
+  body.voucher-print-active .voucher-print-sheet * { visibility: visible !important; }
+  body.voucher-print-active .voucher-print-overlay {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+  body.voucher-print-active .voucher-print-preview {
+    display: block !important;
+    width: 132mm !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  body.voucher-print-active .voucher-print-sheet {
+    width: 132mm !important;
+    min-height: 194mm !important;
+    padding: 8mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
 }

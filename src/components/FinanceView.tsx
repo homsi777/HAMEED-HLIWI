@@ -31,6 +31,7 @@ import {
 import { VoucherType, GoldKarat } from '../types';
 import { financeApi, type ApiCashbox, type ApiCashMovement, type ApiPartnerBalance, type ApiVoucher } from '../services/financeApi';
 import { accountingApi, type ApiJournal } from '../services/accountingApi';
+import { PrintVoucherModal } from './PrintVoucherModal';
 
 interface FinanceViewProps {
   activeTab?: string;
@@ -1441,7 +1442,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
         </div>
       )}
 
-      {selectedVoucherForPrint && (
+      {selectedVoucherForPrint && <PrintVoucherModal voucher={selectedVoucherForPrint} settings={settings} onClose={() => setSelectedVoucherForPrint(null)} />}
+
+      {false && selectedVoucherForPrint && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className={`rounded-sm border-2 shadow-2xl max-w-2xl w-full p-6 text-right space-y-6 ${selectedVoucherForPrint.type === 'receipt' ? 'border-emerald-500 bg-emerald-50' : selectedVoucherForPrint.type === 'payment' ? 'border-rose-500 bg-rose-50' : 'border-amber-400 bg-amber-50'}`}>
             {/* Header Voucher */}
