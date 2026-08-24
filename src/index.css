@@ -94,8 +94,9 @@
 .invoice-paper-header { display: grid; grid-template-columns: 1fr .75fr 1.15fr; min-height: 26mm; align-items: center; gap: 8mm; border-bottom: 1.2px solid #806846; padding: 1.5mm 0 2.5mm; direction: ltr; }
 .invoice-contact { display: grid; gap: .6mm; color: #62543e; font-family: Arial, sans-serif; font-size: 3.8mm; line-height: 1; text-align: left; }
 .invoice-contact small { margin-top: 1.8mm; font-family: 'Cairo', sans-serif; font-size: 2.1mm; direction: rtl; text-align: right; }
-.invoice-logo-mark { display: grid; justify-items: center; align-content: center; gap: .8mm; color: #a88148; font-family: Arial, sans-serif; font-size: 2.3mm; font-weight: 700; letter-spacing: .25mm; }
-.invoice-logo-mark svg { width: 11mm; height: 11mm; stroke-width: 2.5; }
+.invoice-logo-mark { display: flex; width: 30mm; height: 20mm; align-items: center; justify-content: center; overflow: hidden; }
+/* The supplied transparent logo includes generous blank margins; enlarge it inside a clipped frame so the actual mark remains clear on A5. */
+.invoice-logo-mark img { display: block; width: 38mm; max-width: none; height: auto; }
 .invoice-brand { display: grid; justify-items: end; color: #a6814b; line-height: 1; direction: rtl; text-align: right; }
 .invoice-brand small { margin-bottom: .8mm; font-size: 3.4mm; font-weight: 700; }
 .invoice-brand strong { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 14mm; font-weight: 700; letter-spacing: -.7mm; }
@@ -137,8 +138,8 @@
 .invoice-print-sheet-portrait .invoice-paper-header { min-height: 20mm; gap: 3mm; padding-bottom: 3mm; }
 .invoice-print-sheet-portrait .invoice-contact { font-size: 3.3mm; }
 .invoice-print-sheet-portrait .invoice-contact small { font-size: 2mm; }
-.invoice-print-sheet-portrait .invoice-logo-mark { font-size: 2mm; }
-.invoice-print-sheet-portrait .invoice-logo-mark svg { width: 10mm; height: 10mm; }
+.invoice-print-sheet-portrait .invoice-logo-mark { width: 25mm; height: 16mm; }
+.invoice-print-sheet-portrait .invoice-logo-mark img { width: 31mm; }
 .invoice-print-sheet-portrait .invoice-brand small { font-size: 3mm; }
 .invoice-print-sheet-portrait .invoice-brand strong { font-size: 12mm; }
 .invoice-print-sheet-portrait .invoice-brand span { font-size: 2.5mm; }
@@ -172,7 +173,8 @@
 
   .invoice-print-sheet .invoice-paper-header { min-height: 0; gap: 2mm; }
   .invoice-print-sheet .invoice-brand strong { font-size: 8mm; }
-  .invoice-print-sheet .invoice-logo-mark svg { width: 8mm; height: 8mm; }
+  .invoice-print-sheet .invoice-logo-mark { width: 25mm; height: 16mm; }
+  .invoice-print-sheet .invoice-logo-mark img { width: 31mm; }
   .invoice-print-sheet .invoice-paper-meta { grid-template-columns: 1fr 1fr; gap: 1.5mm; font-size: 2.8mm; }
   .invoice-print-sheet .invoice-paper-table { font-size: 2.7mm; table-layout: fixed; }
   .invoice-print-sheet .invoice-paper-table th,

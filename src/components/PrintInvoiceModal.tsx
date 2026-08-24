@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Invoice } from '../types';
 import { useStore } from '../context/StoreContext';
-import { Diamond, Printer, X } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 
 interface PrintInvoiceModalProps {
   invoice: Invoice;
@@ -49,7 +49,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
               <b>{settings.phone2 || '0944 866 362'}</b>
               <small>{settings.address || 'حلب - سوريا'}</small>
             </div>
-            <div className="invoice-logo-mark"><Diamond /><span>HLIWI JEWELRY</span></div>
+            <div className="invoice-logo-mark"><img src="/logo-transparent.png" alt="شعار مجوهرات حليوي" /></div>
             <div className="invoice-brand"><small>مجوهرات</small><strong>حليوي</strong><span>عبد الحميد معين</span></div>
           </header>
 
