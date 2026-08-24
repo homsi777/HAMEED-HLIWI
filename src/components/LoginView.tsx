@@ -52,6 +52,9 @@ export function LoginView({ onLoggedIn }: { onLoggedIn: () => Promise<void> }) {
       <div className="flex items-center bg-white px-6 py-9 sm:px-12 md:col-start-1 md:px-14 lg:px-16">
         <div className="mx-auto w-full max-w-sm">
           <div className="mb-8 text-right">
+            <div className="mb-4 flex h-16 w-36 items-center justify-center overflow-hidden md:hidden">
+              <img src="/logo-transparent.png" alt="شعار مجوهرات حليوي" className="w-32 max-w-none" />
+            </div>
             <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700"><LockKeyhole className="h-5 w-5" /></div>
             <h1 className="text-3xl font-black tracking-tight text-slate-900">تسجيل الدخول</h1>
             <p className="mt-2 text-sm leading-6 text-slate-500">أدخل بياناتك واختر المستودع للوصول إلى مساحة العمل الخاصة بك.</p>
