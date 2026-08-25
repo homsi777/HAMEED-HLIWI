@@ -155,6 +155,13 @@
       "when": 1786730970333,
       "tag": "0021_login_security",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787658300000,
+      "tag": "0022_sales_rounding",
+      "breakpoints": true
     }
   ]
 }
