@@ -16,9 +16,9 @@ export const UsedGoldView: React.FC<{ onBack: () => void }> = ({ onBack }) => (
       </button>
       <div className="min-w-0">
         <h2 className="flex items-center gap-2 text-base font-black text-slate-900 sm:text-lg">
-          <Recycle className="h-5 w-5 shrink-0 text-violet-600" />كسر المقايضة
+          <Recycle className="h-5 w-5 shrink-0 text-violet-600" />ذهب الكسر والخاشر تحت المعالجة
         </h2>
-        <p className="mt-0.5 text-[11px] leading-4 text-slate-500">الذهب المستلم مقايضةً وما حُوّل منه إلى مخزون مستعمل — لا يدخل ضمن إجمالي ذهب الشركة المشترى.</p>
+        <p className="mt-0.5 text-[11px] leading-4 text-slate-500">كسر المقايضة والخاشر المشتَرى محفوظان كذهب مستقل، ولا يتحولان إلى مخزون للبيع إلا بقرار مدير موثق.</p>
       </div>
     </div>
 

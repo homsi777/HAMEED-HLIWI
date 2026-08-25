@@ -80,7 +80,7 @@ export class UsedInventoryService {
         grams: sql<string>`coalesce(sum(${goldLedgerEntries.debitGrams} - ${goldLedgerEntries.creditGrams}), 0)`,
         lastAt: sql<string>`max(${goldLedgerEntries.occurredAt})`,
       }).from(goldLedgerEntries).innerJoin(goldTransactions, eq(goldTransactions.id, goldLedgerEntries.goldTransactionId))
-        .where(and(inArray(goldLedgerEntries.goldAccountId, accountIds), eq(goldTransactions.type, 'sale_exchange'), eq(goldTransactions.status, 'posted')))
+        .where(and(inArray(goldLedgerEntries.goldAccountId, accountIds), inArray(goldTransactions.type, ['sale_exchange', 'purchase_scrap']), eq(goldTransactions.status, 'posted')))
         .groupBy(goldLedgerEntries.goldAccountId, goldLedgerEntries.karat),
       this.db.select({
         accountId: goldInventoryConversions.goldAccountId, karat: goldInventoryConversions.karat,
@@ -153,7 +153,7 @@ export class UsedInventoryService {
 
       const receivedRow = (await tx.select({ grams: sql<string>`coalesce(sum(${goldLedgerEntries.debitGrams} - ${goldLedgerEntries.creditGrams}), 0)` })
         .from(goldLedgerEntries).innerJoin(goldTransactions, eq(goldTransactions.id, goldLedgerEntries.goldTransactionId))
-        .where(and(eq(goldLedgerEntries.goldAccountId, goldAccountId), eq(goldLedgerEntries.karat, karat), eq(goldTransactions.type, 'sale_exchange'), eq(goldTransactions.status, 'posted'))))[0]!;
+        .where(and(eq(goldLedgerEntries.goldAccountId, goldAccountId), eq(goldLedgerEntries.karat, karat), inArray(goldTransactions.type, ['sale_exchange', 'purchase_scrap']), eq(goldTransactions.status, 'posted'))))[0]!;
       const convertedRow = (await tx.select({ grams: sql<string>`coalesce(sum(${goldInventoryConversions.convertedWeightGrams}), 0)` })
         .from(goldInventoryConversions)
         .where(and(eq(goldInventoryConversions.goldAccountId, goldAccountId), eq(goldInventoryConversions.karat, karat), eq(goldInventoryConversions.status, 'posted'))))[0]!;

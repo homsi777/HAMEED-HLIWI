@@ -390,6 +390,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const [invPaymentMethod, setInvPaymentMethod] = useState<PaymentMethod>('cash_usd');
   const [invNotes, setInvNotes] = useState('');
   const [invDiscountUSD, setInvDiscountUSD] = useState('');
+  const [purchaseMaterialType, setPurchaseMaterialType] = useState<'new' | 'scrap'>('new');
 
   // Selected Stock Items or Custom Items for the invoice
   const [invItems, setInvItems] = useState<InvoiceItem[]>([]);
@@ -560,6 +561,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     setInvPaymentMethod('cash_usd');
     setInvNotes('');
     setInvDiscountUSD('');
+    setPurchaseMaterialType('new');
     setInvItems([]);
     setScrapItems([]);
     setShowScrapTradeIn(false);
@@ -779,7 +781,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       try {
         let supplierId = invPartnerId;
         if (!supplierId) { const supplier = await partnersApi.create({ name: partnerName, type: 'supplier', phone: invCustomerPhone, address: 'حلب - سوريا' }); supplierId = supplier.id; setInvPartnerId(supplier.id); await refreshSuppliers(); }
-        const newInv = await purchasesApi.create({ warehouseId: invWarehouseId, supplierId, items: invItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod === 'gold_exchange' ? 'debt' : invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        const newInv = await purchasesApi.create({ warehouseId: invWarehouseId, supplierId, materialType: purchaseMaterialType, items: invItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod === 'gold_exchange' ? 'debt' : invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
         await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); setShowCreateModal(false); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setPurchasesError(error?.message || 'تعذر حفظ فاتورة الشراء.'); return; }
     }
@@ -1150,6 +1152,15 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
               </div>
             </div>
 
+            {invType === 'purchase' && <div className="rounded-sm border border-violet-200 bg-violet-50 p-2.5 sm:p-3">
+              <p className="mb-2 text-xs font-black text-slate-800">نوع الذهب المشترى</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setPurchaseMaterialType('new')} className={`rounded-sm border-2 px-3 py-2 text-xs font-black ${purchaseMaterialType === 'new' ? 'border-amber-400 bg-amber-50 text-slate-900' : 'border-slate-200 bg-white text-slate-600'}`}>ذهب جديد — يدخل المخزون</button>
+                <button type="button" onClick={() => { setPurchaseMaterialType('scrap'); setPurchaseReconciliationTargetId(''); }} className={`rounded-sm border-2 px-3 py-2 text-xs font-black ${purchaseMaterialType === 'scrap' ? 'border-violet-500 bg-violet-100 text-violet-950' : 'border-slate-200 bg-white text-slate-600'}`}>خاشر — تحت المعالجة</button>
+              </div>
+              {purchaseMaterialType === 'scrap' && <p className="mt-2 text-[11px] font-bold leading-5 text-violet-800">لا يدخل الخاشر إلى مخزون البيع تلقائياً. يُسجل كرصيد ذهب مستقل ويمكن للمدير تحويل الصالح منه إلى مستعمل لاحقاً.</p>}
+            </div>}
+
             {/* Step 2: Add Items Section (From Stock OR Custom) */}
             <div className="space-y-2 sm:space-y-3">
               <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
@@ -1398,7 +1409,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                       onChange={e => setCustomLaborPerGram(e.target.value)}
                       className="p-1.5 bg-white border border-slate-200 rounded-sm font-mono text-xs"
                     />
-                    {invType === 'purchase' && <select value={purchaseReconciliationTargetId} onChange={e => setPurchaseReconciliationTargetId(e.target.value)} className="col-span-2 sm:col-span-3 p-1.5 bg-white border border-slate-200 rounded-sm text-xs"><option value="">استلام جديد دون تسوية رصيد سلبي</option>{inventory.filter(item => item.warehouseId === invWarehouseId && item.isManualSaleEntry && (item.quantity ?? 0) < 0 && item.status === 'sold').map(item => <option key={item.id} value={item.id}>تسوية صريحة: {item.name} — {item.netWeightGrams}غ / كمية {item.quantity}</option>)}</select>}
+                    {invType === 'purchase' && purchaseMaterialType === 'new' && <select value={purchaseReconciliationTargetId} onChange={e => setPurchaseReconciliationTargetId(e.target.value)} className="col-span-2 sm:col-span-3 p-1.5 bg-white border border-slate-200 rounded-sm text-xs"><option value="">استلام جديد دون تسوية رصيد سلبي</option>{inventory.filter(item => item.warehouseId === invWarehouseId && item.isManualSaleEntry && (item.quantity ?? 0) < 0 && item.status === 'sold').map(item => <option key={item.id} value={item.id}>تسوية صريحة: {item.name} — {item.netWeightGrams}غ / كمية {item.quantity}</option>)}</select>}
                     <button
                       type="button"
                       onClick={handleAddCustomItemToInvoice}

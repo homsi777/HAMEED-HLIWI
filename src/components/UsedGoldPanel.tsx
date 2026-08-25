@@ -46,7 +46,7 @@ export const UsedGoldPanel: React.FC<{ onConverted?: () => void }> = ({ onConver
     <div className="bg-white p-3 shadow-sm sm:p-4">
       <div className="flex flex-wrap items-center justify-between gap-1.5">
         <b className="flex items-center gap-2 text-sm text-slate-900 sm:text-base">
-          <Recycle className="h-4 w-4 shrink-0 text-violet-600" />كسر المقايضة المتاح للتحويل
+          <Recycle className="h-4 w-4 shrink-0 text-violet-600" />ذهب الكسر والخاشر المتاح للتحويل
         </b>
         {conversions.length > 0 && (
           <button onClick={() => setShowLog(true)} className="flex items-center gap-1 text-[11px] font-extrabold text-slate-500 underline">
@@ -55,7 +55,7 @@ export const UsedGoldPanel: React.FC<{ onConverted?: () => void }> = ({ onConver
         )}
       </div>
       <p className="mt-1 text-[11px] font-medium leading-5 text-slate-500">
-        ذهب استلمته من الزبائن مقايضةً. حوّل منه ما تراه صالحاً للبيع كقطع مستعملة — لا يُنشئ هذا أي قيد مالي أو استلام ذهب جديد.
+        يحتفظ هذا الرصيد بكسر المقايضة والخاشر المشتَرى. حوّل فقط ما تقرر أنه صالح للبيع كمستعمل؛ لا ينشئ التحويل أي مبلغ أو استلام ذهب جديد.
       </p>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -73,7 +73,7 @@ export const UsedGoldPanel: React.FC<{ onConverted?: () => void }> = ({ onConver
             </div>
             {/* History is never hidden: what came in stays visible next to what is left. */}
             <div className="mt-2 space-y-0.5 border-t border-slate-200 pt-2 text-[11px] font-bold">
-              <p className="flex justify-between text-slate-500">مستلم مقايضةً<span className="font-mono text-slate-700">{grams(holding.receivedGrams)}</span></p>
+              <p className="flex justify-between text-slate-500">الرصيد تحت المعالجة<span className="font-mono text-slate-700">{grams(holding.receivedGrams)}</span></p>
               <p className="flex justify-between text-slate-500">محوّل للمخزون<span className="font-mono text-slate-700">{grams(holding.convertedGrams)}</span></p>
               <p className="flex justify-between text-slate-900">المتاح الآن<span className="font-mono text-base font-black text-violet-800">{grams(holding.availableGrams)}</span></p>
             </div>
