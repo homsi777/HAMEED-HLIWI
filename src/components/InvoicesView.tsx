@@ -142,14 +142,17 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       return;
     }
     try {
-      const sellable = await salesApi.availableItems({ page: 1, limit: 100 });
+      // A seller is allowed to read only their assigned warehouses.  Do not infer that
+      // assignment from stock: a newly opened or temporarily empty warehouse still has
+      // to be selectable for a manual sale.
+      const [warehouseRows, sellable] = await Promise.all([
+        inventoryApi.warehouses(),
+        salesApi.availableItems({ page: 1, limit: 100 }),
+      ]);
+      setServerWarehouses(warehouseRows);
       setServerInventory(sellable.items.map(item => ({
         ...item, status: 'in_stock' as const, netWeightGrams: item.availableWeightGrams, isManualSaleEntry: false,
       })) as unknown as typeof legacyInventory);
-      // The seller's own warehouse is the only one they can sell from, so the picker is seeded
-      // from what came back rather than from a warehouses endpoint they cannot read.
-      const own = sellable.items[0];
-      if (own) setServerWarehouses([{ id: own.warehouseId, name: own.warehouseName }] as any);
     } catch { /* Manual sale stays available whatever happens to the stock lookup. */ }
   };
   const refreshServerReturns = async () => { try { setReturnsError(''); const response = await returnsApi.list({ page: returnsPage, limit: 30 }); setServerReturns(response.items); setReturnsTotal(response.meta.total); } catch (reason: any) { setReturnsError(reason?.message || 'تعذر تحميل المرتجعات من الخادم.'); } };
