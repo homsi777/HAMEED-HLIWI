@@ -718,14 +718,17 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const requestedDiscountUSD = parseFloat(invDiscountUSD) || 0;
   const discountUSD = money(Math.min(Math.max(0, requestedDiscountUSD), Math.max(0, totalInvoiceGrossUSD - scrapTotalValueUSD)));
 
-  const finalTotalUSD = money(Math.max(0, totalInvoiceGrossUSD - scrapTotalValueUSD - discountUSD));
-  const finalTotalSYP = Math.round(finalTotalUSD * settings.usdToSypRate);
+  const baseFinalTotalUSD = money(Math.max(0, totalInvoiceGrossUSD - scrapTotalValueUSD - discountUSD));
 
   const numPaidUSD = parseFloat(paidUSD) || 0;
   const numPaidSYP = parseFloat(paidSYP) || 0;
   const numPaidSYPInUSD = numPaidSYP / settings.usdToSypRate;
 
   const totalPaidInUSD = numPaidUSD + numPaidSYPInUSD;
+  // The cashier may round a collection upward. The server records the small difference
+  // internally; no separate rounding line is rendered on the customer invoice.
+  const finalTotalUSD = Math.max(baseFinalTotalUSD, totalPaidInUSD);
+  const finalTotalSYP = Math.round(finalTotalUSD * settings.usdToSypRate);
   const remainingDebtUSD = Math.max(0, finalTotalUSD - totalPaidInUSD);
 
   // Quick Add Partner Handle
