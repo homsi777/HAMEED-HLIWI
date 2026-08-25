@@ -187,6 +187,10 @@
 }
 
 @media print {
+  /* Keep the sale sheet as one physical A5 landscape page in Chromium and WebKit.
+     Do not use viewport units here: mobile print previews use a different viewport. */
+  @page { size: 210mm 148mm; margin: 0; }
+
   html,
   body.invoice-a5-print-active {
     margin: 0 !important;
@@ -197,6 +201,9 @@
   body.invoice-a5-print-active {
     width: 210mm !important;
     height: 148mm !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    zoom: 1 !important;
   }
 
   body.invoice-a5-print-active.invoice-a5-print-portrait {
@@ -252,7 +259,7 @@
   .invoice-a5-print-active .invoice-print-sheet * { visibility: visible; }
   .invoice-a5-print-active .invoice-print-overlay { position: static !important; display: block !important; overflow: visible !important; padding: 0 !important; background: transparent !important; }
   .invoice-a5-print-active .invoice-print-preview { display: block !important; width: 210mm !important; max-width: none !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; }
-  .invoice-a5-print-active .invoice-print-sheet { width: 210mm !important; height: 148mm !important; min-height: 148mm !important; overflow: hidden !important; break-inside: avoid !important; page-break-inside: avoid !important; }
+  .invoice-a5-print-active .invoice-print-sheet { width: 210mm !important; height: 148mm !important; min-height: 148mm !important; max-height: 148mm !important; overflow: hidden !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
   .invoice-a5-print-active .invoice-print-sheet-portrait { width: 148mm !important; height: 210mm !important; min-height: 210mm !important; overflow: hidden !important; }
 }
 .invoice-paper-remaining { margin-top: 4px; text-align: center; color: #9f2f23; font-weight: 900; font-size: 12px; }

@@ -22,7 +22,9 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
   useEffect(() => {
     const pageStyle = document.createElement('style');
     pageStyle.dataset.invoiceA5Page = 'true';
-    pageStyle.textContent = `@page { size: A5 ${isPurchaseInvoice ? 'portrait' : 'landscape'}; margin: 0; }`;
+    // Safari/iOS does not reliably honour the `landscape` keyword. Explicit physical
+    // dimensions give Windows, Android and iPhone the same paper geometry.
+    pageStyle.textContent = `@page { size: ${isPurchaseInvoice ? '148mm 210mm' : '210mm 148mm'}; margin: 0; }`;
     document.head.appendChild(pageStyle);
     document.body.classList.add('invoice-a5-print-active');
     if (isPurchaseInvoice) document.body.classList.add('invoice-a5-print-portrait');
