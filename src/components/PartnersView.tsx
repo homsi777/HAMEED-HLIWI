@@ -7,6 +7,7 @@ import { usePartnersModule } from '../hooks/usePartnersModule';
 import { partnersApi, type ApiPartner } from '../services/partnersApi';
 import { goldApi, type ApiGoldBalance } from '../services/goldApi';
 import { PartnerWorkspaceModal } from './PartnerWorkspaceModal';
+import { CustomerGoldStatementModal } from './CustomerGoldStatementModal';
 
 const PAGE_SIZE = 20;
 
@@ -18,6 +19,7 @@ export const PartnersView: React.FC = () => {
   const [showAddPartnerModal, setShowAddPartnerModal] = useState(false);
   const [editingPartner, setEditingPartner] = useState<ApiPartner | null>(null);
   const [selectedPartnerForStatement, setSelectedPartnerForStatement] = useState<Partner | null>(null);
+  const [selectedCustomerStatement, setSelectedCustomerStatement] = useState<ApiPartner | null>(null);
   // §27: tapping the card opens the management workspace. Printing the statement stays a
   // secondary action in the three-dot menu, where it already lived.
   const [selectedPartnerForWorkspace, setSelectedPartnerForWorkspace] = useState<ApiPartner | null>(null);
@@ -74,6 +76,7 @@ export const PartnersView: React.FC = () => {
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const Menu = ({ partner }: { partner: ApiPartner }) => <div onClick={event => event.stopPropagation()} className="absolute left-0 top-9 z-50 w-40 rounded-sm border border-slate-300 bg-white py-1 text-right text-xs shadow-xl">
+    <button onClick={() => { setSelectedCustomerStatement(partner); setActivePartnerMenu(null); }} className="w-full px-3 py-2 text-right font-black text-amber-800 hover:bg-amber-50">كشف حساب الأوزان</button>
     <button onClick={() => { setSelectedPartnerForStatement(partner); setActivePartnerMenu(null); setTimeout(() => window.print(), 150); }} className="w-full px-3 py-2 text-right hover:bg-amber-50">طباعة</button>
     <button onClick={() => { setSelectedPartnerForStatement(partner); setActivePartnerMenu(null); setTimeout(() => window.print(), 150); }} className="w-full px-3 py-2 text-right hover:bg-amber-50">تصدير PDF</button>
     <button onClick={() => handleSharePartner(partner)} className="w-full px-3 py-2 text-right text-emerald-800 hover:bg-emerald-50">مشاركة واتساب</button>
@@ -121,6 +124,7 @@ export const PartnersView: React.FC = () => {
     {showAddPartnerModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm"><div className="w-full max-w-md space-y-4 rounded-sm border-2 border-slate-900 bg-white p-6 text-right shadow-2xl"><h3 className="text-base font-black text-slate-900">{editingPartner ? 'تعديل بيانات الحساب' : 'إضافة عميل أو مورد جديد'}</h3><form onSubmit={event => void handleSavePartner(event)} className="space-y-3 text-xs"><Field label="الاسم الكامل *"><input required value={formName} onChange={event => setFormName(event.target.value)} className="w-full rounded-sm border border-slate-200 bg-slate-50 p-2.5 font-medium" /></Field><Field label="الصفة *"><select value={formType} onChange={event => setFormType(event.target.value as PartnerType)} className="w-full rounded-sm border border-slate-200 bg-slate-50 p-2.5 font-bold"><option value="customer">عميل / زبون</option><option value="supplier">مورد / تاجر صياغة</option><option value="both">عميل ومورد معاً</option></select></Field><Field label="رقم الهاتف"><input value={formPhone} onChange={event => setFormPhone(event.target.value)} placeholder="+963..." className="w-full rounded-sm border border-slate-200 bg-slate-50 p-2.5 font-mono" /></Field><Field label="العنوان والمنطقة"><input value={formAddress} onChange={event => setFormAddress(event.target.value)} className="w-full rounded-sm border border-slate-200 bg-slate-50 p-2.5" /></Field><Field label="ملاحظات"><textarea rows={2} value={formNotes} onChange={event => setFormNotes(event.target.value)} className="w-full rounded-sm border border-slate-200 bg-slate-50 p-2.5" /></Field><div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-3"><button type="button" onClick={() => setShowAddPartnerModal(false)} className="rounded-sm bg-slate-100 px-4 py-2 font-bold text-slate-700">إلغاء</button><button type="submit" className="rounded-sm bg-amber-400 px-5 py-2 font-bold text-slate-900 shadow-sm">حفظ الحساب</button></div></form></div></div>}
     {selectedPartnerForWorkspace && <PartnerWorkspaceModal partner={selectedPartnerForWorkspace} custody={goldBalances[selectedPartnerForWorkspace.id] ?? []} onClose={() => setSelectedPartnerForWorkspace(null)} />}
     {selectedPartnerForStatement && <PrintAccountStatementModal partner={selectedPartnerForStatement} onClose={() => setSelectedPartnerForStatement(null)} />}
+    {selectedCustomerStatement && <CustomerGoldStatementModal partner={selectedCustomerStatement} onClose={() => setSelectedCustomerStatement(null)} />}
   </div>;
 };
 

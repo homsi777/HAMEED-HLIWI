@@ -264,6 +264,18 @@
 }
 .invoice-paper-remaining { margin-top: 4px; text-align: center; color: #9f2f23; font-weight: 900; font-size: 12px; }
 
+@media print {
+  @page { size: 148mm 210mm; margin: 0; }
+  body.customer-statement-print-active { background: #fff !important; }
+  body.customer-statement-print-active * { visibility: hidden !important; }
+  body.customer-statement-print-active .customer-statement-sheet,
+  body.customer-statement-print-active .customer-statement-sheet * { visibility: visible !important; }
+  body.customer-statement-print-active .customer-statement-sheet { position: fixed !important; inset: 0 auto auto 0 !important; display: block !important; width: 148mm !important; min-height: 210mm !important; overflow: visible !important; border-radius: 0 !important; box-shadow: none !important; }
+  body.customer-statement-print-active .customer-statement-paper { display: block !important; overflow: visible !important; padding: 7mm !important; }
+  body.customer-statement-print-active .no-print { display: none !important; }
+  body.customer-statement-print-active table { font-size: 2.6mm !important; }
+}
+
 /* Financial vouchers render as a standalone A5 document, never as the Finance screen. */
 .voucher-print-sheet { box-sizing: border-box; min-height: 194mm; padding: 8mm; background: #fffdf8; color: #273244; font-family: 'Cairo', sans-serif; }
 .voucher-paper-header { display: grid; grid-template-columns: 1fr 30mm 1.4fr; align-items: center; gap: 4mm; border-bottom: 1.2px solid #a98248; padding-bottom: 4mm; }
