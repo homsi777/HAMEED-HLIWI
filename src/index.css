@@ -97,6 +97,8 @@
 .invoice-logo-mark { display: flex; width: 30mm; height: 20mm; align-items: center; justify-content: center; overflow: hidden; }
 /* The supplied transparent logo includes generous blank margins; enlarge it inside a clipped frame so the actual mark remains clear on A5. */
 .invoice-logo-mark img { display: block; width: 38mm; max-width: none; height: auto; }
+.print-wordmark { display: block; width: 38mm; height: 12mm; object-fit: contain; object-position: right center; mix-blend-mode: multiply; }
+.customer-statement-brand { display: grid; grid-template-columns: 1fr 30mm 1fr; align-items: start; gap: 4mm; direction: ltr; }.customer-statement-brand > :first-child { text-align: left; }.customer-statement-main-logo { display: grid; place-items: center; }.customer-statement-main-logo img { width: 27mm; height: 20mm; object-fit: contain; }.customer-statement-wordmark { direction: rtl; text-align: right; }.customer-statement-wordmark img { width: 42mm; height: 13mm; object-fit: contain; object-position: right center; mix-blend-mode: multiply; }.customer-statement-wordmark p { margin: 1mm 0 0; color: #6d4d22; font-size: 3mm; font-weight: 800; }
 .invoice-brand { display: grid; justify-items: end; color: #a6814b; line-height: 1; direction: rtl; text-align: right; }
 .invoice-brand small { margin-bottom: .8mm; font-size: 3.4mm; font-weight: 700; }
 .invoice-brand strong { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 14mm; font-weight: 700; letter-spacing: -.7mm; }

@@ -52,7 +52,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
               <small>{settings.address || 'حلب - سوريا'}</small>
             </div>
             <div className="invoice-logo-mark"><img src="/logo-transparent.png" alt="شعار مجوهرات حليوي" /></div>
-            <div className="invoice-brand"><small>مجوهرات</small><strong>حليوي</strong><span>عبد الحميد معين</span></div>
+            <div className="invoice-brand"><img src="/hliwi-wordmark.png" alt="حليوي" className="print-wordmark" /><small>مجوهرات</small><span>عبد الحميد معين</span></div>
           </header>
 
           <div className="invoice-paper-meta">

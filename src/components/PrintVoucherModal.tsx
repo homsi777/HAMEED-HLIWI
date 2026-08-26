@@ -48,7 +48,7 @@ export const PrintVoucherModal: React.FC<PrintVoucherModalProps> = ({ voucher, s
           <header className="voucher-paper-header">
             <div className="voucher-paper-contact">{settings.phone1 && <b dir="ltr">{settings.phone1}</b>}{settings.phone2 && <b dir="ltr">{settings.phone2}</b>}<small>{settings.address || settings.branchName || 'حلب - سوريا'}</small></div>
             <img src="/logo-transparent.png" alt="شعار الشركة" className="voucher-paper-logo" />
-            <div className="voucher-paper-brand"><strong>{companyName}</strong><span>{companySubtitle}</span>{settings.branchName && <small>{settings.branchName}</small>}</div>
+            <div className="voucher-paper-brand"><img src="/hliwi-wordmark.png" alt="حليوي" className="print-wordmark" /><span>{companySubtitle}</span>{settings.branchName && <small>{settings.branchName}</small>}</div>
           </header>
           <div className="voucher-paper-title"><span>{voucherTitle(voucher.type)}</span><b>{isReceipt ? 'قبض' : 'صرف'}</b></div>
           <div className="voucher-paper-meta"><span><b>رقم السند:</b> {voucher.voucherNumber}</span><span><b>التاريخ:</b> {voucher.date}</span><span><b>الصندوق:</b> {voucher.cashboxName}</span></div>
