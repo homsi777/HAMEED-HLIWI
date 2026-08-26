@@ -1,0 +1,11 @@
+import React, { useMemo, useState } from 'react';
+import { FileSpreadsheet, Search, X } from 'lucide-react';
+import type { ApiPartner } from '../services/partnersApi';
+import { CustomerGoldStatementModal } from './CustomerGoldStatementModal';
+
+export const CustomerStatementHub: React.FC<{ partners: ApiPartner[]; onClose: () => void }> = ({ partners, onClose }) => {
+  const [search, setSearch] = useState(''); const [selected, setSelected] = useState<ApiPartner | null>(null);
+  const customers = useMemo(() => partners.filter(row => row.type === 'customer' || row.type === 'both').filter(row => row.name.toLowerCase().includes(search.toLowerCase()) || row.phone.includes(search)), [partners, search]);
+  if (selected) return <CustomerGoldStatementModal partner={selected} onClose={() => setSelected(null)} />;
+  return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm" dir="rtl"><div className="w-full max-w-xl rounded-sm bg-white p-4 shadow-2xl sm:p-6"><div className="flex items-center justify-between border-b pb-3"><div className="flex items-center gap-2"><FileSpreadsheet className="h-5 w-5 text-amber-600" /><div><h2 className="font-black">كشف حساب العميل</h2><p className="text-[11px] text-slate-500">اختر العميل لعرض كشف الأوزان كاملاً</p></div></div><button onClick={onClose} className="bg-slate-100 p-2"><X className="h-4 w-4" /></button></div><label className="relative mt-4 block"><Search className="absolute right-3 top-3 h-4 w-4 text-slate-400" /><input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث باسم العميل أو الهاتف…" className="w-full border border-slate-200 bg-slate-50 py-2.5 pr-9 pl-3 text-sm font-bold" /></label><div className="mt-3 max-h-[50vh] divide-y overflow-auto border">{customers.map(customer => <button key={customer.id} onClick={() => setSelected(customer)} className="flex w-full items-center justify-between px-3 py-3 text-right hover:bg-amber-50"><span className="font-black text-slate-900">{customer.name}</span><span dir="ltr" className="font-mono text-xs text-slate-500">{customer.phone || '—'}</span></button>)}{!customers.length && <p className="p-6 text-center text-sm text-slate-500">لا يوجد عميل مطابق.</p>}</div></div></div>;
+};
