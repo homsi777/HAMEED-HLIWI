@@ -1,4 +1,4 @@
-import { bigint, check, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, boolean } from 'drizzle-orm/pg-core';
+import { bigint, check, date, index, integer, jsonb, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, boolean } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 const id = () => uuid('id').defaultRandom().primaryKey();
@@ -84,6 +84,29 @@ export const userWarehouses = pgTable('user_warehouses', {
   isManager: boolean('is_manager').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, table => [primaryKey({ columns: [table.userId, table.warehouseId], name: 'user_warehouses_pk' }), index('user_warehouses_warehouse_idx').on(table.warehouseId)]);
+
+export const employeeSchedule = pgEnum('employee_schedule', ['daily', 'weekly', 'monthly']);
+export const employeeStatus = pgEnum('employee_status', ['active', 'archived', 'terminated']);
+export const employeeTransactionType = pgEnum('employee_transaction_type', ['advance', 'salary_payment']);
+
+// Employees are personnel records, deliberately separate from login users: an employee may
+// have no system account, and a seller account may be managed independently from payroll.
+export const employees = pgTable('employees', {
+  id: id(), fullName: text('full_name').notNull(), phone: text('phone'),
+  warehouseId: uuid('warehouse_id').notNull().references(() => warehouses.id, { onDelete: 'restrict' }),
+  schedule: employeeSchedule('schedule').notNull(), salaryCurrency: text('salary_currency').notNull(),
+  salaryAmount: numeric('salary_amount', { precision: 18, scale: 4 }).notNull().default('0'),
+  photoDataUrl: text('photo_data_url'), notes: text('notes'), status: employeeStatus('status').notNull().default('active'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }), endedAt: timestamp('ended_at', { withTimezone: true }),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), ...timestamps,
+}, table => [index('employees_warehouse_status_idx').on(table.warehouseId, table.status), check('employees_currency_check', sql`${table.salaryCurrency} in ('USD','SYP')`), check('employees_salary_check', sql`${table.salaryAmount} >= 0`)]);
+
+export const employeeTransactions = pgTable('employee_transactions', {
+  id: id(), employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'restrict' }),
+  type: employeeTransactionType('type').notNull(), currency: text('currency').notNull(), amount: numeric('amount', { precision: 18, scale: 4 }).notNull(),
+  occurredOn: date('occurred_on').notNull(), note: text('note'), idempotencyKey: text('idempotency_key').notNull(),
+  createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, table => [uniqueIndex('employee_transactions_idempotency_unique').on(table.idempotencyKey), index('employee_transactions_employee_date_idx').on(table.employeeId, table.occurredOn), check('employee_transactions_currency_check', sql`${table.currency} in ('USD','SYP')`), check('employee_transactions_amount_check', sql`${table.amount} > 0`)]);
 
 export const shiftStatus = pgEnum('shift_status', ['open', 'closing_requested', 'closed', 'cancelled']);
 

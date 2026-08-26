@@ -169,6 +169,13 @@
       "when": 1787659300000,
       "tag": "0023_purchase_scrap_holdings",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787730000000,
+      "tag": "0024_employees",
+      "breakpoints": true
     }
   ]
 }

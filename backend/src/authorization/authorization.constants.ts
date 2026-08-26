@@ -29,6 +29,7 @@ export const ALL_PERMISSION_CODES = [
   'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.adjust', 'gold_accounts.convert', 'gold_accounts.reverse',
   'gold_accounts.used_inventory.convert', 'gold_accounts.used_inventory.reverse',
   'shifts.view', 'shifts.open', 'shifts.close.request', 'shifts.approve', 'shifts.manage',
+  'employees.view', 'employees.manage', 'employees.payroll',
   // TASK 18: company-wide operating parameters - the exchange rate, gold prices and store
   // identity. Reading them needs no permission at all: a seller cannot price a sale without
   // the gold price. Changing them is a commercial act and belongs to whoever runs the company.
@@ -56,6 +57,7 @@ export const WAREHOUSE_MANAGER_PERMISSIONS = [
   'accounting.view',
   'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.used_inventory.convert',
   'shifts.view', 'shifts.approve', 'shifts.manage',
+  'employees.view', 'employees.manage', 'employees.payroll',
 ];
 
 // A seller sells. `data.scope.own` is what keeps two sellers standing at the same counter
@@ -122,6 +124,7 @@ export const MODULE_PERMISSIONS: Record<string, string[]> = {
   reports: ['reports.view'],
   users: ['users.view'],
   shifts: ['shifts.manage'],
+  employees: ['employees.view'],
   settings: ['settings.manage'],
 };
 
