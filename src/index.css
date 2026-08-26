@@ -30,6 +30,8 @@
 .print-only {
   display: none;
 }
+.field { display:block; width:100%; margin-top:4px; border:2px solid #e2e8f0; padding:9px; font-size:14px; font-weight:700; outline:none; } .field:focus { border-color:#fbbf24; }
+@media print { body * { visibility:hidden !important; } .employee-print, .employee-print * { visibility:visible !important; } .employee-print { position:fixed; inset:0; padding:12mm; background:#fff; } }
 
 .print-brand-header {
   background: #0f172a;

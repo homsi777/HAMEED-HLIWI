@@ -21,6 +21,7 @@ import {
   Layers,
   Scale,
   Archive
+  ,ContactRound
 } from 'lucide-react';
 // ذمم الأوزان is a hub: two of its screens are opened from inside it and never appear as
 // menu entries, so the section stays highlighted while either of them is open.
@@ -106,6 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
       allowed: allows('shifts'),
       badge: null
     },
+    { id: 'employees', label: 'الموظفين', icon: ContactRound, allowed: allows('employees'), badge: null },
     {
       id: 'settings',
       label: 'الإعدادات العامة',

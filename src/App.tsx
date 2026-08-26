@@ -17,6 +17,7 @@ import { UsersView } from './components/UsersView';
 import { ShiftsView } from './components/ShiftsView';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
+import { EmployeesView } from './components/EmployeesView';
 import { InstallPrompt } from './components/InstallPrompt';
 import { LoginView } from './components/LoginView';
 import { ServiceUnavailableView } from './components/ServiceUnavailableView';
@@ -30,6 +31,7 @@ const TAB_MODULE: Record<string, string> = {
   dashboard: 'dashboard', inventory: 'inventory', invoices: 'invoices', partners: 'partners',
   'gold-weight-accounts': 'gold-weight-accounts', 'gold-custody': 'gold-weight-accounts', 'gold-used': 'gold-weight-accounts', 'gold-openings': 'gold-weight-accounts', reports: 'reports', users: 'users', shifts: 'shifts', history: 'history', settings: 'settings',
   'finance-accounts': 'accounting', 'finance-ledger': 'accounting',
+  employees: 'employees',
 };
 // The order a user lands in: the most senior screen they are actually allowed to open.
 const LANDING_ORDER = ['dashboard', 'invoices', 'inventory', 'history', 'partners', 'finance-boxes', 'reports', 'users', 'settings'];
@@ -117,6 +119,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
           {activeTab === 'reports' && <ReportsView />}
 
           {activeTab === 'users' && <UsersView />}
+          {activeTab === 'employees' && <EmployeesView />}
 
           {activeTab === 'history' && (
             <HistoryView
