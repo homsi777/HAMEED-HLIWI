@@ -3,8 +3,9 @@ import { and, asc, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuthorizationScopeService } from '../authorization/authorization-scope.service.js';
+import { FinancePostingService } from '../finance/finance-posting.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
-import { employees, employeeTransactions, warehouses } from '../database/schema.js';
+import { appSettings, employees, employeeTransactions, warehouses } from '../database/schema.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const schedules = new Set(['daily', 'weekly', 'monthly']);
@@ -13,7 +14,7 @@ const currencies = new Set(['USD', 'SYP']);
 
 @Injectable()
 export class EmployeesService {
-  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(AuthorizationScopeService) private readonly scope: AuthorizationScopeService, @Inject(AuditService) private readonly audit: AuditService) {}
+  constructor(@Inject(DATABASE) private readonly db: Database, @Inject(AuthorizationScopeService) private readonly scope: AuthorizationScopeService, @Inject(AuditService) private readonly audit: AuditService, @Inject(FinancePostingService) private readonly finance: FinancePostingService) {}
 
   async list(actor: AuthIdentity, query: Record<string, unknown>) {
     const conditions: any[] = [];
@@ -33,7 +34,7 @@ export class EmployeesService {
     const employee = await this.require(actor, employeeId);
     const warehouse = (await this.db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, employee.warehouseId)).limit(1))[0]!;
     const transactions = await this.db.select().from(employeeTransactions).where(eq(employeeTransactions.employeeId, employee.id)).orderBy(desc(employeeTransactions.occurredOn), desc(employeeTransactions.createdAt));
-    return { ...this.present(employee, warehouse.name, this.sums(transactions)), transactions: transactions.map(row => ({ id: row.id, type: row.type, currency: row.currency, amount: Number(row.amount), occurredOn: row.occurredOn, note: row.note, createdAt: row.createdAt.toISOString() })) };
+    return { ...this.present(employee, warehouse.name, this.sums(transactions)), payroll: this.payroll(employee, transactions), transactions: transactions.map(row => ({ id: row.id, type: row.type, currency: row.currency, amount: Number(row.amount), exchangeRateSypPerUsd: Number(row.exchangeRateSypPerUsd), occurredOn: row.occurredOn, note: row.note, createdAt: row.createdAt.toISOString() })) };
   }
 
   async create(actor: AuthIdentity, input: Record<string, unknown>) {
@@ -65,7 +66,13 @@ export class EmployeesService {
     const idempotencyKey = this.id(input.idempotencyKey, 'idempotencyKey');
     const existing = (await this.db.select({ id: employeeTransactions.id }).from(employeeTransactions).where(eq(employeeTransactions.idempotencyKey, idempotencyKey)).limit(1))[0];
     if (!existing) {
-      await this.db.insert(employeeTransactions).values({ employeeId: employee.id, type, currency, amount, occurredOn, note: this.optional(input.note, 1000), idempotencyKey, createdByUserId: actor.id });
+      const settings = (await this.db.select({ rate: appSettings.usdToSypRate }).from(appSettings).limit(1))[0];
+      if (!settings || Number(settings.rate) <= 0) throw new ConflictException('سعر الصرف غير مضبوط في الإعدادات.');
+      const cashboxId = typeof input.cashboxId === 'string' && input.cashboxId ? this.id(input.cashboxId, 'cashboxId') : undefined;
+      await this.db.transaction(async tx => {
+        const voucher = await this.finance.postVoucher(tx, actor, { type: 'expense', sourceType: 'expense', sourceDocumentNumber: `EMP-${employee.id.slice(0, 8)}`, warehouseId: employee.warehouseId, cashboxId, currency, amount, exchangeRateSypPerUsd: String(settings.rate), expenseCategory: type === 'advance' ? 'سلف موظفين' : 'رواتب موظفين', systemNote: `${type === 'advance' ? 'سلفة' : 'تسليم راتب'} للموظف ${employee.fullName}`, userNote: this.optional(input.note, 1000), idempotencyKey: `employee-voucher:${idempotencyKey}` });
+        await tx.insert(employeeTransactions).values({ employeeId: employee.id, type, currency, amount, exchangeRateSypPerUsd: settings.rate, voucherId: voucher.id, occurredOn, note: this.optional(input.note, 1000), idempotencyKey, createdByUserId: actor.id });
+      });
       await this.audit.record({ actorUserId: actor.id, action: `employees.${type}`, module: 'employees', entityId: employee.id, warehouseId: employee.warehouseId, metadata: { amount, currency, occurredOn } });
     }
     return this.get(actor, employee.id);
@@ -107,6 +114,16 @@ export class EmployeesService {
     const totals = Object.fromEntries(sums.map(row => [row.currency, { advances: Number(row.advance), salaryPayments: Number(row.paid) }]));
     return { id: employee.id, fullName: employee.fullName, phone: employee.phone, warehouseId: employee.warehouseId, warehouseName, schedule: employee.schedule, salaryCurrency: employee.salaryCurrency, salaryAmount: Number(employee.salaryAmount), photoDataUrl: employee.photoDataUrl, notes: employee.notes, status: employee.status, archivedAt: employee.archivedAt?.toISOString() ?? null, endedAt: employee.endedAt?.toISOString() ?? null, totals };
   }
+  private payroll(employee: typeof employees.$inferSelect, rows: Array<typeof employeeTransactions.$inferSelect>) {
+    const today = new Date().toISOString().slice(0, 10); const period = this.period(employee.schedule, today);
+    const current = rows.filter(row => row.occurredOn >= period.from && row.occurredOn <= period.to);
+    const converted = (row: typeof employeeTransactions.$inferSelect) => employee.salaryCurrency === row.currency ? Number(row.amount) : employee.salaryCurrency === 'USD' ? Number(row.amount) / Number(row.exchangeRateSypPerUsd) : Number(row.amount) * Number(row.exchangeRateSypPerUsd);
+    const advances = current.filter(row => row.type === 'advance').reduce((sum, row) => sum + converted(row), 0);
+    const salaryPayments = current.filter(row => row.type === 'salary_payment').reduce((sum, row) => sum + converted(row), 0);
+    const salary = Number(employee.salaryAmount); const remaining = Number((salary - advances - salaryPayments).toFixed(4));
+    return { from: period.from, to: period.to, salary, advances: Number(advances.toFixed(4)), salaryPayments: Number(salaryPayments.toFixed(4)), remaining, currency: employee.salaryCurrency };
+  }
+  private period(schedule: 'daily' | 'weekly' | 'monthly', today: string) { const date = new Date(`${today}T12:00:00Z`); if (schedule === 'daily') return { from: today, to: today }; if (schedule === 'monthly') { const prefix = today.slice(0, 7); return { from: `${prefix}-01`, to: `${prefix}-${new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate().toString().padStart(2, '0')}` }; } const day = (date.getUTCDay() + 6) % 7; const from = new Date(date); from.setUTCDate(date.getUTCDate() - day); const to = new Date(from); to.setUTCDate(from.getUTCDate() + 6); return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }; }
   private sums(rows: Array<typeof employeeTransactions.$inferSelect>) { return Object.values(rows.reduce((all: Record<string, { currency: string; advance: string; paid: string }>, row) => { const value = all[row.currency] ?? { currency: row.currency, advance: '0', paid: '0' }; value[row.type === 'advance' ? 'advance' : 'paid'] = String(Number(value[row.type === 'advance' ? 'advance' : 'paid']) + Number(row.amount)); all[row.currency] = value; return all; }, {})); }
   private id(value: unknown, field: string) { if (typeof value !== 'string' || !UUID.test(value)) throw new ConflictException(`${field} غير صالح.`); return value; }
   private text(value: unknown, field: string, max: number) { if (typeof value !== 'string' || !value.trim() || value.trim().length > max) throw new ConflictException(`${field} غير صالح.`); return value.trim(); }

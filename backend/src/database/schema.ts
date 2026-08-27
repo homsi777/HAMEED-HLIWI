@@ -103,10 +103,10 @@ export const employees = pgTable('employees', {
 
 export const employeeTransactions = pgTable('employee_transactions', {
   id: id(), employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'restrict' }),
-  type: employeeTransactionType('type').notNull(), currency: text('currency').notNull(), amount: numeric('amount', { precision: 18, scale: 4 }).notNull(),
-  occurredOn: date('occurred_on').notNull(), note: text('note'), idempotencyKey: text('idempotency_key').notNull(),
+  type: employeeTransactionType('type').notNull(), currency: text('currency').notNull(), amount: numeric('amount', { precision: 18, scale: 4 }).notNull(), exchangeRateSypPerUsd: numeric('exchange_rate_syp_per_usd', { precision: 18, scale: 4 }).notNull().default('1'),
+  occurredOn: date('occurred_on').notNull(), voucherId: uuid('voucher_id').references(() => vouchers.id, { onDelete: 'restrict' }), note: text('note'), idempotencyKey: text('idempotency_key').notNull(),
   createdByUserId: uuid('created_by_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, table => [uniqueIndex('employee_transactions_idempotency_unique').on(table.idempotencyKey), index('employee_transactions_employee_date_idx').on(table.employeeId, table.occurredOn), check('employee_transactions_currency_check', sql`${table.currency} in ('USD','SYP')`), check('employee_transactions_amount_check', sql`${table.amount} > 0`)]);
+}, table => [uniqueIndex('employee_transactions_idempotency_unique').on(table.idempotencyKey), index('employee_transactions_employee_date_idx').on(table.employeeId, table.occurredOn), check('employee_transactions_currency_check', sql`${table.currency} in ('USD','SYP')`), check('employee_transactions_amount_check', sql`${table.amount} > 0`), check('employee_transactions_rate_check', sql`${table.exchangeRateSypPerUsd} > 0`)]);
 
 export const shiftStatus = pgEnum('shift_status', ['open', 'closing_requested', 'closed', 'cancelled']);
 
