@@ -11,5 +11,5 @@ import { FinanceService } from './finance.service.js';
 
 // FinancePostingService is exported so Sales, Purchases and Returns can post their
 // financial effect inside their own transaction without depending on the HTTP layer.
-@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule, RealtimeModule, AccountingModule], controllers: [FinanceController], providers: [FinanceService, FinancePostingService], exports: [FinancePostingService] })
+@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule, RealtimeModule, AccountingModule], controllers: [FinanceController], providers: [FinanceService, FinancePostingService], exports: [FinanceService, FinancePostingService] })
 export class FinanceModule {}

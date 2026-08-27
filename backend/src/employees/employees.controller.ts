@@ -8,6 +8,7 @@ import { EmployeesService } from './employees.service.js';
 @Controller('employees') @UseGuards(AuthGuard, PermissionGuard)
 export class EmployeesController {
   constructor(@Inject(EmployeesService) private readonly employees: EmployeesService) {}
+  @Get('cashboxes') @RequirePermissions('employees.payroll') cashboxes(@Req() request: FastifyRequest) { return this.employees.cashboxes(request.identity!); }
   @Get() @RequirePermissions('employees.view') list(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.employees.list(request.identity!, query); }
   @Get(':id') @RequirePermissions('employees.view') get(@Req() request: FastifyRequest, @Param('id') id: string) { return this.employees.get(request.identity!, id); }
   @Post() @RequirePermissions('employees.manage') create(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.employees.create(request.identity!, body); }

@@ -183,6 +183,13 @@
       "when": 1787816400000,
       "tag": "0025_employee_payroll_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787902800000,
+      "tag": "0026_employee_advance_deductions",
+      "breakpoints": true
     }
   ]
 }
