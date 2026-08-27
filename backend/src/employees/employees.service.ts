@@ -27,7 +27,8 @@ export class EmployeesService {
     const rows = await this.db.select({ employee: employees, warehouseName: warehouses.name }).from(employees).innerJoin(warehouses, eq(employees.warehouseId, warehouses.id)).where(conditions.length ? and(...conditions) : undefined).orderBy(asc(employees.fullName));
     const ids = rows.map(row => row.employee.id);
     const sums = ids.length ? await this.db.select({ employeeId: employeeTransactions.employeeId, currency: employeeTransactions.currency, advance: sql<string>`coalesce(sum(case when ${employeeTransactions.type} = 'advance' then ${employeeTransactions.amount} else 0 end), 0)`, paid: sql<string>`coalesce(sum(case when ${employeeTransactions.type} = 'salary_payment' then ${employeeTransactions.amount} else 0 end), 0)` }).from(employeeTransactions).where(inArray(employeeTransactions.employeeId, ids)).groupBy(employeeTransactions.employeeId, employeeTransactions.currency) : [];
-    return rows.map(row => this.present(row.employee, row.warehouseName, sums.filter(sum => sum.employeeId === row.employee.id)));
+    const transactions = ids.length ? await this.db.select().from(employeeTransactions).where(inArray(employeeTransactions.employeeId, ids)) : [];
+    return rows.map(row => ({ ...this.present(row.employee, row.warehouseName, sums.filter(sum => sum.employeeId === row.employee.id)), payroll: this.payroll(row.employee, transactions.filter(transaction => transaction.employeeId === row.employee.id)) }));
   }
 
   async get(actor: AuthIdentity, employeeId: string) {
