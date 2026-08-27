@@ -31,6 +31,7 @@
   display: none;
 }
 .field { display:block; width:100%; margin-top:4px; border:2px solid #e2e8f0; padding:9px; font-size:14px; font-weight:700; outline:none; } .field:focus { border-color:#fbbf24; }
+.action-primary,.action-dark,.action-success { display:flex; min-height:42px; align-items:center; justify-content:center; gap:8px; padding:10px 14px; font-size:12px; font-weight:900; } .action-primary { background:#fbbf24; color:#0f172a; }.action-dark { background:#0f172a; color:#fbbf24; }.action-success { background:#047857; color:#fff; }.quick { display:inline-flex; align-items:center; gap:4px; border:1px solid; padding:6px 8px; font-weight:900; }.quick svg { width:14px; height:14px; }.quick.advance { border-color:#fcd34d; color:#92400e; }.quick.salary { border-color:#86efac; color:#047857; }.quick.edit { border-color:#cbd5e1; color:#475569; }
 /* Employee three-dot menus must layer over the next row, never be cut by the table frame. */
 .space-y-4 > div.overflow-hidden:has(> table) { overflow: visible !important; }
 .space-y-4 > div.overflow-hidden:has(> table) tbody tr:has(.z-20) { position: relative; z-index: 10; }
