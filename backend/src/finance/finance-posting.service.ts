@@ -25,6 +25,10 @@ export type PostVoucherInput = {
   partnerName?: string | null;
   warehouseId?: string | null;
   cashboxId?: string | null;
+  // Used by controlled foreign-currency disbursements: the voucher keeps the amount
+  // physically delivered, while the selected USD cashbox moves its USD equivalent.
+  cashboxCurrency?: CashCurrency;
+  cashboxAmount?: string;
   currency: CashCurrency;
   amount: string;
   exchangeRateSypPerUsd: string;
@@ -68,7 +72,7 @@ export class FinancePostingService {
   }
 
   async postVoucher(tx: any, user: AuthIdentity, input: PostVoucherInput) {
-    const cashbox = await this.resolveCashbox(tx, input.currency, input.warehouseId, input.cashboxId);
+    const cashbox = await this.resolveCashbox(tx, input.cashboxCurrency ?? input.currency, input.warehouseId, input.cashboxId);
     const year = new Date().getUTCFullYear();
     // Receipts, payments and expenses all read `HH####`, so they share one counter: three
     // separate ones would eventually print the same voucher number on two documents.
@@ -86,9 +90,11 @@ export class FinancePostingService {
     }).returning())[0]!;
 
     // Movements are the authority for every cash balance; they are never edited or removed.
+    const cashboxCurrency = input.cashboxCurrency ?? input.currency;
+    const cashboxAmount = input.cashboxAmount ?? input.amount;
     await tx.insert(cashMovements).values({
       cashboxId: cashbox.id, voucherId: voucher.id, cashboxTransferId: input.cashboxTransferId ?? null,
-      direction: input.type === 'receipt' ? 'inflow' : 'outflow', amount: input.amount, currency: input.currency, exchangeRateSypPerUsd: input.exchangeRateSypPerUsd, amountUsdEquivalent,
+      direction: input.type === 'receipt' ? 'inflow' : 'outflow', amount: cashboxAmount, currency: cashboxCurrency, exchangeRateSypPerUsd: input.exchangeRateSypPerUsd, amountUsdEquivalent,
       partnerId: input.partnerId ?? null, warehouseId: input.warehouseId ?? cashbox.warehouseId ?? null,
       salesInvoiceId: input.salesInvoiceId ?? null, purchaseInvoiceId: input.purchaseInvoiceId ?? null, returnInvoiceId: input.returnInvoiceId ?? null,
       actorUserId: user.id, description: `${voucher.voucherNumber} — ${input.systemNote}`,
@@ -102,7 +108,7 @@ export class FinancePostingService {
         partnerId: input.partnerId ?? null, warehouseId: input.warehouseId ?? cashbox.warehouseId ?? null, cashboxId: cashbox.id,
         expenseCategory: input.expenseCategory ?? null, systemNote: input.systemNote,
         salesInvoiceId: input.salesInvoiceId ?? null, purchaseInvoiceId: input.purchaseInvoiceId ?? null, returnInvoiceId: input.returnInvoiceId ?? null,
-        money: { currency: input.currency, originalAmount: Number(input.amount), amountUsd: Number(amountUsdEquivalent), rate: Number(input.exchangeRateSypPerUsd) },
+        money: { currency: cashboxCurrency, originalAmount: Number(cashboxAmount), amountUsd: Number(amountUsdEquivalent), rate: Number(input.exchangeRateSypPerUsd) },
       });
     }
 

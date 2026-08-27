@@ -31,14 +31,16 @@ export class EmployeesService {
     const ids = rows.map(row => row.employee.id);
     const sums = ids.length ? await this.db.select({ employeeId: employeeTransactions.employeeId, currency: employeeTransactions.currency, advance: sql<string>`coalesce(sum(case when ${employeeTransactions.type} = 'advance' then ${employeeTransactions.amount} else 0 end), 0)`, paid: sql<string>`coalesce(sum(case when ${employeeTransactions.type} = 'salary_payment' then ${employeeTransactions.amount} else 0 end), 0)` }).from(employeeTransactions).where(inArray(employeeTransactions.employeeId, ids)).groupBy(employeeTransactions.employeeId, employeeTransactions.currency) : [];
     const transactions = ids.length ? await this.db.select().from(employeeTransactions).where(inArray(employeeTransactions.employeeId, ids)) : [];
-    return rows.map(row => ({ ...this.present(row.employee, row.warehouseName, sums.filter(sum => sum.employeeId === row.employee.id)), payroll: this.payroll(row.employee, transactions.filter(transaction => transaction.employeeId === row.employee.id)) }));
+    const rate = Number((await this.db.select({ rate: appSettings.usdToSypRate }).from(appSettings).limit(1))[0]?.rate ?? 1);
+    return rows.map(row => ({ ...this.present(row.employee, row.warehouseName, sums.filter(sum => sum.employeeId === row.employee.id)), payroll: this.payroll(row.employee, transactions.filter(transaction => transaction.employeeId === row.employee.id), rate) }));
   }
 
   async get(actor: AuthIdentity, employeeId: string) {
     const employee = await this.require(actor, employeeId);
     const warehouse = (await this.db.select({ name: warehouses.name }).from(warehouses).where(eq(warehouses.id, employee.warehouseId)).limit(1))[0]!;
     const transactions = await this.db.select().from(employeeTransactions).where(eq(employeeTransactions.employeeId, employee.id)).orderBy(desc(employeeTransactions.occurredOn), desc(employeeTransactions.createdAt));
-    return { ...this.present(employee, warehouse.name, this.sums(transactions)), payroll: this.payroll(employee, transactions), transactions: transactions.map(row => ({ id: row.id, type: row.type, currency: row.currency, amount: Number(row.amount), exchangeRateSypPerUsd: Number(row.exchangeRateSypPerUsd), occurredOn: row.occurredOn, note: row.note, createdAt: row.createdAt.toISOString() })) };
+    const rate = Number((await this.db.select({ rate: appSettings.usdToSypRate }).from(appSettings).limit(1))[0]?.rate ?? 1);
+    return { ...this.present(employee, warehouse.name, this.sums(transactions)), payroll: this.payroll(employee, transactions, rate), transactions: transactions.map(row => ({ id: row.id, type: row.type, currency: row.currency, amount: Number(row.amount), exchangeRateSypPerUsd: Number(row.exchangeRateSypPerUsd), occurredOn: row.occurredOn, note: row.note, createdAt: row.createdAt.toISOString() })) };
   }
 
   async create(actor: AuthIdentity, input: Record<string, unknown>) {
@@ -80,7 +82,7 @@ export class EmployeesService {
       if (type === 'salary_payment' && amountInSalaryCurrency > availableSalary + 0.0001) throw new ConflictException('المبلغ أكبر من الراتب المستحق لهذه الفترة.');
       const deduction = type === 'salary_payment' && input.deductAdvances === true ? Math.min(payroll.openAdvanceBalance, Math.max(0, availableSalary - amountInSalaryCurrency)) : 0;
       await this.db.transaction(async tx => {
-        const voucher = await this.finance.postVoucher(tx, actor, { type: 'expense', sourceType: 'expense', sourceDocumentNumber: `EMP-${employee.id.slice(0, 8)}`, warehouseId: employee.warehouseId, cashboxId, currency, amount, exchangeRateSypPerUsd: String(settings.rate), expenseCategory: type === 'advance' ? 'سلف موظفين' : 'رواتب موظفين', systemNote: `${type === 'advance' ? 'سلفة' : 'تسليم راتب'} للموظف ${employee.fullName}`, userNote: this.optional(input.note, 1000), idempotencyKey: `employee-voucher:${idempotencyKey}` });
+        const voucher = await this.finance.postVoucher(tx, actor, { type: 'expense', sourceType: 'expense', sourceDocumentNumber: `EMP-${employee.id.slice(0, 8)}`, warehouseId: employee.warehouseId, cashboxId, cashboxCurrency: 'USD', cashboxAmount: (currency === 'USD' ? Number(amount) : Number(amount) / Number(settings.rate)).toFixed(4), currency, amount, exchangeRateSypPerUsd: String(settings.rate), expenseCategory: type === 'advance' ? 'سلف موظفين' : 'رواتب موظفين', systemNote: `${type === 'advance' ? 'سلفة' : 'تسليم راتب'} للموظف ${employee.fullName}`, userNote: this.optional(input.note, 1000), idempotencyKey: `employee-voucher:${idempotencyKey}` });
         await tx.insert(employeeTransactions).values({ employeeId: employee.id, type, currency, amount, exchangeRateSypPerUsd: settings.rate, advanceDeductionAmount: deduction.toFixed(4), voucherId: voucher.id, occurredOn, note: this.optional(input.note, 1000), idempotencyKey, createdByUserId: actor.id });
       });
       await this.audit.record({ actorUserId: actor.id, action: `employees.${type}`, module: 'employees', entityId: employee.id, warehouseId: employee.warehouseId, metadata: { amount, currency, occurredOn } });
@@ -124,7 +126,7 @@ export class EmployeesService {
     const totals = Object.fromEntries(sums.map(row => [row.currency, { advances: Number(row.advance), salaryPayments: Number(row.paid) }]));
     return { id: employee.id, fullName: employee.fullName, phone: employee.phone, warehouseId: employee.warehouseId, warehouseName, schedule: employee.schedule, salaryCurrency: employee.salaryCurrency, salaryAmount: Number(employee.salaryAmount), photoDataUrl: employee.photoDataUrl, notes: employee.notes, status: employee.status, archivedAt: employee.archivedAt?.toISOString() ?? null, endedAt: employee.endedAt?.toISOString() ?? null, totals };
   }
-  private payroll(employee: typeof employees.$inferSelect, rows: Array<typeof employeeTransactions.$inferSelect>) {
+  private payroll(employee: typeof employees.$inferSelect, rows: Array<typeof employeeTransactions.$inferSelect>, exchangeRateSypPerUsd = 1) {
     const today = new Date().toISOString().slice(0, 10); const period = this.period(employee.schedule, today);
     const current = rows.filter(row => row.occurredOn >= period.from && row.occurredOn <= period.to);
     const converted = (row: typeof employeeTransactions.$inferSelect) => employee.salaryCurrency === row.currency ? Number(row.amount) : employee.salaryCurrency === 'USD' ? Number(row.amount) / Number(row.exchangeRateSypPerUsd) : Number(row.amount) * Number(row.exchangeRateSypPerUsd);
@@ -134,7 +136,7 @@ export class EmployeesService {
     const allDeductions = rows.filter(row => row.type === 'salary_payment').reduce((sum, row) => sum + Number(row.advanceDeductionAmount), 0);
     const advanceDeductions = current.filter(row => row.type === 'salary_payment').reduce((sum, row) => sum + Number(row.advanceDeductionAmount), 0);
     const salary = Number(employee.salaryAmount); const salaryDue = Math.max(0, salary - salaryPayments); const remaining = Math.max(0, salaryDue - advanceDeductions);
-    return { from: period.from, to: period.to, salary, advances: Number(advances.toFixed(4)), salaryPayments: Number(salaryPayments.toFixed(4)), salaryDue: Number(salaryDue.toFixed(4)), advanceDeductions: Number(advanceDeductions.toFixed(4)), openAdvanceBalance: Number(Math.max(0, allAdvances - allDeductions).toFixed(4)), remaining: Number(remaining.toFixed(4)), currency: employee.salaryCurrency };
+    return { from: period.from, to: period.to, salary, advances: Number(advances.toFixed(4)), salaryPayments: Number(salaryPayments.toFixed(4)), salaryDue: Number(salaryDue.toFixed(4)), advanceDeductions: Number(advanceDeductions.toFixed(4)), openAdvanceBalance: Number(Math.max(0, allAdvances - allDeductions).toFixed(4)), remaining: Number(remaining.toFixed(4)), currency: employee.salaryCurrency, exchangeRateSypPerUsd };
   }
   private period(schedule: 'daily' | 'weekly' | 'monthly', today: string) { const date = new Date(`${today}T12:00:00Z`); if (schedule === 'daily') return { from: today, to: today }; if (schedule === 'monthly') { const prefix = today.slice(0, 7); return { from: `${prefix}-01`, to: `${prefix}-${new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate().toString().padStart(2, '0')}` }; } const day = (date.getUTCDay() + 6) % 7; const from = new Date(date); from.setUTCDate(date.getUTCDate() - day); const to = new Date(from); to.setUTCDate(from.getUTCDate() + 6); return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }; }
   private sums(rows: Array<typeof employeeTransactions.$inferSelect>) { return Object.values(rows.reduce((all: Record<string, { currency: string; advance: string; paid: string }>, row) => { const value = all[row.currency] ?? { currency: row.currency, advance: '0', paid: '0' }; value[row.type === 'advance' ? 'advance' : 'paid'] = String(Number(value[row.type === 'advance' ? 'advance' : 'paid']) + Number(row.amount)); all[row.currency] = value; return all; }, {})); }
