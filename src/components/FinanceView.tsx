@@ -30,7 +30,7 @@ import {
   Settings2
 } from 'lucide-react';
 import { VoucherType, GoldKarat } from '../types';
-import { financeApi, type ApiCashbox, type ApiCashMovement, type ApiPartnerBalance, type ApiVoucher } from '../services/financeApi';
+import { financeApi, type ApiCashbox, type ApiCashMovement, type ApiDaybookRow, type ApiPartnerBalance, type ApiVoucher } from '../services/financeApi';
 import { accountingApi, type ApiJournal } from '../services/accountingApi';
 import { PrintVoucherModal } from './PrintVoucherModal';
 
@@ -59,6 +59,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const [cashBoxes, setCashBoxes] = useState<ApiCashbox[]>([]);
   const [vouchers, setVouchers] = useState<ApiVoucher[]>([]);
   const [movements, setMovements] = useState<ApiCashMovement[]>([]);
+  const [daybookRows, setDaybookRows] = useState<ApiDaybookRow[]>([]);
   const [partnerBalances, setPartnerBalances] = useState<ApiPartnerBalance[]>([]);
   const [voucherJournals, setVoucherJournals] = useState<ApiJournal[]>([]);
   const [financeError, setFinanceError] = useState('');
@@ -67,16 +68,18 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const refreshFinance = async () => {
     try {
       setFinanceError('');
-      const [boxes, voucherPage, movementPage, balances] = await Promise.all([
+      const [boxes, voucherPage, movementPage, balances, daybook] = await Promise.all([
         financeApi.cashboxes(),
         financeApi.vouchers({ page: 1, limit: 200 }),
         financeApi.movements({ page: 1, limit: 200 }),
         financeApi.partnerBalances({ limit: 200 }),
+        financeApi.daybook(),
       ]);
       setCashBoxes(boxes);
       setVouchers(voucherPage.items);
       setMovements(movementPage.items);
       setPartnerBalances(balances);
+      setDaybookRows(daybook.items);
     } catch (reason: any) {
       setFinanceError(reason?.message || 'تعذر تحميل بيانات المالية من الخادم.');
     }
@@ -393,6 +396,14 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
 
   const totalJournalDebitUSD = journalEntries.reduce((sum, e) => sum + e.debitUSD, 0);
   const totalJournalCreditUSD = journalEntries.reduce((sum, e) => sum + e.creditUSD, 0);
+  const filteredDaybookRows = daybookRows.filter(row => {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Damascus' });
+    if (journalDateRange === 'today' && row.occurredAt.slice(0, 10) !== today) return false;
+    const query = searchQuery.trim().toLocaleLowerCase('ar');
+    return !query || row.reference.toLocaleLowerCase('ar').includes(query) || row.goods.toLocaleLowerCase('ar').includes(query) || row.description.toLocaleLowerCase('ar').includes(query);
+  });
+  const daybookInUSD = filteredDaybookRows.reduce((sum, row) => sum + row.usdIn + row.sypIn / Math.max(settings.usdToSypRate, 1), 0);
+  const daybookOutUSD = filteredDaybookRows.reduce((sum, row) => sum + row.usdOut + row.sypOut / Math.max(settings.usdToSypRate, 1), 0);
 
   return (
     <div className="space-y-3 sm:space-y-6 text-slate-900" dir="rtl">
@@ -991,7 +1002,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
 
             <div className="flex items-center gap-2 text-xs font-mono">
               <div className="bg-amber-100 border border-amber-300 text-amber-950 px-2.5 py-1.5 rounded font-bold text-xs">
-                السجل: {journalEntries.length} قيد
+                السجل: {filteredDaybookRows.length} قيد
               </div>
             </div>
           </div>
@@ -1019,28 +1030,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
             <div className="bg-slate-900 text-white p-2.5 sm:p-4 rounded-sm border-r-4 border-r-amber-400 space-y-0.5 shadow-sm">
               <span className="text-[10px] sm:text-[11px] text-amber-400 font-bold block">مقبوضات (مدين)</span>
               <div className="text-sm sm:text-xl font-black font-mono text-amber-400">
-                $ {totalJournalDebitUSD.toLocaleString()}
+                $ {daybookInUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </div>
             </div>
 
             <div className="bg-slate-900 text-white p-2.5 sm:p-4 rounded-sm border-r-4 border-r-rose-500 space-y-0.5 shadow-sm">
               <span className="text-[10px] sm:text-[11px] text-rose-400 font-bold block">مدفوعات (دائن)</span>
               <div className="text-sm sm:text-xl font-black font-mono text-rose-400">
-                $ {totalJournalCreditUSD.toLocaleString()}
+                $ {daybookOutUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </div>
             </div>
 
             <div className="bg-slate-900 text-white p-2.5 sm:p-4 rounded-sm border-r-4 border-r-emerald-400 space-y-0.5 shadow-sm">
               <span className="text-[10px] sm:text-[11px] text-emerald-400 font-bold block">صافي الحركة اليومية</span>
               <div className="text-sm sm:text-xl font-black font-mono text-emerald-300">
-                $ {(totalJournalDebitUSD - totalJournalCreditUSD).toLocaleString()}
+                $ {(daybookInUSD - daybookOutUSD).toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </div>
             </div>
 
             <div className="bg-slate-900 text-white p-2.5 sm:p-4 rounded-sm border-r-4 border-r-amber-300 space-y-0.5 shadow-sm">
               <span className="text-[10px] sm:text-[11px] text-amber-300 font-bold block">عدد القيود</span>
               <div className="text-sm sm:text-xl font-black font-mono text-amber-200">
-                {journalEntries.length} قيود
+                {filteredDaybookRows.length} قيود
               </div>
             </div>
           </div>
@@ -1092,39 +1103,32 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
           <div className="bg-white rounded-sm border border-slate-200 shadow-sm overflow-hidden">
             {/* MOBILE DAYBOOK SINGLE-LINE ROWS */}
             <div className="block sm:hidden divide-y divide-slate-100">
-              {journalEntries.length === 0 ? (
+              {filteredDaybookRows.length === 0 ? (
                 <div className="p-6 text-center text-slate-500 font-sans text-xs">
                   لا يوجد قيود يومية مطابقة للبحث في هذا التاريخ.
                 </div>
               ) : (
-                journalEntries.map(entry => (
+                filteredDaybookRows.map(entry => (
                   <div key={entry.id} className="p-3 space-y-2.5 bg-white hover:bg-amber-50/50 transition font-mono text-xs">
                     <div className="flex items-start gap-1.5 min-w-0">
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-                          entry.type === 'مبيعات' || entry.type === 'سند قبض'
-                            ? 'bg-emerald-100 text-emerald-900'
-                            : entry.type === 'مشتريات' || entry.type === 'سند صرف'
-                            ? 'bg-amber-100 text-amber-900'
-                            : 'bg-rose-100 text-rose-900'
-                        }`}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 bg-amber-100 text-amber-900"
                       >
-                        {entry.type}
+                        {entry.reference}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="font-bold text-slate-900 text-[11px] truncate font-sans flex items-center gap-1">
-                          <span>{entry.entityName}</span>
-                          <span className="text-[10px] text-slate-400 font-mono font-normal">#{entry.refNumber}</span>
+                          <span>{entry.goods || 'حركة مالية'}</span>
                         </div>
                         <div className="text-xs leading-5 text-slate-600 whitespace-normal font-sans">{entry.description}</div>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-2 text-right">
-                      {entry.debitUSD > 0 && <span className="rounded-sm bg-emerald-50 px-2 py-1.5 font-black text-emerald-700 text-xs before:content-['مدين'] before:block before:mb-0.5 before:text-[9px] before:font-bold before:text-emerald-600">+${entry.debitUSD.toFixed(0)}</span>}
-                      {entry.creditUSD > 0 && <span className="rounded-sm bg-rose-50 px-2 py-1.5 font-black text-rose-700 text-xs before:content-['دائن'] before:block before:mb-0.5 before:text-[9px] before:font-bold before:text-rose-600">-${entry.creditUSD.toFixed(0)}</span>}
-                      {entry.goldWeightGrams !== 0 && <span className="font-extrabold text-amber-800 text-[11px]">{entry.goldWeightGrams}غ</span>}
-                      <span className="rounded-sm bg-slate-50 px-2 py-1.5 text-[10px] text-slate-500 font-sans before:content-['التاريخ'] before:block before:mb-0.5 before:text-[9px] before:font-bold before:text-slate-400">{entry.date.split(' ')[0]}</span>
+                      {(entry.usdIn > 0 || entry.sypIn > 0) && <span className="rounded-sm bg-emerald-50 px-2 py-1.5 font-black text-emerald-700 text-xs">دخول: {entry.usdIn > 0 ? `$ ${entry.usdIn.toFixed(2)}` : `${entry.sypIn.toLocaleString()} ل.س`}</span>}
+                      {(entry.usdOut > 0 || entry.sypOut > 0) && <span className="rounded-sm bg-rose-50 px-2 py-1.5 font-black text-rose-700 text-xs">خروج: {entry.usdOut > 0 ? `$ ${entry.usdOut.toFixed(2)}` : `${entry.sypOut.toLocaleString()} ل.س`}</span>}
+                      {(entry.goodsIn > 0 || entry.goodsOut > 0 || entry.scrapIn > 0 || entry.scrapOut > 0) && <span className="font-extrabold text-amber-800 text-[11px]">ذهب: {(entry.goodsIn + entry.scrapIn - entry.goodsOut - entry.scrapOut).toFixed(3)} غ</span>}
+                      <span className="rounded-sm bg-slate-50 px-2 py-1.5 text-[10px] text-slate-500 font-sans">{new Date(entry.occurredAt).toLocaleString('ar-SY')}</span>
                     </div>
                   </div>
                 ))
@@ -1136,60 +1140,38 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
               <table className="w-full text-right text-xs">
                 <thead className="bg-amber-400 text-slate-900 font-extrabold border-b border-amber-300 uppercase">
                   <tr>
-                    <th className="py-3 px-3">التاريخ</th>
-                    <th className="py-3 px-3">الرقم المرجعي</th>
-                    <th className="py-3 px-3">طبيعة القيد</th>
-                    <th className="py-3 px-4">الحساب / الجهة</th>
-                    <th className="py-3 px-5">البيان والشرح المحاسبي</th>
-                    <th className="py-3 px-3 text-left">مدين / دخل ($)</th>
-                    <th className="py-3 px-3 text-left">دائن / خرج ($)</th>
-                    <th className="py-3 px-3 text-center">حركة الذهب (غ)</th>
-                    <th className="py-3 px-3 text-center">المستخدم</th>
+                    <th className="py-3 px-3">البضاعة</th>
+                    <th className="py-3 px-3">خروج بضاعة</th>
+                    <th className="py-3 px-3">دخول البضاعة</th>
+                    <th className="py-3 px-3">دخول خاشر</th>
+                    <th className="py-3 px-3">خروج خاشر</th>
+                    <th className="py-3 px-5">البيان</th>
+                    <th className="py-3 px-3">دخول ل.س</th>
+                    <th className="py-3 px-3">خروج ل.س</th>
+                    <th className="py-3 px-3">دخول $</th>
+                    <th className="py-3 px-3">خروج $</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-800 font-mono">
-                  {journalEntries.length === 0 ? (
+                  {filteredDaybookRows.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-8 text-center text-slate-500 font-sans">
+                      <td colSpan={10} className="py-8 text-center text-slate-500 font-sans">
                         لا يوجد قيود يومية مطابقة للبحث في هذا التاريخ.
                       </td>
                     </tr>
                   ) : (
-                    journalEntries.map(entry => (
+                    filteredDaybookRows.map(entry => (
                       <tr key={entry.id} className="hover:bg-amber-50/50 transition">
-                        <td className="py-3 px-3 text-slate-600">{entry.date}</td>
-                        <td className="py-3 px-3 font-bold text-slate-900">{entry.refNumber}</td>
-                        <td className="py-3 px-3 font-sans">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              entry.type === 'مبيعات' || entry.type === 'سند قبض'
-                                ? 'bg-emerald-100 text-emerald-900'
-                                : entry.type === 'مشتريات' || entry.type === 'سند صرف'
-                                ? 'bg-amber-100 text-amber-900'
-                                : 'bg-rose-100 text-rose-900'
-                            }`}
-                          >
-                            {entry.type}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-bold text-slate-900 font-sans">{entry.entityName}</td>
+                        <td className="py-3 px-3 font-bold text-slate-900 font-sans"><div>{entry.goods || '-'}</div><div className="text-[10px] font-normal text-slate-500">{entry.reference} · {new Date(entry.occurredAt).toLocaleDateString('ar-SY')}</div></td>
+                        <td className="py-3 px-3 text-rose-700">{entry.goodsOut ? entry.goodsOut.toFixed(3) : '-'}</td>
+                        <td className="py-3 px-3 text-emerald-700">{entry.goodsIn ? entry.goodsIn.toFixed(3) : '-'}</td>
+                        <td className="py-3 px-3 text-emerald-700">{entry.scrapIn ? entry.scrapIn.toFixed(3) : '-'}</td>
+                        <td className="py-3 px-3 text-rose-700">{entry.scrapOut ? entry.scrapOut.toFixed(3) : '-'}</td>
                         <td className="py-3 px-5 font-sans text-slate-700">{entry.description}</td>
-                        <td className="py-3 px-3 text-left font-bold text-emerald-700">
-                          {entry.debitUSD > 0 ? `$ ${entry.debitUSD.toFixed(2)}` : '-'}
-                        </td>
-                        <td className="py-3 px-3 text-left font-bold text-rose-700">
-                          {entry.creditUSD > 0 ? `$ ${entry.creditUSD.toFixed(2)}` : '-'}
-                        </td>
-                        <td className="py-3 px-3 text-center font-bold">
-                          {entry.goldWeightGrams !== 0 ? (
-                            <span className={entry.goldWeightGrams > 0 ? 'text-emerald-700' : 'text-amber-800'}>
-                              {entry.goldWeightGrams > 0 ? '+' : ''}{entry.goldWeightGrams.toFixed(2)} غ
-                            </span>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="py-3 px-3 text-center font-sans text-slate-600">{entry.operatorName}</td>
+                        <td className="py-3 px-3 text-emerald-700">{entry.sypIn ? entry.sypIn.toLocaleString() : '-'}</td>
+                        <td className="py-3 px-3 text-rose-700">{entry.sypOut ? entry.sypOut.toLocaleString() : '-'}</td>
+                        <td className="py-3 px-3 text-emerald-700">{entry.usdIn ? entry.usdIn.toFixed(2) : '-'}</td>
+                        <td className="py-3 px-3 text-rose-700">{entry.usdOut ? entry.usdOut.toFixed(2) : '-'}</td>
                       </tr>
                     ))
                   )}

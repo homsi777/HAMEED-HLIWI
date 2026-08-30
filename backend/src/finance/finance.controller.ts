@@ -23,6 +23,7 @@ export class FinanceController {
   @Post('transfers') @RequirePermissions('finance.transfer') createTransfer(@Req() request: FastifyRequest, @Body() body: Record<string, unknown>) { return this.finance.createTransfer(request.identity!, body); }
 
   @Get('movements') @RequirePermissions('finance.view') listMovements(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.finance.listMovements(request.identity!, query); }
+  @Get('daybook') @RequirePermissions('finance.view') daybook(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.finance.daybook(request.identity!, query); }
   @Get('partner-balances') @RequirePermissions('finance.view') partnerBalances(@Req() request: FastifyRequest, @Query() query: Record<string, unknown>) { return this.finance.partnerBalances(request.identity!, query); }
   @Get('partners/:id/statement') @RequirePermissions('finance.view') partnerStatement(@Req() request: FastifyRequest, @Param('id') id: string, @Query() query: Record<string, unknown>) { return this.finance.partnerStatement(request.identity!, id, query); }
 

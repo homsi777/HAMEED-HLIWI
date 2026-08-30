@@ -304,6 +304,36 @@ export class FinanceService {
     return { items: rows.map(row => ({ id: row.movement.id, cashboxId: row.movement.cashboxId, cashboxName: row.cashboxName, voucherId: row.movement.voucherId, voucherNumber: row.voucherNumber ?? '', direction: row.movement.direction, amount: Number(row.movement.amount), currency: row.movement.currency, amountUSD: Number(row.movement.amountUsdEquivalent), exchangeRate: Number(row.movement.exchangeRateSypPerUsd), partnerId: row.movement.partnerId, warehouseId: row.movement.warehouseId, description: row.movement.description, createdAt: row.movement.createdAt.toISOString(), actor: row.actorName })), meta: { page, limit, total: total[0]?.count ?? 0 } };
   }
 
+  async daybook(user: AuthIdentity, query: Record<string, unknown>) {
+    const from = typeof query.dateFrom === 'string' && !Number.isNaN(Date.parse(query.dateFrom)) ? new Date(query.dateFrom) : undefined;
+    const to = typeof query.dateTo === 'string' && !Number.isNaN(Date.parse(query.dateTo)) ? new Date(`${query.dateTo}T23:59:59.999Z`) : undefined;
+    const scopedConditions = (warehouseColumn: any, createdColumn: any) => {
+      const conditions: any[] = [];
+      if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; conditions.push(ids.length ? inArray(warehouseColumn, ids) : sql`false`); }
+      if (from) conditions.push(gte(createdColumn, from)); if (to) conditions.push(lte(createdColumn, to));
+      return conditions.length ? and(...conditions) : undefined;
+    };
+    const [saleRows, purchaseRows, movementPage] = await Promise.all([
+      this.db.select({ id: salesInvoices.id, createdAt: salesInvoices.createdAt, number: salesInvoices.invoiceNumber, partner: salesInvoices.customerNameSnapshot, status: salesInvoices.status, actor: users.fullName,
+        goodsOut: sql<string>`coalesce((select sum(net_weight_grams) from sales_invoice_items where sales_invoice_id = ${salesInvoices.id}), 0)`,
+        scrapIn: sql<string>`coalesce((select sum(weight_grams) from sales_gold_exchanges where sales_invoice_id = ${salesInvoices.id}), 0)`,
+      }).from(salesInvoices).innerJoin(users, eq(users.id, salesInvoices.createdByUserId)).where(scopedConditions(salesInvoices.warehouseId, salesInvoices.createdAt)).orderBy(desc(salesInvoices.createdAt)).limit(200),
+      this.db.select({ id: purchaseInvoices.id, createdAt: purchaseInvoices.createdAt, number: purchaseInvoices.purchaseNumber, partner: purchaseInvoices.supplierNameSnapshot, status: purchaseInvoices.status, materialType: purchaseInvoices.materialType, actor: users.fullName,
+        weight: sql<string>`coalesce((select sum(net_weight_grams) from purchase_invoice_items where purchase_invoice_id = ${purchaseInvoices.id}), 0)`,
+      }).from(purchaseInvoices).innerJoin(users, eq(users.id, purchaseInvoices.createdByUserId)).where(scopedConditions(purchaseInvoices.warehouseId, purchaseInvoices.createdAt)).orderBy(desc(purchaseInvoices.createdAt)).limit(200),
+      this.listMovements(user, { dateFrom: query.dateFrom as string | undefined, dateTo: query.dateTo as string | undefined, page: 1, limit: 200 }),
+    ]);
+    const blankMoney = { sypIn: 0, sypOut: 0, usdIn: 0, usdOut: 0 };
+    const rows = [
+      ...saleRows.map(row => ({ id: `sale-${row.id}`, occurredAt: row.createdAt.toISOString(), reference: row.number, goods: row.partner, goodsOut: row.status === 'posted' ? Number(row.goodsOut) : 0, goodsIn: 0, scrapIn: row.status === 'posted' ? Number(row.scrapIn) : 0, scrapOut: 0, description: `${row.status === 'cancelled' ? 'ملغاة — ' : ''}فاتورة بيع ${row.number} — ${row.partner}`, ...blankMoney, actor: row.actor })),
+      ...purchaseRows.map(row => ({ id: `purchase-${row.id}`, occurredAt: row.createdAt.toISOString(), reference: row.number, goods: row.partner, goodsOut: 0, goodsIn: row.status === 'posted' && row.materialType === 'new' ? Number(row.weight) : 0, scrapIn: row.status === 'posted' && row.materialType === 'scrap' ? Number(row.weight) : 0, scrapOut: 0, description: `${row.status === 'cancelled' ? 'ملغاة — ' : ''}فاتورة شراء ${row.number} — ${row.partner}`, ...blankMoney, actor: row.actor })),
+      ...movementPage.items.map(row => ({ id: `cash-${row.id}`, occurredAt: row.createdAt, reference: row.voucherNumber || '', goods: row.cashboxName, goodsOut: 0, goodsIn: 0, scrapIn: 0, scrapOut: 0, description: row.description,
+        sypIn: row.currency === 'SYP' && row.direction === 'inflow' ? row.amount : 0, sypOut: row.currency === 'SYP' && row.direction === 'outflow' ? row.amount : 0,
+        usdIn: row.currency === 'USD' && row.direction === 'inflow' ? row.amount : 0, usdOut: row.currency === 'USD' && row.direction === 'outflow' ? row.amount : 0, actor: row.actor })),
+    ].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+    return { items: rows, total: rows.length };
+  }
+
   // The partner statement is rebuilt from immutable ledger entries every time it is read.
   async partnerStatement(user: AuthIdentity, partnerId: string, query: Record<string, unknown>) {
     partnerId = uuid(partnerId, 'id');
