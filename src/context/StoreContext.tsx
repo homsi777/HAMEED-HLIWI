@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import { io } from 'socket.io-client';
 import {
   GeneralSettings,
   GoldPriceSetting,
@@ -200,10 +201,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
   };
 
 
-  // The server is the source of truth for the shop's operating parameters. It is read on mount
-  // and again whenever the app comes back to the front, which is what makes a manager's rate
-  // change reach a seller's phone. The backend also emits `settings.changed` over the realtime
-  // gateway; there is no socket client in this app yet, so convergence is on focus instead.
+  // The server is the source of truth for the shop's operating parameters.
   const applyServerSettings = React.useCallback((server: Awaited<ReturnType<typeof settingsApi.get>>) => {
     const { goldPrices: serverPrices, isProvisional, version, updatedAt, ...general } = server;
     setSettings(prev => ({ ...prev, ...general }));
@@ -219,6 +217,16 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
     const onFocus = () => load();
     window.addEventListener('focus', onFocus);
     return () => { cancelled = true; window.removeEventListener('focus', onFocus); };
+  }, [applyServerSettings]);
+
+  // A manager's saved gold price or exchange rate reaches every authenticated seller session
+  // immediately. The event carries a version only; the client re-reads the authoritative values
+  // so an interrupted or delayed socket message can never apply a partial price table.
+  React.useEffect(() => {
+    const socket = io('/realtime', { withCredentials: true, transports: ['websocket', 'polling'] });
+    const refreshSettings = () => { void settingsApi.get().then(applyServerSettings).catch(() => undefined); };
+    socket.on('settings.changed', refreshSettings);
+    return () => { socket.off('settings.changed', refreshSettings); socket.disconnect(); };
   }, [applyServerSettings]);
 
   // TASK 18: saved on the server, then re-read from its answer. The local state is never the
