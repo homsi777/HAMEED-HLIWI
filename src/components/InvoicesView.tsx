@@ -58,6 +58,7 @@ interface InvoicesViewProps {
   canViewSuppliers?: boolean;
   /** Whether this session holds the purchases module. A seller does not. */
   canPurchase?: boolean;
+  canCorrect?: boolean;
 }
 
 const money = (value: number) => Number(value.toFixed(2));
@@ -86,7 +87,7 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
   };
 };
 
-export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true, canViewInventory = true, canViewSuppliers = true }) => {
+export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true, canViewInventory = true, canViewSuppliers = true, canCorrect = false }) => {
   const {
     inventory: legacyInventory,
     partners,
@@ -162,17 +163,6 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   useEffect(() => { if (canPurchase) void refreshServerPurchases(); }, [purchasesPage, canPurchase]);
   useEffect(() => { void refreshServerReturns(); }, [returnsPage]);
   useEffect(() => { void refreshCustomers(); void refreshSuppliers(); void refreshOperationalStock(); }, [canViewSuppliers, canViewInventory]);
-  useEffect(() => {
-    const query = invPartnerName.trim();
-    if (invType !== 'sale' || query.length < 2) { setCustomerSuggestions([]); return; }
-    const timer = window.setTimeout(() => {
-      partnersApi.list({ type: 'customer', search: query, page: 1, limit: 12, sort: 'name', order: 'asc' })
-        .then(response => setCustomerSuggestions(response.items))
-        .catch(() => setCustomerSuggestions([]));
-    }, 220);
-    return () => window.clearTimeout(timer);
-  }, [invPartnerName, invType]);
-
   // 3-Dots Invoice Actions Menu State (Fixed Viewport Position to avoid clipping)
   const [activeMenu, setActiveMenu] = useState<{ inv: Invoice; top: number; left: number } | null>(null);
 
@@ -393,6 +383,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
   // New Invoice Wizard Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [correctionSource, setCorrectionSource] = useState<{ id: string; type: 'sale' | 'purchase'; reason: string } | null>(null);
   const [invType, setInvType] = useState<InvoiceType>(initialType || 'sale');
   const [invPartnerId, setInvPartnerId] = useState('');
   const [invPartnerName, setInvPartnerName] = useState('');
@@ -439,6 +430,17 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const [paidUSD, setPaidUSD] = useState('');
   const [paidSYP, setPaidSYP] = useState('');
   const [itemPhotoUrl, setItemPhotoUrl] = useState(''); // صورة ضمان القطعة المباعة/المشتراة
+
+  useEffect(() => {
+    const query = invPartnerName.trim();
+    if (invType !== 'sale' || query.length < 2) { setCustomerSuggestions([]); return; }
+    const timer = window.setTimeout(() => {
+      partnersApi.list({ type: 'customer', search: query, page: 1, limit: 12, sort: 'name', order: 'asc' })
+        .then(response => setCustomerSuggestions(response.items))
+        .catch(() => setCustomerSuggestions([]));
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [invPartnerName, invType]);
 
   // The scanner deliberately lives inside the stock picker: closing it stops only its camera
   // stream and leaves the invoice form, entered prices, and the approved layout untouched.
@@ -566,6 +568,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
   // Trigger open creation modal
   const handleOpenCreateModal = (type: InvoiceType = 'sale') => {
+    setCorrectionSource(null);
     setInvType(type);
     setInvPartnerId('');
     setInvPartnerName('');
@@ -599,6 +602,21 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     if (initialType) handleOpenCreateModal(initialType);
   }, [initialType]);
   useEffect(() => { if (initialSearch) setSearchQuery(initialSearch); }, [initialSearch]);
+
+  const handleCorrectInvoice = async (invoice: Invoice) => {
+    if (invoice.type !== 'sale' && invoice.type !== 'purchase') return;
+    const reason = window.prompt('سبب تصحيح الفاتورة')?.trim();
+    if (!reason) return;
+    try {
+      const full = invoice.type === 'sale' ? await salesApi.get(invoice.id) : await purchasesApi.get(invoice.id);
+      if (full.status !== 'posted' || (invoice.type === 'sale' && full.returnCount && full.returnCount > 0)) { alert('لا يمكن تصحيح فاتورة ملغاة أو مرتبطة بمرتجع.'); return; }
+      handleOpenCreateModal(invoice.type);
+      setInvWarehouseId(full.warehouseId); setInvPartnerId(full.customerOrSupplierId); setInvPartnerName(full.customerOrSupplierName); setInvCustomerPhone(full.customerPhone || '');
+      setInvItems(full.items.map(item => item.itemId && inventory.find(stock => stock.id === item.itemId)?.isManualSaleEntry ? { ...item, itemId: undefined } : item)); setScrapItems(full.scrapGoldItems || []); setInvDiscountUSD(full.discountUSD ? String(full.discountUSD) : ''); setPaidUSD(full.paidUSD ? String(full.paidUSD) : ''); setPaidSYP(full.paidSYP ? String(full.paidSYP) : ''); setInvPaymentMethod(full.paymentMethod); setInvNotes(full.notes || ''); setItemPhotoUrl(full.itemPhotoUrl || '');
+      if (invoice.type === 'purchase') setPurchaseMaterialType(full.materialType || 'new');
+      setCorrectionSource({ id: full.id, type: invoice.type, reason }); setActiveMenu(null);
+    } catch (error: any) { alert(error?.message || 'تعذر تجهيز تصحيح الفاتورة.'); }
+  };
 
   // Select item from available stock
   const handleAddStockItemToInvoice = (itemToAdd?: any) => {
@@ -796,18 +814,20 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       try {
         // Resolving or creating the customer is deliberately part of the sale request.  A
         // seller therefore cannot end up with a newly-created customer but a failed invoice.
-        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId: invPartnerId || undefined, customerName: partnerName, customerPhone: invCustomerPhone, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        const saleInput = { warehouseId: invWarehouseId, customerId: invPartnerId || undefined, customerName: partnerName, customerPhone: invCustomerPhone, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() };
+        const newInv = correctionSource?.type === 'sale' ? (await salesApi.correct(correctionSource.id, { ...saleInput, correctionReason: correctionSource.reason })).replacement : await salesApi.create(saleInput);
         setInvPartnerId(newInv.customerOrSupplierId);
         await refreshCustomers();
-        await refreshServerSales(); setShowCreateModal(false); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
+        await refreshServerSales(); setShowCreateModal(false); setCorrectionSource(null); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setSalesError(error?.message || 'تعذر حفظ فاتورة البيع.'); return; }
     }
     if (invType === 'purchase') {
       try {
         let supplierId = invPartnerId;
         if (!supplierId) { const supplier = await partnersApi.create({ name: partnerName, type: 'supplier', phone: invCustomerPhone, address: 'حلب - سوريا' }); supplierId = supplier.id; setInvPartnerId(supplier.id); await refreshSuppliers(); }
-        const newInv = await purchasesApi.create({ warehouseId: invWarehouseId, supplierId, materialType: purchaseMaterialType, items: invItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod === 'gold_exchange' ? 'debt' : invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
-        await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); setShowCreateModal(false); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
+        const purchaseInput = { warehouseId: invWarehouseId, supplierId, materialType: purchaseMaterialType, items: invItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod === 'gold_exchange' ? 'debt' as const : invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() };
+        const newInv = correctionSource?.type === 'purchase' ? (await purchasesApi.correct(correctionSource.id, { ...purchaseInput, correctionReason: correctionSource.reason })).replacement : await purchasesApi.create(purchaseInput);
+        await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); setShowCreateModal(false); setCorrectionSource(null); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setPurchasesError(error?.message || 'تعذر حفظ فاتورة الشراء.'); return; }
     }
     // Returns are created from their own PostgreSQL-backed wizard, never from this form.
@@ -1126,6 +1146,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
             </div>
 
             {/* Step 1: Customer & Warehouse Selection Header */}
+            {correctionSource && <div className="rounded-sm border-2 border-amber-400 bg-amber-50 p-2.5 text-xs font-bold text-amber-950">وضع تصحيح فاتورة: عند الحفظ ستُعكس الفاتورة الأصلية وقيودها، ثم تُنشأ فاتورة مصححة جديدة.</div>}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 bg-slate-50 p-2.5 sm:p-4 rounded-sm border border-slate-200 text-xs">
               <div>
                 <label className="block font-bold text-slate-700 mb-0.5 sm:mb-1">اسم الزبون / المورد *</label>
@@ -2026,6 +2047,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                 <span>طباعة الفاتورة</span>
               </button>
               
+              {canCorrect && (activeMenu.inv.type === 'sale' || activeMenu.inv.type === 'purchase') && activeMenu.inv.status !== 'cancelled' && <button
+                onClick={() => void handleCorrectInvoice(activeMenu.inv)}
+                className="w-full px-3 py-2 text-slate-800 hover:bg-amber-100 flex items-center gap-2 transition font-bold"
+              >
+                <Pencil className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>تعديل / تصحيح الفاتورة</span>
+              </button>}
+
               <button
                 onClick={() => void handleReturnInvoice(activeMenu.inv)}
                 className="w-full px-3 py-2 text-slate-800 hover:bg-amber-100 flex items-center gap-2 transition"

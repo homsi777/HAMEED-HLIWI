@@ -95,7 +95,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 
           {activeTab === 'inventory' && <InventoryView />}
 
-          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} canViewInventory={permissions.includes('inventory.view')} canViewSuppliers={permissions.includes('suppliers.view')} />}
+          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} canViewInventory={permissions.includes('inventory.view')} canViewSuppliers={permissions.includes('suppliers.view')} canCorrect={permissions.includes('sales.update') || permissions.includes('purchases.create')} />}
 
           {activeTab === 'partners' && <PartnersView />}
           {/* ذمم الأوزان is a hub: the two screens below are opened from it, not from the sidebar. */}
