@@ -26,7 +26,8 @@ import {
   ChevronDown,
   MoreVertical,
   FileDown,
-  Share2
+  Share2,
+  Settings2
 } from 'lucide-react';
 import { VoucherType, GoldKarat } from '../types';
 import { financeApi, type ApiCashbox, type ApiCashMovement, type ApiPartnerBalance, type ApiVoucher } from '../services/financeApi';
@@ -36,9 +37,16 @@ import { PrintVoucherModal } from './PrintVoucherModal';
 interface FinanceViewProps {
   activeTab?: string;
   setActiveTab?: (tab: string) => void;
+  onNewInvoice?: (type: 'sale' | 'purchase') => void;
 }
 
-export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-boxes', setActiveTab }) => {
+type JournalShortcut = 'sale' | 'purchase' | 'receipt' | 'payment' | 'expense' | 'transfer';
+const JOURNAL_SHORTCUTS: Array<{ id: JournalShortcut; label: string }> = [
+  { id: 'sale', label: 'بيع' }, { id: 'purchase', label: 'شراء' }, { id: 'receipt', label: 'سند قبض' },
+  { id: 'payment', label: 'سند صرف' }, { id: 'expense', label: 'مصروف' }, { id: 'transfer', label: 'نقل صندوق' },
+];
+
+export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-boxes', setActiveTab, onNewInvoice }) => {
   const {
     partners,
     formatMoney,
@@ -107,6 +115,28 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const [searchQuery, setSearchQuery] = useState('');
   const [voucherTypeFilter, setVoucherTypeFilter] = useState<'all' | 'receipt' | 'payment' | 'expense'>('all');
   const [journalDateRange, setJournalDateRange] = useState<'today' | 'week' | 'month' | 'all'>('today');
+  const [journalShortcutSettingsOpen, setJournalShortcutSettingsOpen] = useState(false);
+  const [journalShortcutIds, setJournalShortcutIds] = useState<JournalShortcut[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('HAMEED_HLIWI_JOURNAL_SHORTCUTS') || 'null');
+      return Array.isArray(saved) ? saved.filter((id): id is JournalShortcut => JOURNAL_SHORTCUTS.some(shortcut => shortcut.id === id)) : JOURNAL_SHORTCUTS.map(shortcut => shortcut.id);
+    } catch { return JOURNAL_SHORTCUTS.map(shortcut => shortcut.id); }
+  });
+
+  const runJournalShortcut = (id: JournalShortcut) => {
+    if (id === 'sale') return onNewInvoice?.('sale');
+    if (id === 'purchase') return onNewInvoice?.('purchase');
+    if (id === 'receipt') return handleOpenVoucherForm('receipt');
+    if (id === 'payment') return handleOpenVoucherForm('payment');
+    if (id === 'expense') return handleOpenVoucherForm('expense');
+    setShowTransferForm(true);
+  };
+
+  const toggleJournalShortcut = (id: JournalShortcut) => setJournalShortcutIds(current => {
+    const next = current.includes(id) ? current.filter(item => item !== id) : [...current, id];
+    localStorage.setItem('HAMEED_HLIWI_JOURNAL_SHORTCUTS', JSON.stringify(next));
+    return next;
+  });
 
   // ------------------ MODALS & FORMS ------------------
   // 1. Voucher Modal State (Print / Detailed View)
@@ -965,6 +995,24 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
               </div>
             </div>
           </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 rounded-sm border border-slate-200 bg-white p-2 shadow-sm">
+            {JOURNAL_SHORTCUTS.filter(shortcut => journalShortcutIds.includes(shortcut.id)).map(shortcut => (
+              <button key={shortcut.id} type="button" onClick={() => runJournalShortcut(shortcut.id)} className="rounded-sm bg-slate-900 px-2.5 py-2 text-[11px] font-bold text-amber-400 transition hover:bg-slate-800">
+                {shortcut.label}
+              </button>
+            ))}
+            <button type="button" onClick={() => setJournalShortcutSettingsOpen(true)} aria-label="إعداد الاختصارات" className="mr-auto rounded-sm border border-slate-300 bg-slate-50 p-2 text-slate-700 hover:bg-slate-100"><Settings2 className="h-4 w-4" /></button>
+          </div>
+
+          {journalShortcutSettingsOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4" onClick={() => setJournalShortcutSettingsOpen(false)}>
+            <div className="w-full max-w-sm rounded-sm border-2 border-slate-900 bg-white p-4 text-right shadow-2xl" onClick={event => event.stopPropagation()}>
+              <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2"><button type="button" onClick={() => setJournalShortcutSettingsOpen(false)} className="text-slate-500"><X className="h-5 w-5" /></button><h3 className="font-black text-slate-900">اختصارات دفتر اليومية</h3></div>
+              <div className="grid grid-cols-2 gap-2">
+                {JOURNAL_SHORTCUTS.map(shortcut => <label key={shortcut.id} className="flex cursor-pointer items-center gap-2 rounded-sm border border-slate-200 p-2 text-xs font-bold"><input type="checkbox" checked={journalShortcutIds.includes(shortcut.id)} onChange={() => toggleJournalShortcut(shortcut.id)} />{shortcut.label}</label>)}
+              </div>
+            </div>
+          </div>}
 
           {/* Daybook Stat Summary Ticker */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4">

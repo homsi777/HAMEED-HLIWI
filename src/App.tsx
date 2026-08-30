@@ -114,7 +114,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
           {(activeTab === 'finance-accounts' || activeTab === 'finance-ledger') && <AccountingView activeTab={activeTab} />}
 
           {activeTab.startsWith('finance') && activeTab !== 'finance-accounts' && activeTab !== 'finance-ledger' && (
-            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} />
+            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} onNewInvoice={handleNewInvoiceClick} />
           )}
 
           {activeTab === 'reports' && <ReportsView />}
