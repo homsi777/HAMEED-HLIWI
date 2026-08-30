@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StoreProvider } from './context/StoreContext';
+import { BiometricGate } from './components/BiometricGate';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -193,7 +194,9 @@ export default function App() {
   if (session.mode === 'unauthenticated' || !session.user || !session.scope) return <LoginView onLoggedIn={session.refresh} />;
   return (
     <StoreProvider identity={session.user}>
-      <MainAppContent authenticatedUser={session.user} scope={session.scope} onLogout={() => { void logout(); }} />
+      <BiometricGate userId={session.user.id}>
+        <MainAppContent authenticatedUser={session.user} scope={session.scope} onLogout={() => { void logout(); }} />
+      </BiometricGate>
     </StoreProvider>
   );
 }

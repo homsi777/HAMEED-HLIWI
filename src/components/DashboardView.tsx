@@ -57,11 +57,13 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
   const [liveError, setLiveError] = useState('');
   useEffect(() => {
     let cancelled = false;
+    const today = new Date().toISOString().slice(0, 10);
     void Promise.all([
       reportsApi.overview(), reportsApi.receivables(), reportsApi.cash(),
       reportsApi.purchases(), reportsApi.inventory(), reportsApi.gold(), reportsApi.salesTimeline(14), reportsApi.activity(5),
-    ]).then(([overview, receivables, cash, purchases, inventory, gold, timeline, activity]) => {
-      if (!cancelled) setLive({ overview, receivables, cash, purchases, inventory, gold, timeline, activity });
+      reportsApi.sales({ from: today, to: today }), reportsApi.purchases({ from: today, to: today }), reportsApi.cash({ from: today, to: today }),
+    ]).then(([overview, receivables, cash, purchases, inventory, gold, timeline, activity, todaySales, todayPurchases, todayCash]) => {
+      if (!cancelled) setLive({ overview, receivables, cash, purchases, inventory, gold, timeline, activity, today: { sales: todaySales, purchases: todayPurchases, cash: todayCash } });
     }).catch((reason: any) => {
       // A manager without `reports.view` simply sees the screen without these figures.
       if (!cancelled) setLiveError(reason?.status === 403 ? '' : 'تعذر تحميل أرقام لوحة القيادة من الخادم.');
@@ -153,6 +155,11 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
   const sypCash = boxes.filter((box: any) => box.currency === 'SYP').reduce((sum: number, box: any) => sum + box.closingBalance, 0);
   const showMoney = (value: number, currency?: 'USD' | 'SYP') => live ? formatMoney(value, currency) : '—';
   const showWeight = (value: number, digits = 1) => live ? value.toLocaleString('ar-SY', { maximumFractionDigits: digits }) : '—';
+  const todaySalesUSD = live?.today?.sales?.totals?.valueUSD ?? 0;
+  const todayPurchasesUSD = live?.today?.purchases?.totals?.valueUSD ?? 0;
+  const todayCashBoxes = live?.today?.cash?.boxes ?? [];
+  const todayInUSD = todayCashBoxes.filter((box: any) => box.currency === 'USD').reduce((sum: number, box: any) => sum + box.periodInflow, 0);
+  const todayOutUSD = todayCashBoxes.filter((box: any) => box.currency === 'USD').reduce((sum: number, box: any) => sum + box.periodOutflow, 0);
 
   // Pie chart data for Karat distribution
   const pieData = [
@@ -246,6 +253,16 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
       </section>
 
       {liveError && <div role="alert" className="border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">{liveError}</div>}
+
+      <section className="border-2 border-slate-200 bg-white p-3 sm:p-4">
+        <div className="mb-3 flex items-center justify-between"><div><h2 className="text-sm font-black text-slate-900">أرصدة وحركة اليوم</h2><p className="text-[11px] text-slate-500">مباشرة من الفواتير والسندات المسجلة اليوم</p></div><span className="text-xs font-bold text-amber-700">{new Date().toLocaleDateString('ar-SY')}</span></div>
+        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div className="border-r-4 border-emerald-500 bg-emerald-50 p-3"><small className="block text-slate-600">مبيعات اليوم</small><b className="text-lg text-emerald-800">{showMoney(todaySalesUSD, 'USD')}</b></div>
+          <div className="border-r-4 border-amber-500 bg-amber-50 p-3"><small className="block text-slate-600">مشتريات اليوم</small><b className="text-lg text-amber-800">{showMoney(todayPurchasesUSD, 'USD')}</b></div>
+          <div className="border-r-4 border-sky-500 bg-sky-50 p-3"><small className="block text-slate-600">قبض اليوم</small><b className="text-lg text-sky-800">{showMoney(todayInUSD, 'USD')}</b></div>
+          <div className="border-r-4 border-rose-500 bg-rose-50 p-3"><small className="block text-slate-600">صرف اليوم</small><b className="text-lg text-rose-800">{showMoney(todayOutUSD, 'USD')}</b></div>
+        </div>
+      </section>
 
       {showShortcutSettings && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setShowShortcutSettings(false)}>
