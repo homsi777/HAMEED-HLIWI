@@ -6,7 +6,7 @@ const query = (values: Record<string, string | number | undefined>) => new URLSe
 // invoice is never rewritten, so this is the only honest way for the screen to say a sale
 // has come back. `remainingDebtUSD` already has the returned share taken off it.
 export type SalesInvoice = Invoice & { status: 'posted' | 'cancelled'; createdAt: string; cancelledAt: string | null; cancellationReason: string | null; payments?: unknown[]; itemCount?: number; customerOutstandingUSD?: number; returnedState?: 'none' | 'partial' | 'full'; returnedValueUSD?: number; returnCount?: number; };
-export type SaleInput = { warehouseId: string; customerId: string; items: InvoiceItem[]; scrapGoldItems: ScrapGoldItem[]; discountUSD: number; paidUSD: number; paidSYP: number; paymentMethod: PaymentMethod; exchangeRateSypPerUsd: number; notes?: string; itemPhotoUrl?: string; idempotencyKey: string; };
+export type SaleInput = { warehouseId: string; customerId?: string; customerName?: string; customerPhone?: string; items: InvoiceItem[]; scrapGoldItems: ScrapGoldItem[]; discountUSD: number; paidUSD: number; paidSYP: number; paymentMethod: PaymentMethod; exchangeRateSypPerUsd: number; notes?: string; itemPhotoUrl?: string; idempotencyKey: string; };
 /**
  * The invoice screen works with `itemId`, the API with `inventoryItemId`. Mapping it here
  * explicitly — rather than spreading the UI object — is what makes a stock sale actually

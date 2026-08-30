@@ -16,6 +16,7 @@ const invoiceTypeLabel = (type: Invoice['type']) => type === 'sale' ? 'فاتو�
 export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, onClose, financialTrail }) => {
   const { settings } = useStore();
   const isPurchaseInvoice = invoice.type === 'purchase';
+  const isPortrait = isPurchaseInvoice || Boolean(invoice.itemPhotoUrl);
   const blankRowCount = Math.max(0, (isPurchaseInvoice ? 10 : 6) - invoice.items.length - (invoice.scrapGoldItems?.length || 0));
   const remainingDebtUSD = Math.max(0, invoice.remainingDebtUSD ?? (invoice.finalTotalUSD - invoice.paidUSD));
 
@@ -24,17 +25,17 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
     pageStyle.dataset.invoiceA5Page = 'true';
     // Safari/iOS does not reliably honour the `landscape` keyword. Explicit physical
     // dimensions give Windows, Android and iPhone the same paper geometry.
-    pageStyle.textContent = `@page { size: ${isPurchaseInvoice ? '148mm 210mm' : '210mm 148mm'}; margin: 0; }`;
+    pageStyle.textContent = `@page { size: ${isPortrait ? '148mm 210mm' : '210mm 148mm'}; margin: 0; }`;
     document.head.appendChild(pageStyle);
     document.body.classList.add('invoice-a5-print-active');
-    if (isPurchaseInvoice) document.body.classList.add('invoice-a5-print-portrait');
+    if (isPortrait) document.body.classList.add('invoice-a5-print-portrait');
 
     return () => {
       pageStyle.remove();
       document.body.classList.remove('invoice-a5-print-active');
       document.body.classList.remove('invoice-a5-print-portrait');
     };
-  }, [isPurchaseInvoice]);
+  }, [isPortrait]);
 
   return (
     <div className="invoice-print-overlay fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overflow-x-hidden bg-slate-950/80 p-2 backdrop-blur-sm sm:items-center sm:p-4">
@@ -44,7 +45,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
           <div className="flex shrink-0 items-center gap-2"><button onClick={() => window.print()} className="flex items-center gap-2 bg-amber-400 px-2 py-2 text-[11px] font-black text-slate-900 sm:px-4 sm:text-xs"><Printer className="h-4 w-4" /><span className="hidden sm:inline">طباعة أو تصدير PDF</span><span className="sm:hidden">طباعة</span></button><button onClick={onClose} aria-label="إغلاق" className="bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
         </div>
 
-        <section className={`invoice-print-sheet${isPurchaseInvoice ? ' invoice-print-sheet-portrait' : ''}`} dir="rtl">
+        <section className={`invoice-print-sheet${isPortrait ? ' invoice-print-sheet-portrait' : ''}`} dir="rtl">
           <header className="invoice-paper-header">
             <div className="invoice-contact" dir="ltr">
               <b>{settings.phone1 || '021 263 6064'}</b>
@@ -86,6 +87,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
             <div className="invoice-paper-remaining">المتبقي على الحساب: $ {remainingDebtUSD.toFixed(2)}</div>
             <div className="invoice-paper-footer"><span>مجوهرات حليوي</span><span>{settings.phone1} {settings.phone2 ? `- ${settings.phone2}` : ''}</span><span>شكراً لثقتكم بنا</span></div>
           </div>
+          {invoice.itemPhotoUrl && <figure className="invoice-paper-photo"><img src={invoice.itemPhotoUrl} alt="صورة القطعة المرفقة بالفاتورة" /></figure>}
           <p className="invoice-paper-disclaimer">لسنا مسؤولين عن قياس الذهب بعد الاستعمال، تفقد القطعة صياغتها بعد الاستلام.</p>
         </section>
 

@@ -771,9 +771,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
     if (invType === 'sale') {
       try {
-        let customerId = invPartnerId;
-        if (!customerId) { const partner = await partnersApi.create({ name: partnerName, type: 'customer', phone: invCustomerPhone, address: 'حلب - سوريا' }); customerId = partner.id; setInvPartnerId(partner.id); }
-        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        // Resolving or creating the customer is deliberately part of the sale request.  A
+        // seller therefore cannot end up with a newly-created customer but a failed invoice.
+        const newInv = await salesApi.create({ warehouseId: invWarehouseId, customerId: invPartnerId || undefined, customerName: partnerName, customerPhone: invCustomerPhone, items: invItems, scrapGoldItems: scrapItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() });
+        setInvPartnerId(newInv.customerOrSupplierId);
+        await refreshCustomers();
         await refreshServerSales(); setShowCreateModal(false); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
       } catch (error: any) { setSalesError(error?.message || 'تعذر حفظ فاتورة البيع.'); return; }
     }
