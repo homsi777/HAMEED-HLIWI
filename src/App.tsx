@@ -55,6 +55,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
   const [historyPreset, setHistoryPreset] = useState<{ filters: HistoryFilters; tab: 'invoices' | 'weights' } | null>(null);
   const [shiftPreset, setShiftPreset] = useState<string | undefined>();
   const [invoiceSearch, setInvoiceSearch] = useState<string | undefined>();
+  const [invoiceReturnTab, setInvoiceReturnTab] = useState<string | null>(null);
 
   const openHistoryForShift = (shiftId: string, tab: 'invoices' | 'weights') => {
     setHistoryPreset({ filters: { shiftId }, tab });
@@ -68,8 +69,22 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
   }, [modules, activeTab]);
 
   const handleNewInvoiceClick = (type: 'sale' | 'purchase') => {
+    setInvoiceReturnTab(null);
     setInvoiceTypeTrigger(type);
     setActiveTab('invoices');
+  };
+
+  const handleJournalInvoiceClick = (type: 'sale' | 'purchase') => {
+    setInvoiceReturnTab('finance-journal');
+    setInvoiceTypeTrigger(type);
+    setActiveTab('invoices');
+  };
+
+  const handleInvoiceSaveCompleted = () => {
+    if (!invoiceReturnTab) return;
+    const returnTab = invoiceReturnTab;
+    setInvoiceReturnTab(null);
+    setActiveTab(returnTab);
   };
 
   return (
@@ -95,7 +110,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 
           {activeTab === 'inventory' && <InventoryView />}
 
-          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} canViewInventory={permissions.includes('inventory.view')} canViewSuppliers={permissions.includes('suppliers.view')} canCorrect={permissions.includes('sales.update') || permissions.includes('purchases.create')} />}
+          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} canViewInventory={permissions.includes('inventory.view')} canViewSuppliers={permissions.includes('suppliers.view')} canCorrect={permissions.includes('sales.update') || permissions.includes('purchases.create')} onSaveCompleted={handleInvoiceSaveCompleted} />}
 
           {activeTab === 'partners' && <PartnersView />}
           {/* ذمم الأوزان is a hub: the two screens below are opened from it, not from the sidebar. */}
@@ -114,7 +129,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
           {(activeTab === 'finance-accounts' || activeTab === 'finance-ledger') && <AccountingView activeTab={activeTab} />}
 
           {activeTab.startsWith('finance') && activeTab !== 'finance-accounts' && activeTab !== 'finance-ledger' && (
-            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} onNewInvoice={handleNewInvoiceClick} />
+            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} onNewInvoice={handleJournalInvoiceClick} />
           )}
 
           {activeTab === 'reports' && <ReportsView />}

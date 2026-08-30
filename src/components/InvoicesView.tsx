@@ -59,6 +59,7 @@ interface InvoicesViewProps {
   /** Whether this session holds the purchases module. A seller does not. */
   canPurchase?: boolean;
   canCorrect?: boolean;
+  onSaveCompleted?: () => void;
 }
 
 const money = (value: number) => Number(value.toFixed(2));
@@ -87,7 +88,7 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
   };
 };
 
-export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true, canViewInventory = true, canViewSuppliers = true, canCorrect = false }) => {
+export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true, canViewInventory = true, canViewSuppliers = true, canCorrect = false, onSaveCompleted }) => {
   const {
     inventory: legacyInventory,
     partners,
@@ -279,6 +280,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
   // Printable Invoice Modal State
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<Invoice | null>(null);
+  const [returnAfterPrint, setReturnAfterPrint] = useState(false);
   const isLargeScreen = useIsLargeScreen();
   const [invoiceFinancials, setInvoiceFinancials] = useState<{ invoiceId: string; vouchers: any[]; outstandingUSD: number } | null>(null);
   const [invoiceJournals, setInvoiceJournals] = useState<ApiJournal[]>([]);
@@ -818,7 +820,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
         const newInv = correctionSource?.type === 'sale' ? (await salesApi.correct(correctionSource.id, { ...saleInput, correctionReason: correctionSource.reason })).replacement : await salesApi.create(saleInput);
         setInvPartnerId(newInv.customerOrSupplierId);
         await refreshCustomers();
-        await refreshServerSales(); setShowCreateModal(false); setCorrectionSource(null); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
+        await refreshServerSales(); setShowCreateModal(false); setCorrectionSource(null); if (!invItems.some(item => !item.itemId)) notifyNewSale(newInv); if (andPrint) { setReturnAfterPrint(true); setSelectedInvoiceForPrint(newInv); } else onSaveCompleted?.(); return;
       } catch (error: any) { setSalesError(error?.message || 'تعذر حفظ فاتورة البيع.'); return; }
     }
     if (invType === 'purchase') {
@@ -827,7 +829,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
         if (!supplierId) { const supplier = await partnersApi.create({ name: partnerName, type: 'supplier', phone: invCustomerPhone, address: 'حلب - سوريا' }); supplierId = supplier.id; setInvPartnerId(supplier.id); await refreshSuppliers(); }
         const purchaseInput = { warehouseId: invWarehouseId, supplierId, materialType: purchaseMaterialType, items: invItems, discountUSD, paidUSD: numPaidUSD, paidSYP: numPaidSYP, paymentMethod: invPaymentMethod === 'gold_exchange' ? 'debt' as const : invPaymentMethod, exchangeRateSypPerUsd: settings.usdToSypRate, notes: invNotes, itemPhotoUrl: itemPhotoUrl || undefined, idempotencyKey: crypto.randomUUID() };
         const newInv = correctionSource?.type === 'purchase' ? (await purchasesApi.correct(correctionSource.id, { ...purchaseInput, correctionReason: correctionSource.reason })).replacement : await purchasesApi.create(purchaseInput);
-        await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); setShowCreateModal(false); setCorrectionSource(null); if (andPrint) setSelectedInvoiceForPrint(newInv); return;
+        await Promise.all([refreshServerPurchases(), refreshOperationalStock()]); setShowCreateModal(false); setCorrectionSource(null); if (andPrint) { setReturnAfterPrint(true); setSelectedInvoiceForPrint(newInv); } else onSaveCompleted?.(); return;
       } catch (error: any) { setPurchasesError(error?.message || 'تعذر حفظ فاتورة الشراء.'); return; }
     }
     // Returns are created from their own PostgreSQL-backed wizard, never from this form.
@@ -2105,7 +2107,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       {selectedInvoiceForPrint && (
         <PrintInvoiceModal
           invoice={selectedInvoiceForPrint}
-          onClose={() => { setSelectedInvoiceForPrint(null); setInvoiceFinancials(null); setInvoiceJournals([]); }}
+          onClose={() => { setSelectedInvoiceForPrint(null); setInvoiceFinancials(null); setInvoiceJournals([]); if (returnAfterPrint) { setReturnAfterPrint(false); onSaveCompleted?.(); } }}
           financialTrail={!isLargeScreen && invoiceTrail ? invoiceTrail : undefined}
         />
       )}
