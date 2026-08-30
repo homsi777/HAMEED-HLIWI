@@ -107,6 +107,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const [returnsTotal, setReturnsTotal] = useState(0);
   const [returnsError, setReturnsError] = useState('');
   const [serverCustomers, setServerCustomers] = useState<ApiPartner[]>([]);
+  const [customerSuggestions, setCustomerSuggestions] = useState<ApiPartner[]>([]);
   const [serverSuppliers, setServerSuppliers] = useState<ApiPartner[]>([]);
   const [serverWarehouses, setServerWarehouses] = useState<typeof legacyWarehouses>([]);
   const [serverInventory, setServerInventory] = useState<typeof legacyInventory>([]);
@@ -161,6 +162,16 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   useEffect(() => { if (canPurchase) void refreshServerPurchases(); }, [purchasesPage, canPurchase]);
   useEffect(() => { void refreshServerReturns(); }, [returnsPage]);
   useEffect(() => { void refreshCustomers(); void refreshSuppliers(); void refreshOperationalStock(); }, [canViewSuppliers, canViewInventory]);
+  useEffect(() => {
+    const query = invPartnerName.trim();
+    if (invType !== 'sale' || query.length < 2) { setCustomerSuggestions([]); return; }
+    const timer = window.setTimeout(() => {
+      partnersApi.list({ type: 'customer', search: query, page: 1, limit: 12, sort: 'name', order: 'asc' })
+        .then(response => setCustomerSuggestions(response.items))
+        .catch(() => setCustomerSuggestions([]));
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [invPartnerName, invType]);
 
   // 3-Dots Invoice Actions Menu State (Fixed Viewport Position to avoid clipping)
   const [activeMenu, setActiveMenu] = useState<{ inv: Invoice; top: number; left: number } | null>(null);
@@ -1124,10 +1135,10 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                     placeholder="اكتب اسم الزبون..."
                     value={invPartnerName}
                     list={invType === 'sale' ? 'sales-customers' : invType === 'purchase' ? 'purchase-suppliers' : undefined}
-                    onChange={e => { const name = e.target.value; setInvPartnerName(name); const partner = (invType === 'sale' ? serverCustomers : serverSuppliers).find(candidate => candidate.name === name); setInvPartnerId(partner?.id || ''); if (partner) setInvCustomerPhone(partner.phone || ''); }}
+                    onChange={e => { const name = e.target.value; setInvPartnerName(name); const candidates = invType === 'sale' ? [...customerSuggestions, ...serverCustomers] : serverSuppliers; const partner = candidates.find(candidate => candidate.name.trim().toLocaleLowerCase('ar') === name.trim().toLocaleLowerCase('ar')); setInvPartnerId(partner?.id || ''); if (partner) setInvCustomerPhone(partner.phone || ''); }}
                     className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-sm text-slate-800 font-bold"
                   />
-                  {invType === 'sale' && <datalist id="sales-customers">{serverCustomers.map(partner => <option key={partner.id} value={partner.name}>{partner.phone}</option>)}</datalist>}
+                  {invType === 'sale' && <datalist id="sales-customers">{(customerSuggestions.length ? customerSuggestions : serverCustomers).map(partner => <option key={partner.id} value={partner.name}>{partner.phone}</option>)}</datalist>}
                   {invType === 'purchase' && <datalist id="purchase-suppliers">{serverSuppliers.map(partner => <option key={partner.id} value={partner.name}>{partner.phone}</option>)}</datalist>}
                   <button
                     type="button"
