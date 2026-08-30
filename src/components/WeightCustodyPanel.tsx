@@ -16,13 +16,13 @@ type PersonChoice = { custodyPersonId?: string; partnerId?: string; name?: strin
  * The person may be an existing custody person, an existing partner of any role, or a name
  * typed on the spot. Nothing here creates a Customer, and every total comes from the server.
  */
-export const WeightCustodyPanel: React.FC<{ warehouseId?: string }> = ({ warehouseId }) => {
+export const WeightCustodyPanel: React.FC<{ warehouseId?: string; initialForm?: 'hand_out' | 'receive'; onFormFinished?: () => void }> = ({ warehouseId, initialForm, onFormFinished }) => {
   const [cards, setCards] = useState<CustodyCard[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [includeSettled, setIncludeSettled] = useState(false);
-  const [form, setForm] = useState<'hand_out' | 'receive' | null>(null);
+  const [form, setForm] = useState<'hand_out' | 'receive' | null>(initialForm ?? null);
   const [openPerson, setOpenPerson] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -102,7 +102,7 @@ export const WeightCustodyPanel: React.FC<{ warehouseId?: string }> = ({ warehou
         </div>
       )}
 
-      {form && <MovementSheet kind={form} warehouseId={warehouseId} onClose={() => setForm(null)} onDone={async () => { setForm(null); await load(); }} />}
+      {form && <MovementSheet kind={form} warehouseId={warehouseId} onClose={() => { setForm(null); onFormFinished?.(); }} onDone={async () => { setForm(null); await load(); onFormFinished?.(); }} />}
       {openPerson && <PersonSheet personId={openPerson} onClose={() => setOpenPerson(null)} />}
     </div>
   );

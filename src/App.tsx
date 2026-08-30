@@ -57,6 +57,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
   const [invoiceSearch, setInvoiceSearch] = useState<string | undefined>();
   const [invoiceReturnTab, setInvoiceReturnTab] = useState<string | null>(null);
   const [employeeQuickFromJournal, setEmployeeQuickFromJournal] = useState(false);
+  const [weightQuickFromJournal, setWeightQuickFromJournal] = useState<'hand_out' | 'receive' | null>(null);
 
   const openHistoryForShift = (shiftId: string, tab: 'invoices' | 'weights') => {
     setHistoryPreset({ filters: { shiftId }, tab });
@@ -125,14 +126,14 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
               canAdjust={permissions.includes('gold_accounts.adjust')}
             />
           )}
-          {activeTab === 'gold-custody' && <WeightCustodyView onBack={() => setActiveTab('gold-weight-accounts')} />}
+          {activeTab === 'gold-custody' && <WeightCustodyView onBack={() => { if (weightQuickFromJournal) { setWeightQuickFromJournal(null); returnToJournal(); } else setActiveTab('gold-weight-accounts'); }} initialForm={weightQuickFromJournal ?? undefined} onFormFinished={weightQuickFromJournal ? () => { setWeightQuickFromJournal(null); returnToJournal(); } : undefined} />}
           {activeTab === 'gold-used' && <UsedGoldView onBack={() => setActiveTab('gold-weight-accounts')} />}
           {activeTab === 'gold-openings' && <GoldOpeningsView onBack={() => setActiveTab('gold-weight-accounts')} />}
 
           {(activeTab === 'finance-accounts' || activeTab === 'finance-ledger') && <AccountingView activeTab={activeTab} />}
 
           {activeTab.startsWith('finance') && activeTab !== 'finance-accounts' && activeTab !== 'finance-ledger' && (
-            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} onNewInvoice={handleJournalInvoiceClick} onEmployeeAdvance={() => { setEmployeeQuickFromJournal(true); setActiveTab('employees'); }} />
+            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} onNewInvoice={handleJournalInvoiceClick} onEmployeeAdvance={() => { setEmployeeQuickFromJournal(true); setActiveTab('employees'); }} onWeightCustody={kind => { setWeightQuickFromJournal(kind); setActiveTab('gold-custody'); }} />
           )}
 
           {activeTab === 'reports' && <ReportsView />}

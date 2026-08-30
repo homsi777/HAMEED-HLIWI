@@ -9,7 +9,7 @@ import { inventoryApi } from '../services/inventoryApi';
  * الشاشة لا تُضيف منطقاً: اللوحة نفسها هي التي كانت داخل صفحة ذمم الأوزان، ونقلها إلى هنا
  * لا يغيّر حركاتها ولا صلاحياتها. الشاشة ليست في القائمة الجانبية، لذلك زر الرجوع إلزامي.
  */
-export const WeightCustodyView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+export const WeightCustodyView: React.FC<{ onBack: () => void; initialForm?: 'hand_out' | 'receive'; onFormFinished?: () => void }> = ({ onBack, initialForm, onFormFinished }) => {
   const [warehouseId, setWarehouseId] = useState('');
   useEffect(() => { void inventoryApi.warehouses().then(rows => setWarehouseId(current => current || rows[0]?.id || '')).catch(() => undefined); }, []);
 
@@ -27,7 +27,7 @@ export const WeightCustodyView: React.FC<{ onBack: () => void }> = ({ onBack }) 
         </div>
       </div>
 
-      <WeightCustodyPanel warehouseId={warehouseId || undefined} />
+      <WeightCustodyPanel warehouseId={warehouseId || undefined} initialForm={initialForm} onFormFinished={onFormFinished} />
     </div>
   );
 };

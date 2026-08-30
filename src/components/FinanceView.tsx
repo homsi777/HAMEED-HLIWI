@@ -39,15 +39,17 @@ interface FinanceViewProps {
   setActiveTab?: (tab: string) => void;
   onNewInvoice?: (type: 'sale' | 'purchase') => void;
   onEmployeeAdvance?: () => void;
+  onWeightCustody?: (kind: 'hand_out' | 'receive') => void;
 }
 
-type JournalShortcut = 'sale' | 'purchase' | 'receipt' | 'payment' | 'advance' | 'expense' | 'transfer';
+type JournalShortcut = 'sale' | 'purchase' | 'receipt' | 'payment' | 'advance' | 'expense' | 'weight_hand_out' | 'weight_receive' | 'transfer';
 const JOURNAL_SHORTCUTS: Array<{ id: JournalShortcut; label: string }> = [
   { id: 'sale', label: 'بيع' }, { id: 'purchase', label: 'شراء' }, { id: 'receipt', label: 'سند دخول' },
-  { id: 'payment', label: 'سند خروج' }, { id: 'advance', label: 'سلفة' }, { id: 'expense', label: 'مصروف' }, { id: 'transfer', label: 'نقل صندوق' },
+  { id: 'payment', label: 'سند خروج' }, { id: 'advance', label: 'سلفة' }, { id: 'expense', label: 'مصروف' },
+  { id: 'weight_hand_out', label: 'تسليم ذمة وزن' }, { id: 'weight_receive', label: 'استلام ذمة وزن' }, { id: 'transfer', label: 'نقل صندوق' },
 ];
 
-export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-boxes', setActiveTab, onNewInvoice, onEmployeeAdvance }) => {
+export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-boxes', setActiveTab, onNewInvoice, onEmployeeAdvance, onWeightCustody }) => {
   const {
     partners,
     formatMoney,
@@ -125,7 +127,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
       const saved = JSON.parse(localStorage.getItem('HAMEED_HLIWI_JOURNAL_SHORTCUTS') || 'null');
       if (!Array.isArray(saved)) return JOURNAL_SHORTCUTS.map(shortcut => shortcut.id);
       const valid = saved.filter((id): id is JournalShortcut => JOURNAL_SHORTCUTS.some(shortcut => shortcut.id === id));
-      return Array.from(new Set([...valid, 'advance', 'expense'])) as JournalShortcut[];
+      return Array.from(new Set([...valid, 'advance', 'expense', 'weight_hand_out', 'weight_receive'])) as JournalShortcut[];
     } catch { return JOURNAL_SHORTCUTS.map(shortcut => shortcut.id); }
   });
 
@@ -136,6 +138,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     if (id === 'payment') return handleOpenVoucherForm('payment');
     if (id === 'advance') return onEmployeeAdvance?.();
     if (id === 'expense') return handleOpenVoucherForm('expense');
+    if (id === 'weight_hand_out') return onWeightCustody?.('hand_out');
+    if (id === 'weight_receive') return onWeightCustody?.('receive');
     setShowTransferForm(true);
   };
 
