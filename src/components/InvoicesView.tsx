@@ -24,6 +24,7 @@ import {
   Upload,
   Image as ImageIcon,
   MoreVertical,
+  Pencil,
   RotateCcw,
   FileDown,
   Share2,
@@ -394,6 +395,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
   // Selected Stock Items or Custom Items for the invoice
   const [invItems, setInvItems] = useState<InvoiceItem[]>([]);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
 
   // Temp form for adding an item into invoice
   const [selectedStockItemId, setSelectedStockItemId] = useState('');
@@ -683,6 +685,16 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   // Remove item from invoice items draft
   const handleRemoveItemFromInvoice = (idx: number) => {
     setInvItems(prev => prev.filter((_, i) => i !== idx));
+    setEditingItemIndex(current => current === idx ? null : current !== null && current > idx ? current - 1 : current);
+  };
+
+  const updateDraftItem = (index: number, changes: Partial<InvoiceItem>) => {
+    setInvItems(previous => previous.map((item, currentIndex) => {
+      if (currentIndex !== index) return item;
+      const next = { ...item, ...changes };
+      const netWeightGrams = Math.max(0, Number(next.grossWeightGrams) - Number(next.stoneWeightGrams || 0));
+      return { ...next, netWeightGrams, totalPriceUSD: calculateItemPricing(netWeightGrams, Number(next.pricePerGramUSD), Number(next.laborFeeUSDPerGram)).totalPriceUSD };
+    }));
   };
 
   // Add scrap gold item (ذهب كسر مقايضة)
@@ -1448,6 +1460,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="font-black text-slate-900 text-xs">${item.totalPriceUSD.toFixed(2)}</span>
+                          <button type="button" onClick={() => setEditingItemIndex(idx)} aria-label="تعديل السطر" className="p-1 text-amber-700 hover:text-amber-900"><Pencil className="w-3.5 h-3.5" /></button>
                           <button
                             type="button"
                             onClick={() => handleRemoveItemFromInvoice(idx)}
@@ -1493,6 +1506,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                             $ {item.totalPriceUSD.toFixed(2)}
                           </td>
                           <td className="py-2 px-2 text-center font-sans">
+                            <button type="button" onClick={() => setEditingItemIndex(idx)} aria-label="تعديل السطر" className="text-amber-700 hover:text-amber-900 p-1"><Pencil className="w-3.5 h-3.5" /></button>
                             <button
                               type="button"
                               onClick={() => handleRemoveItemFromInvoice(idx)}
@@ -1507,6 +1521,17 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                   </tbody>
                 </table>
               </div>
+
+              {editingItemIndex !== null && invItems[editingItemIndex] && (() => {
+                const item = invItems[editingItemIndex];
+                return <div className="mt-2 grid grid-cols-2 gap-2 rounded-sm border-2 border-amber-300 bg-amber-50 p-2.5 text-xs sm:grid-cols-5">
+                  <input value={item.itemName} onChange={event => updateDraftItem(editingItemIndex, { itemName: event.target.value })} className="col-span-2 rounded-sm border border-amber-200 bg-white p-2 font-bold sm:col-span-1" aria-label="اسم القطعة" />
+                  <input type="number" min="0.001" step="0.001" value={item.grossWeightGrams} onChange={event => updateDraftItem(editingItemIndex, { grossWeightGrams: Number(event.target.value) || 0 })} className="rounded-sm border border-amber-200 bg-white p-2 font-mono" aria-label="الوزن" />
+                  <input type="number" min="0" step="0.01" value={item.pricePerGramUSD} onChange={event => updateDraftItem(editingItemIndex, { pricePerGramUSD: Number(event.target.value) || 0 })} className="rounded-sm border border-amber-200 bg-white p-2 font-mono" aria-label="سعر الغرام" />
+                  <input type="number" min="0" step="0.01" value={item.laborFeeUSDPerGram} onChange={event => updateDraftItem(editingItemIndex, { laborFeeUSDPerGram: Number(event.target.value) || 0 })} className="rounded-sm border border-amber-200 bg-white p-2 font-mono" aria-label="أجرة الغرام" />
+                  <button type="button" onClick={() => setEditingItemIndex(null)} className="rounded-sm bg-slate-900 px-3 py-2 font-bold text-white">حفظ تعديل السطر</button>
+                </div>;
+              })()}
             </div>
 
             {/* Step 3: Scrap Gold Trade-in (مقايضة ذهب كسر بديل) */}
