@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, modul
   // The two accounting screens sit under the same menu but answer to their own permission.
   const financeSubItems = [
     { id: 'finance-boxes', label: 'الصناديق والخزائن', icon: Building2, desc: 'حسابات السيولة والخزن', module: 'finance' },
-    { id: 'finance-vouchers', label: 'السندات المالية', icon: Receipt, desc: 'سندات قبض وصرف وقيد', module: 'finance' },
+    { id: 'finance-vouchers', label: 'السندات المالية', icon: Receipt, desc: 'سندات دخول وخروج وقيد', module: 'finance' },
     { id: 'finance-journal', label: 'دفتر اليومية العام', icon: BookOpen, desc: 'كشف الحركات والتسويات', module: 'finance' },
     { id: 'finance-expenses', label: 'المصاريف والتشغيل', icon: Coins, desc: 'مصاريف وإيجارات وطاقة', module: 'finance' },
     { id: 'finance-accounts', label: 'شجرة الحسابات', icon: Layers, desc: 'الدليل المحاسبي والمطابقة', module: 'accounting' },

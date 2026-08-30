@@ -56,6 +56,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
   const [shiftPreset, setShiftPreset] = useState<string | undefined>();
   const [invoiceSearch, setInvoiceSearch] = useState<string | undefined>();
   const [invoiceReturnTab, setInvoiceReturnTab] = useState<string | null>(null);
+  const [employeeQuickFromJournal, setEmployeeQuickFromJournal] = useState(false);
 
   const openHistoryForShift = (shiftId: string, tab: 'invoices' | 'weights') => {
     setHistoryPreset({ filters: { shiftId }, tab });
@@ -87,6 +88,8 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
     setActiveTab(returnTab);
   };
 
+  const returnToJournal = () => setActiveTab('finance-journal');
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-amber-400 selection:text-slate-900" dir="rtl">
       {/* Top Fixed Header with Gold Ticker */}
@@ -110,7 +113,7 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
 
           {activeTab === 'inventory' && <InventoryView />}
 
-          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} canViewInventory={permissions.includes('inventory.view')} canViewSuppliers={permissions.includes('suppliers.view')} canCorrect={permissions.includes('sales.update') || permissions.includes('purchases.create')} onSaveCompleted={handleInvoiceSaveCompleted} />}
+          {activeTab === 'invoices' && <InvoicesView initialType={invoiceTypeTrigger} initialSearch={invoiceSearch} canPurchase={modules.includes('purchases')} canViewInventory={permissions.includes('inventory.view')} canViewSuppliers={permissions.includes('suppliers.view')} canCorrect={permissions.includes('sales.update') || permissions.includes('purchases.create')} onSaveCompleted={handleInvoiceSaveCompleted} onCreateClosed={invoiceReturnTab ? handleInvoiceSaveCompleted : undefined} />}
 
           {activeTab === 'partners' && <PartnersView />}
           {/* ذمم الأوزان is a hub: the two screens below are opened from it, not from the sidebar. */}
@@ -129,13 +132,13 @@ function MainAppContent({ authenticatedUser, scope, onLogout }: { authenticatedU
           {(activeTab === 'finance-accounts' || activeTab === 'finance-ledger') && <AccountingView activeTab={activeTab} />}
 
           {activeTab.startsWith('finance') && activeTab !== 'finance-accounts' && activeTab !== 'finance-ledger' && (
-            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} onNewInvoice={handleJournalInvoiceClick} />
+            <FinanceView activeTab={activeTab} setActiveTab={setActiveTab} onNewInvoice={handleJournalInvoiceClick} onEmployeeAdvance={() => { setEmployeeQuickFromJournal(true); setActiveTab('employees'); }} />
           )}
 
           {activeTab === 'reports' && <ReportsView />}
 
           {activeTab === 'users' && <UsersView />}
-          {activeTab === 'employees' && <EmployeesView />}
+          {activeTab === 'employees' && <EmployeesView initialQuickType={employeeQuickFromJournal ? 'advance' : undefined} onQuickFinished={employeeQuickFromJournal ? () => { setEmployeeQuickFromJournal(false); returnToJournal(); } : undefined} />}
 
           {activeTab === 'history' && (
             <HistoryView

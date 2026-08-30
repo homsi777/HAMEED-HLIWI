@@ -188,7 +188,7 @@ export class FinanceService {
           partner = (await tx.select().from(partners).where(and(eq(partners.id, partnerId), eq(partners.isActive, true), isNull(partners.archivedAt))).limit(1))[0];
           if (!partner) throw new ConflictException('The selected partner is not active.');
         }
-        const systemNote = type === 'expense' ? `مصروف: ${expenseCategory}` : type === 'receipt' ? `قبض يدوي من ${partner.name}` : `صرف يدوي إلى ${partner.name}`;
+        const systemNote = type === 'expense' ? `مصروف: ${expenseCategory}` : type === 'receipt' ? `دخول يدوي من ${partner.name}` : `خروج يدوي إلى ${partner.name}`;
         const voucher = await this.posting.postVoucher(tx, user, {
           type, sourceType: type === 'expense' ? 'expense' : 'manual', partnerId, partnerName: partner?.name ?? null, warehouseId, cashboxId: explicitCashboxId,
           currency, amount, exchangeRateSypPerUsd: exchangeRate, systemNote, userNote, expenseCategory,
@@ -365,7 +365,7 @@ export class FinanceService {
   }
 
   private documentLabel(entryType: string) {
-    return entryType === 'sale' ? 'فاتورة بيع' : entryType === 'purchase' ? 'فاتورة شراء' : entryType === 'sales_return' ? 'مرتجع مبيعات' : entryType === 'purchase_return' ? 'مرتجع مشتريات' : entryType === 'receipt' ? 'سند قبض' : entryType === 'payment' ? 'سند صرف' : entryType === 'reversal' ? 'عكس قيد' : 'رصيد افتتاحي';
+    return entryType === 'sale' ? 'فاتورة بيع' : entryType === 'purchase' ? 'فاتورة شراء' : entryType === 'sales_return' ? 'مرتجع مبيعات' : entryType === 'purchase_return' ? 'مرتجع مشتريات' : entryType === 'receipt' ? 'سند دخول' : entryType === 'payment' ? 'سند خروج' : entryType === 'reversal' ? 'عكس قيد' : 'رصيد افتتاحي';
   }
 
   async partnerBalances(user: AuthIdentity, query: Record<string, unknown>) {

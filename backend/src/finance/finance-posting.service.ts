@@ -207,7 +207,7 @@ export class FinancePostingService {
         type: 'receipt', sourceType: 'sale', sourcePaymentId: payment.id, sourceDocumentNumber: input.invoiceNumber, salesInvoiceId: input.invoiceId,
         partnerId: input.partnerId, partnerName: input.partnerName, warehouseId: input.warehouseId,
         currency, amount, exchangeRateSypPerUsd: payment.exchangeRateSypPerUsd ?? input.exchangeRateSypPerUsd,
-        systemNote: `قبض آلي عن فاتورة بيع ${input.invoiceNumber}`, ledgerEntryType: 'receipt', ledgerDirection: 'credit',
+        systemNote: `دخول آلي عن فاتورة بيع ${input.invoiceNumber}`, ledgerEntryType: 'receipt', ledgerDirection: 'credit',
         idempotencyKey: `sale:${payment.id}`, occurredAt: new Date(occurredAt.getTime() + index + 1),
       });
     }
@@ -224,7 +224,7 @@ export class FinancePostingService {
         type: 'payment', sourceType: 'purchase', sourcePaymentId: payment.id, sourceDocumentNumber: input.invoiceNumber, purchaseInvoiceId: input.invoiceId,
         partnerId: input.partnerId, partnerName: input.partnerName, warehouseId: input.warehouseId,
         currency, amount, exchangeRateSypPerUsd: payment.exchangeRateSypPerUsd ?? input.exchangeRateSypPerUsd,
-        systemNote: `صرف آلي عن فاتورة شراء ${input.invoiceNumber}`, ledgerEntryType: 'payment', ledgerDirection: 'debit',
+        systemNote: `خروج آلي عن فاتورة شراء ${input.invoiceNumber}`, ledgerEntryType: 'payment', ledgerDirection: 'debit',
         idempotencyKey: `purchase:${payment.id}`, occurredAt: new Date(occurredAt.getTime() + index + 1),
       });
     }
@@ -248,7 +248,7 @@ export class FinancePostingService {
         type: isSalesReturn ? 'payment' : 'receipt', sourceType: input.type, sourcePaymentId: payment.id, sourceDocumentNumber: input.returnNumber, returnInvoiceId: input.returnId,
         partnerId: input.partnerId, partnerName: input.partnerName, warehouseId: input.warehouseId,
         currency, amount, exchangeRateSypPerUsd: payment.exchangeRateSypPerUsd ?? input.exchangeRateSypPerUsd,
-        systemNote: isSalesReturn ? `رد مبلغ للعميل عن مرتجع ${input.returnNumber}` : `قبض من المورد عن مرتجع مشتريات ${input.returnNumber}`,
+        systemNote: isSalesReturn ? `رد مبلغ للعميل عن مرتجع ${input.returnNumber}` : `دخول من المورد عن مرتجع مشتريات ${input.returnNumber}`,
         ledgerEntryType: isSalesReturn ? 'payment' : 'receipt', ledgerDirection: isSalesReturn ? 'debit' : 'credit',
         idempotencyKey: `${input.type}:${payment.id}`, occurredAt: new Date(occurredAt.getTime() + index + 1),
       });

@@ -116,7 +116,7 @@ export const PartnerWorkspaceModal = ({ partner, custody, onClose }: { partner: 
             <Section title="السندات" count={data.vouchers.length}>
               <div className="space-y-1.5">{data.vouchers.map(row => (
                 <Row key={row.id} edge={row.type === 'receipt' ? 'border-r-emerald-500' : 'border-r-sky-500'}
-                     title={row.number} date={row.date} note={row.type === 'receipt' ? 'سند قبض' : 'سند دفع'}
+                     title={row.number} date={row.date} note={row.type === 'receipt' ? 'سند دخول' : 'سند خروج'}
                      right={<span className="font-mono text-[11px] font-black text-slate-800">{row.currency === 'USD' ? money(row.amountUSD) : `${row.amount.toFixed(0)} ل.س`}</span>} />))}
               </div>
             </Section>

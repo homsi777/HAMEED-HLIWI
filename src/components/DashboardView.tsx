@@ -259,8 +259,8 @@ export const DashboardView: React.FC<DashboardProps> = ({ setActiveTab, onNewInv
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           <div className="border-r-4 border-emerald-500 bg-emerald-50 p-3"><small className="block text-slate-600">مبيعات اليوم</small><b className="text-lg text-emerald-800">{showMoney(todaySalesUSD, 'USD')}</b></div>
           <div className="border-r-4 border-amber-500 bg-amber-50 p-3"><small className="block text-slate-600">مشتريات اليوم</small><b className="text-lg text-amber-800">{showMoney(todayPurchasesUSD, 'USD')}</b></div>
-          <div className="border-r-4 border-sky-500 bg-sky-50 p-3"><small className="block text-slate-600">قبض اليوم</small><b className="text-lg text-sky-800">{showMoney(todayInUSD, 'USD')}</b></div>
-          <div className="border-r-4 border-rose-500 bg-rose-50 p-3"><small className="block text-slate-600">صرف اليوم</small><b className="text-lg text-rose-800">{showMoney(todayOutUSD, 'USD')}</b></div>
+          <div className="border-r-4 border-sky-500 bg-sky-50 p-3"><small className="block text-slate-600">دخول اليوم</small><b className="text-lg text-sky-800">{showMoney(todayInUSD, 'USD')}</b></div>
+          <div className="border-r-4 border-rose-500 bg-rose-50 p-3"><small className="block text-slate-600">خروج اليوم</small><b className="text-lg text-rose-800">{showMoney(todayOutUSD, 'USD')}</b></div>
         </div>
       </section>
 

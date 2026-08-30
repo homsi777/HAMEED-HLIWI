@@ -10,8 +10,8 @@ interface PrintVoucherModalProps {
 }
 
 const voucherTitle = (type: ApiVoucher['type']) => {
-  if (type === 'receipt') return 'سند قبض مالي';
-  if (type === 'payment') return 'سند صرف مالي';
+  if (type === 'receipt') return 'سند دخول مالي';
+  if (type === 'payment') return 'سند خروج مالي';
   return 'سند مصروف تشغيلي';
 };
 
@@ -50,10 +50,10 @@ export const PrintVoucherModal: React.FC<PrintVoucherModalProps> = ({ voucher, s
             <img src="/logo-transparent.png" alt="شعار الشركة" className="voucher-paper-logo" />
             <div className="voucher-paper-brand"><img src="/hliwi-wordmark.png" alt="حليوي" className="print-wordmark" /><span>{companySubtitle}</span>{settings.branchName && <small>{settings.branchName}</small>}</div>
           </header>
-          <div className="voucher-paper-title"><span>{voucherTitle(voucher.type)}</span><b>{isReceipt ? 'قبض' : 'صرف'}</b></div>
+          <div className="voucher-paper-title"><span>{voucherTitle(voucher.type)}</span><b>{isReceipt ? 'دخول' : 'خروج'}</b></div>
           <div className="voucher-paper-meta"><span><b>رقم السند:</b> {voucher.voucherNumber}</span><span><b>التاريخ:</b> {voucher.date}</span><span><b>الصندوق:</b> {voucher.cashboxName}</span></div>
           <div className="voucher-paper-body">
-            <div className="voucher-paper-row voucher-paper-party"><b>{isReceipt ? 'استلمنا من السيد/ة:' : 'صرفنا إلى السيد/ة:'}</b><strong>{voucher.partnerName || voucher.category || 'حساب عام'}</strong></div>
+            <div className="voucher-paper-row voucher-paper-party"><b>{isReceipt ? 'استلمنا من السيد/ة:' : 'دفعنا إلى السيد/ة:'}</b><strong>{voucher.partnerName || voucher.category || 'حساب عام'}</strong></div>
             <div className="voucher-paper-amounts"><div><span>المبلغ المقبوض / المصروف</span><b>{voucher.currency === 'USD' ? `$ ${formatAmount(voucher.amount)}` : `${formatAmount(voucher.amount, 0)} ل.س`}</b></div><div><span>ما يعادله بالدولار</span><b>$ {formatAmount(voucher.amountUSD)}</b></div><div><span>ما يعادله بالليرة السورية</span><b>{formatAmount(voucher.amountSYP, 0)} ل.س</b></div></div>
             <div className="voucher-paper-row voucher-paper-statement"><b>البيان:</b><span>{voucher.statement || voucher.systemNote || 'سند مالي'}</span></div>
             {voucher.sourceDocumentNumber && <div className="voucher-paper-source">المرجع: {voucher.sourceDocumentNumber}</div>}

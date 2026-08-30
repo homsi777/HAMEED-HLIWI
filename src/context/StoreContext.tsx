@@ -569,7 +569,7 @@ export const StoreProvider: React.FC<{ children: ReactNode; identity: SessionIde
     }
 
     logActivity(
-      `سند ${newVoucher.type === 'receipt' ? 'قبض' : newVoucher.type === 'payment' ? 'صرف' : 'مصروف'}`,
+      `سند ${newVoucher.type === 'receipt' ? 'دخول' : newVoucher.type === 'payment' ? 'خروج' : 'مصروف'}`,
       `سند رقم ${voucherNumber} بقيمة $${newVoucher.amountUSD} (${newVoucher.statement})`,
       'finance'
     );

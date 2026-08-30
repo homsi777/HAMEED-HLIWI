@@ -60,6 +60,7 @@ interface InvoicesViewProps {
   canPurchase?: boolean;
   canCorrect?: boolean;
   onSaveCompleted?: () => void;
+  onCreateClosed?: () => void;
 }
 
 const money = (value: number) => Number(value.toFixed(2));
@@ -88,7 +89,7 @@ const calculateItemPricing = (netWeightGrams: number, goldPricePerGramUSD: numbe
   };
 };
 
-export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true, canViewInventory = true, canViewSuppliers = true, canCorrect = false, onSaveCompleted }) => {
+export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initialSearch, canPurchase = true, canViewInventory = true, canViewSuppliers = true, canCorrect = false, onSaveCompleted, onCreateClosed }) => {
   const {
     inventory: legacyInventory,
     partners,
@@ -333,7 +334,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
         <div className="mt-2 space-y-1 border-t border-slate-200 pt-2">
           {invoiceFinancials.vouchers.map(voucher => (
             <div key={voucher.id} className={voucher.status === 'cancelled' ? 'text-slate-400 line-through' : 'text-slate-800'}>
-              <p className="font-bold">{voucher.type === 'receipt' ? 'سند قبض' : 'سند صرف'}: {voucher.voucherNumber}</p>
+              <p className="font-bold">{voucher.type === 'receipt' ? 'سند دخول' : 'سند خروج'}: {voucher.voucherNumber}</p>
               <p className="font-mono text-[10px]">{voucher.amount.toLocaleString('en-US')} {voucher.currency} — {voucher.cashboxName}</p>
             </div>
           ))}
@@ -385,6 +386,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
   // New Invoice Wizard Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const closeCreateModal = () => { setShowCreateModal(false); onCreateClosed?.(); };
   const [correctionSource, setCorrectionSource] = useState<{ id: string; type: 'sale' | 'purchase'; reason: string } | null>(null);
   const [invType, setInvType] = useState<InvoiceType>(initialType || 'sale');
   const [invPartnerId, setInvPartnerId] = useState('');
@@ -1140,7 +1142,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
               </div>
 
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={closeCreateModal}
                 className="text-slate-400 hover:text-slate-900 p-1 rounded-sm"
               >
                 <X className="w-5 h-5" />
@@ -1856,7 +1858,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
             <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:gap-3 pt-3 border-t border-slate-200">
               <button
                 type="button"
-                onClick={() => setShowCreateModal(false)}
+                onClick={closeCreateModal}
                 className="px-4 py-2 bg-slate-100 text-slate-700 rounded-sm font-bold text-xs"
               >
                 إلغاء

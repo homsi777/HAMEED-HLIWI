@@ -77,7 +77,7 @@ async function main() {
           insert into voucher_sequences (year, type, last_number) values (${year}, ${voucherKind}, 1)
           on conflict (year, type) do update set last_number = voucher_sequences.last_number + 1, updated_at = now() returning last_number`)[0]!.last_number as number;
         const usdEquivalent = currency === 'USD' ? amount : amount / Number(rate);
-        const systemNote = isSale ? `قبض آلي عن فاتورة بيع ${documentNumber}` : isPurchase ? `صرف آلي عن فاتورة شراء ${documentNumber}` : isSalesReturn ? `رد مبلغ للعميل عن مرتجع ${documentNumber}` : `قبض من المورد عن مرتجع مشتريات ${documentNumber}`;
+        const systemNote = isSale ? `دخول آلي عن فاتورة بيع ${documentNumber}` : isPurchase ? `خروج آلي عن فاتورة شراء ${documentNumber}` : isSalesReturn ? `رد مبلغ للعميل عن مرتجع ${documentNumber}` : `دخول من المورد عن مرتجع مشتريات ${documentNumber}`;
         const inserted = await client`
           insert into vouchers (voucher_number, voucher_year, sequence_number, type, source_type, source_payment_id, source_document_number,
             sales_invoice_id, purchase_invoice_id, return_invoice_id, partner_id, partner_name_snapshot, cashbox_id, warehouse_id,

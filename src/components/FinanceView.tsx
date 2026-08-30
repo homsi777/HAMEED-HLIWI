@@ -38,15 +38,16 @@ interface FinanceViewProps {
   activeTab?: string;
   setActiveTab?: (tab: string) => void;
   onNewInvoice?: (type: 'sale' | 'purchase') => void;
+  onEmployeeAdvance?: () => void;
 }
 
-type JournalShortcut = 'sale' | 'purchase' | 'receipt' | 'payment' | 'expense' | 'transfer';
+type JournalShortcut = 'sale' | 'purchase' | 'receipt' | 'payment' | 'advance' | 'expense' | 'transfer';
 const JOURNAL_SHORTCUTS: Array<{ id: JournalShortcut; label: string }> = [
-  { id: 'sale', label: 'بيع' }, { id: 'purchase', label: 'شراء' }, { id: 'receipt', label: 'سند قبض' },
-  { id: 'payment', label: 'سند صرف' }, { id: 'expense', label: 'مصروف' }, { id: 'transfer', label: 'نقل صندوق' },
+  { id: 'sale', label: 'بيع' }, { id: 'purchase', label: 'شراء' }, { id: 'receipt', label: 'سند دخول' },
+  { id: 'payment', label: 'سند خروج' }, { id: 'advance', label: 'سلفة' }, { id: 'expense', label: 'مصروف' }, { id: 'transfer', label: 'نقل صندوق' },
 ];
 
-export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-boxes', setActiveTab, onNewInvoice }) => {
+export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-boxes', setActiveTab, onNewInvoice, onEmployeeAdvance }) => {
   const {
     partners,
     formatMoney,
@@ -122,7 +123,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const [journalShortcutIds, setJournalShortcutIds] = useState<JournalShortcut[]>(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('HAMEED_HLIWI_JOURNAL_SHORTCUTS') || 'null');
-      return Array.isArray(saved) ? saved.filter((id): id is JournalShortcut => JOURNAL_SHORTCUTS.some(shortcut => shortcut.id === id)) : JOURNAL_SHORTCUTS.map(shortcut => shortcut.id);
+      if (!Array.isArray(saved)) return JOURNAL_SHORTCUTS.map(shortcut => shortcut.id);
+      const valid = saved.filter((id): id is JournalShortcut => JOURNAL_SHORTCUTS.some(shortcut => shortcut.id === id));
+      return Array.from(new Set([...valid, 'advance', 'expense'])) as JournalShortcut[];
     } catch { return JOURNAL_SHORTCUTS.map(shortcut => shortcut.id); }
   });
 
@@ -131,6 +134,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     if (id === 'purchase') return onNewInvoice?.('purchase');
     if (id === 'receipt') return handleOpenVoucherForm('receipt');
     if (id === 'payment') return handleOpenVoucherForm('payment');
+    if (id === 'advance') return onEmployeeAdvance?.();
     if (id === 'expense') return handleOpenVoucherForm('expense');
     setShowTransferForm(true);
   };
@@ -203,8 +207,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
       type === 'expense'
         ? 'مصاريف كهرباء وطاقة'
         : type === 'receipt'
-        ? 'سند قبض دفعة زبون'
-        : 'سند صرف دفعة مورد'
+        ? 'سند دخول دفعة زبون'
+        : 'سند خروج دفعة مورد'
     );
     setVchStatement('');
     setVchGoldGrams('0');
@@ -350,7 +354,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
     id: string;
     date: string;
     refNumber: string;
-    type: 'مبيعات' | 'مشتريات' | 'سند قبض' | 'سند صرف' | 'مصروف تشغيلي' | 'مقايضة كسر';
+    type: 'مبيعات' | 'مشتريات' | 'سند دخول' | 'سند خروج' | 'مصروف تشغيلي' | 'مقايضة كسر';
     entityName: string;
     description: string;
     debitUSD: number; // مدين (دخل)
@@ -369,7 +373,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
       id: `journal-mov-${movement.id}`,
       date: movement.createdAt.slice(0, 10),
       refNumber: movement.voucherNumber || '—',
-      type: movement.direction === 'inflow' ? 'قبض نقدي' : voucher?.type === 'expense' ? 'مصروف تشغيلي' : 'صرف نقدي',
+      type: movement.direction === 'inflow' ? 'دخول نقدي' : voucher?.type === 'expense' ? 'مصروف تشغيلي' : 'خروج نقدي',
       entityName: partnerName || voucher?.category || 'عام',
       description: movement.description,
       debitUSD: movement.direction === 'inflow' ? movement.amountUSD : 0,
@@ -599,7 +603,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
       {/* ========================================================================= */}
       {/* SUB-SCREEN 2: السندات المالية (VOUCHERS DEDICATED SCREEN) */}
       {/* ========================================================================= */}
-      {currentSubTab === 'vouchers' && (
+      {(currentSubTab === 'vouchers' || showVoucherForm) && (
         <div className="space-y-3 sm:space-y-6">
           {/* Dedicated Screen Header */}
           <div className="bg-white p-3 sm:p-5 rounded-sm border-r-4 border-r-amber-500 border-slate-200 border shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
@@ -609,10 +613,10 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                 <span>الإدارة المالية - السندات الرسمية</span>
               </div>
               <h2 className="text-base sm:text-2xl font-black text-slate-900">
-                قسم السندات المالية (قبض وصرف وقيد)
+                قسم السندات المالية (دخول وخروج وقيد)
               </h2>
               <p className="hidden sm:block text-xs text-slate-500 font-medium mt-1">
-                شاشة خاصة بإصدار وتصفح كافة سندات القبض والصرف المالي الرسمية وتسوية حسابات العملاء والتجار وطباعتها.
+                شاشة خاصة بإصدار وتصفح كافة سندات الدخول والخروج المالية الرسمية وتسوية حسابات العملاء والتجار وطباعتها.
               </p>
             </div>
 
@@ -622,7 +626,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 rounded-sm font-bold text-xs shadow-sm flex items-center gap-1 transition"
               >
                 <ArrowUpRight className="w-3.5 h-3.5 text-white" />
-                <span>+ قبض</span>
+                <span>+ دخول</span>
               </button>
 
               <button
@@ -630,7 +634,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                 className="bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded-sm font-bold text-xs shadow-sm flex items-center gap-1 transition"
               >
                 <ArrowDownLeft className="w-3.5 h-3.5 text-white" />
-                <span>+ صرف</span>
+                <span>+ خروج</span>
               </button>
             </div>
           </div>
@@ -652,7 +656,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                   voucherTypeFilter === 'receipt' ? 'bg-amber-400 text-slate-900 font-black' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                قبض ({vouchers.filter(v => v.type === 'receipt').length})
+                دخول ({vouchers.filter(v => v.type === 'receipt').length})
               </button>
               <button
                 onClick={() => setVoucherTypeFilter('payment')}
@@ -660,7 +664,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                   voucherTypeFilter === 'payment' ? 'bg-amber-400 text-slate-900 font-black' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                صرف ({vouchers.filter(v => v.type === 'payment').length})
+                خروج ({vouchers.filter(v => v.type === 'payment').length})
               </button>
             </div>
 
@@ -694,7 +698,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                 <div className="flex items-center gap-1.5 text-slate-900 font-black text-sm sm:text-base">
                   <Receipt className="w-4 h-4 text-amber-700" />
                   <span>
-                    إصدار {vchType === 'receipt' ? 'سند قبض مالي' : vchType === 'payment' ? 'سند صرف مالي' : 'سند مصروف'} جديد
+                    إصدار {vchType === 'receipt' ? 'سند دخول مالي' : vchType === 'payment' ? 'سند خروج مالي' : 'سند مصروف'} جديد
                   </span>
                 </div>
                 <button
@@ -714,8 +718,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                       onChange={e => setVchType(e.target.value as VoucherType)}
                       className="w-full p-2 bg-white border border-amber-300 rounded-sm font-bold"
                     >
-                      <option value="receipt">سند قبض (قبض سيولة)</option>
-                      <option value="payment">سند صرف (صرف سيولة)</option>
+                      <option value="receipt">سند دخول (دخول سيولة)</option>
+                      <option value="payment">سند خروج (خروج سيولة)</option>
                       <option value="expense">سند مصروف تشغيلي</option>
                     </select>
                   </div>
@@ -869,7 +873,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                             : 'bg-rose-100 text-rose-900'
                         }`}
                       >
-                        {vch.type === 'receipt' ? 'قبض' : vch.type === 'payment' ? 'صرف' : 'مصروف'}
+                        {vch.type === 'receipt' ? 'دخول' : vch.type === 'payment' ? 'خروج' : 'مصروف'}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1">
@@ -945,7 +949,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                                 : 'bg-rose-100 text-rose-900 border border-rose-300'
                             }`}
                           >
-                            {vch.type === 'receipt' ? 'قبض' : vch.type === 'payment' ? 'صرف' : 'مصروف'}
+                            {vch.type === 'receipt' ? 'دخول' : vch.type === 'payment' ? 'خروج' : 'مصروف'}
                           </span>
                         </td>
                         <td className="py-3 px-3 font-mono text-slate-600">{vch.date}</td>
@@ -1491,15 +1495,15 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
 
             <div className={`text-center border py-2 font-black text-lg text-slate-900 rounded-sm ${selectedVoucherForPrint.type === 'receipt' ? 'border-emerald-300 bg-emerald-100' : selectedVoucherForPrint.type === 'payment' ? 'border-rose-300 bg-rose-100' : 'border-amber-300 bg-amber-100'}`}>
               {selectedVoucherForPrint.type === 'receipt'
-                ? 'سند قبض مالي رسمـي'
+                ? 'سند دخول مالي رسمـي'
                 : selectedVoucherForPrint.type === 'payment'
-                ? 'سند صرف مالي رسمـي'
+                ? 'سند خروج مالي رسمـي'
                 : 'سند مصروف تشغيلي'}
             </div>
 
             <div className="space-y-3 text-sm font-bold text-slate-800">
               <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">استلمنا من / صرفنا إلى:</span>
+                <span className="text-slate-500">استلمنا من / دفعنا إلى:</span>
                 <span className="text-slate-900 text-base">
                   {selectedVoucherForPrint.partnerName || selectedVoucherForPrint.category || 'حساب عام'}
                 </span>

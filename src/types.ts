@@ -157,7 +157,7 @@ export type VoucherType = 'receipt' | 'payment' | 'expense';
 export interface Voucher {
   id: string;
   voucherNumber: string;
-  type: VoucherType; // receipt: سند قبض, payment: سند صرف, expense: مصروف
+  type: VoucherType; // receipt: سند دخول, payment: سند خروج, expense: مصروف
   date: string;
   partnerId?: string;
   partnerName?: string;
