@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'd
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DATABASE, type Database } from '../database/database.module.js';
-import { cashMovements, cashboxTransferSequences, cashboxTransfers, cashboxes, expenseCategories, partnerLedgerEntries, partners, purchaseInvoices, returnInvoices, salesInvoices, users, voucherAllocations, vouchers } from '../database/schema.js';
+import { cashMovements, cashboxTransferSequences, cashboxTransfers, cashboxes, expenseCategories, inventoryItems, partnerLedgerEntries, partners, purchaseInvoices, returnInvoices, salesInvoices, users, voucherAllocations, vouchers } from '../database/schema.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { WarehouseScopeService } from '../warehouses/warehouse-scope.service.js';
 import { FinancePostingService, type CashCurrency } from './finance-posting.service.js';
@@ -313,7 +313,9 @@ export class FinanceService {
       if (from) conditions.push(gte(createdColumn, from)); if (to) conditions.push(lte(createdColumn, to));
       return conditions.length ? and(...conditions) : undefined;
     };
-    const [saleRows, purchaseRows, movementPage] = await Promise.all([
+    const inventoryConditions: any[] = [eq(inventoryItems.status, 'in_stock'), isNull(inventoryItems.archivedAt)];
+    if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; inventoryConditions.push(ids.length ? inArray(inventoryItems.warehouseId, ids) : sql`false`); }
+    const [saleRows, purchaseRows, movementPage, inventoryWeight] = await Promise.all([
       this.db.select({ id: salesInvoices.id, createdAt: salesInvoices.createdAt, number: salesInvoices.invoiceNumber, partner: salesInvoices.customerNameSnapshot, status: salesInvoices.status, actor: users.fullName,
         goodsOut: sql<string>`coalesce((select sum(net_weight_grams) from sales_invoice_items where sales_invoice_id = ${salesInvoices.id}), 0)`,
         scrapIn: sql<string>`coalesce((select sum(weight_grams) from sales_gold_exchanges where sales_invoice_id = ${salesInvoices.id}), 0)`,
@@ -322,6 +324,7 @@ export class FinanceService {
         weight: sql<string>`coalesce((select sum(net_weight_grams) from purchase_invoice_items where purchase_invoice_id = ${purchaseInvoices.id}), 0)`,
       }).from(purchaseInvoices).innerJoin(users, eq(users.id, purchaseInvoices.createdByUserId)).where(scopedConditions(purchaseInvoices.warehouseId, purchaseInvoices.createdAt)).orderBy(desc(purchaseInvoices.createdAt)).limit(200),
       this.listMovements(user, { dateFrom: query.dateFrom as string | undefined, dateTo: query.dateTo as string | undefined, page: 1, limit: 200 }),
+      this.db.select({ grams: sql<string>`coalesce(sum(${inventoryItems.netWeightGrams}), 0)` }).from(inventoryItems).where(and(...inventoryConditions)),
     ]);
     const blankMoney = { sypIn: 0, sypOut: 0, usdIn: 0, usdOut: 0 };
     const rows = [
@@ -331,7 +334,7 @@ export class FinanceService {
         sypIn: row.currency === 'SYP' && row.direction === 'inflow' ? row.amount : 0, sypOut: row.currency === 'SYP' && row.direction === 'outflow' ? row.amount : 0,
         usdIn: row.currency === 'USD' && row.direction === 'inflow' ? row.amount : 0, usdOut: row.currency === 'USD' && row.direction === 'outflow' ? row.amount : 0, actor: row.actor })),
     ].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
-    return { items: rows, total: rows.length };
+    return { items: rows, total: rows.length, weightSummary: { inventoryAvailableGrams: Number(inventoryWeight[0]?.grams ?? 0) } };
   }
 
   // The partner statement is rebuilt from immutable ledger entries every time it is read.

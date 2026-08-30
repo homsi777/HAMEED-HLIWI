@@ -24,7 +24,7 @@ export const financeApi = {
   transfers: (filters: Record<string, string | number | undefined> = {}) => request<{ items: ApiTransfer[]; meta: { page: number; limit: number; total: number } }>(`/finance/transfers?${query(filters)}`),
   createTransfer: (input: { fromCashboxId: string; toCashboxId: string; amountFrom: string | number; amountTo: string | number; exchangeRateSypPerUsd: string | number; note?: string; idempotencyKey: string }) => request<ApiTransfer>('/finance/transfers', { method: 'POST', body: JSON.stringify(input) }),
   movements: (filters: Record<string, string | number | undefined> = {}) => request<{ items: ApiCashMovement[]; meta: { page: number; limit: number; total: number } }>(`/finance/movements?${query(filters)}`),
-  daybook: (filters: Record<string, string | undefined> = {}) => request<{ items: ApiDaybookRow[]; total: number }>(`/finance/daybook?${query(filters)}`),
+  daybook: (filters: Record<string, string | undefined> = {}) => request<{ items: ApiDaybookRow[]; total: number; weightSummary: { inventoryAvailableGrams: number } }>(`/finance/daybook?${query(filters)}`),
   partnerBalances: (filters: Record<string, string | number | undefined> = {}) => request<ApiPartnerBalance[]>(`/finance/partner-balances?${query(filters)}`),
   partnerStatement: (partnerId: string, filters: Record<string, string | undefined> = {}) => request<ApiStatement>(`/finance/partners/${partnerId}/statement?${query(filters)}`),
   expenseCategories: () => request<Array<{ id: string; name: string }>>('/finance/expense-categories'),

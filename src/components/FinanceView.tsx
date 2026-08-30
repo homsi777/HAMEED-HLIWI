@@ -32,6 +32,7 @@ import {
 import { VoucherType, GoldKarat } from '../types';
 import { financeApi, type ApiCashbox, type ApiCashMovement, type ApiDaybookRow, type ApiPartnerBalance, type ApiVoucher } from '../services/financeApi';
 import { accountingApi, type ApiJournal } from '../services/accountingApi';
+import { goldApi } from '../services/goldApi';
 import { PrintVoucherModal } from './PrintVoucherModal';
 
 interface FinanceViewProps {
@@ -63,6 +64,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const [vouchers, setVouchers] = useState<ApiVoucher[]>([]);
   const [movements, setMovements] = useState<ApiCashMovement[]>([]);
   const [daybookRows, setDaybookRows] = useState<ApiDaybookRow[]>([]);
+  const [inventoryAvailableGrams, setInventoryAvailableGrams] = useState(0);
+  const [scrapAvailableGrams, setScrapAvailableGrams] = useState(0);
   const [partnerBalances, setPartnerBalances] = useState<ApiPartnerBalance[]>([]);
   const [voucherJournals, setVoucherJournals] = useState<ApiJournal[]>([]);
   const [financeError, setFinanceError] = useState('');
@@ -71,18 +74,21 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const refreshFinance = async () => {
     try {
       setFinanceError('');
-      const [boxes, voucherPage, movementPage, balances, daybook] = await Promise.all([
+      const [boxes, voucherPage, movementPage, balances, daybook, scrap] = await Promise.all([
         financeApi.cashboxes(),
         financeApi.vouchers({ page: 1, limit: 200 }),
         financeApi.movements({ page: 1, limit: 200 }),
         financeApi.partnerBalances({ limit: 200 }),
         financeApi.daybook(),
+        goldApi.scrapHoldings().catch(() => ({ holdings: [] })),
       ]);
       setCashBoxes(boxes);
       setVouchers(voucherPage.items);
       setMovements(movementPage.items);
       setPartnerBalances(balances);
       setDaybookRows(daybook.items);
+      setInventoryAvailableGrams(daybook.weightSummary?.inventoryAvailableGrams ?? 0);
+      setScrapAvailableGrams(scrap.holdings.reduce((sum, row) => sum + row.availableGrams, 0));
     } catch (reason: any) {
       setFinanceError(reason?.message || 'تعذر تحميل بيانات المالية من الخادم.');
     }
@@ -412,6 +418,8 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   });
   const daybookInUSD = filteredDaybookRows.reduce((sum, row) => sum + row.usdIn + row.sypIn / Math.max(settings.usdToSypRate, 1), 0);
   const daybookOutUSD = filteredDaybookRows.reduce((sum, row) => sum + row.usdOut + row.sypOut / Math.max(settings.usdToSypRate, 1), 0);
+  const daybookSoldGrams = filteredDaybookRows.reduce((sum, row) => sum + row.goodsOut, 0);
+  const daybookPurchasedGrams = filteredDaybookRows.reduce((sum, row) => sum + row.goodsIn, 0);
 
   return (
     <div className="space-y-3 sm:space-y-6 text-slate-900" dir="rtl">
@@ -1061,6 +1069,31 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
               <div className="text-sm sm:text-xl font-black font-mono text-amber-200">
                 {filteredDaybookRows.length} قيود
               </div>
+            </div>
+          </div>
+
+          {/* Weight summary is kept separate from money: mixed karats are physical grams,
+              and these cards never convert them into a currency value. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-4">
+            <div className="rounded-sm border-r-4 border-r-amber-500 bg-amber-50 p-2.5 shadow-sm sm:p-4">
+              <span className="block text-[10px] font-bold text-amber-900 sm:text-[11px]">المتوفر في المخزون</span>
+              <strong className="mt-1 block font-mono text-base font-black text-slate-900 sm:text-xl">{inventoryAvailableGrams.toLocaleString(undefined, { maximumFractionDigits: 3 })} غ</strong>
+              <small className="text-[9px] font-bold text-slate-500">الوزن الصافي القابل للبيع الآن</small>
+            </div>
+            <div className="rounded-sm border-r-4 border-r-orange-600 bg-orange-50 p-2.5 shadow-sm sm:p-4">
+              <span className="block text-[10px] font-bold text-orange-900 sm:text-[11px]">الخاشر المتبقي</span>
+              <strong className="mt-1 block font-mono text-base font-black text-orange-900 sm:text-xl">{scrapAvailableGrams.toLocaleString(undefined, { maximumFractionDigits: 3 })} غ</strong>
+              <small className="text-[9px] font-bold text-slate-500">متاح للبيع أو إعادة التدوير</small>
+            </div>
+            <div className="rounded-sm border-r-4 border-r-rose-500 bg-rose-50 p-2.5 shadow-sm sm:p-4">
+              <span className="block text-[10px] font-bold text-rose-900 sm:text-[11px]">وزن البيع</span>
+              <strong className="mt-1 block font-mono text-base font-black text-rose-800 sm:text-xl">{daybookSoldGrams.toLocaleString(undefined, { maximumFractionDigits: 3 })} غ</strong>
+              <small className="text-[9px] font-bold text-slate-500">حسب فترة اليومية المختارة</small>
+            </div>
+            <div className="rounded-sm border-r-4 border-r-emerald-500 bg-emerald-50 p-2.5 shadow-sm sm:p-4">
+              <span className="block text-[10px] font-bold text-emerald-900 sm:text-[11px]">دخول بضاعة</span>
+              <strong className="mt-1 block font-mono text-base font-black text-emerald-800 sm:text-xl">{daybookPurchasedGrams.toLocaleString(undefined, { maximumFractionDigits: 3 })} غ</strong>
+              <small className="text-[9px] font-bold text-slate-500">حسب فترة اليومية المختارة</small>
             </div>
           </div>
 
