@@ -23,6 +23,15 @@ const number = (value: unknown, field: string, scale = 4, minimum = 0) => {
   return parsed.toFixed(scale);
 };
 const uuid = (value: unknown, field: string) => { if (typeof value !== 'string' || !UUID.test(value)) throw new ConflictException(`${field} is invalid.`); return value; };
+const dateBoundary = (value: unknown, endOfDay = false) => {
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  const raw = value.trim();
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? `${raw}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}+03:00`
+    : raw;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
 
 const voucherDto = (row: any) => ({
   id: row.voucher.id, voucherNumber: row.voucher.voucherNumber, type: row.voucher.type, status: row.voucher.status, date: row.voucher.createdAt.toISOString().slice(0, 10), createdAt: row.voucher.createdAt.toISOString(),
@@ -294,8 +303,9 @@ export class FinanceService {
     if (query.cashboxId) conditions.push(eq(cashMovements.cashboxId, uuid(query.cashboxId, 'cashboxId')));
     if (query.partnerId) conditions.push(eq(cashMovements.partnerId, uuid(query.partnerId, 'partnerId')));
     if (query.direction && ['inflow', 'outflow'].includes(String(query.direction))) conditions.push(eq(cashMovements.direction, query.direction as 'inflow'));
-    if (typeof query.dateFrom === 'string' && !Number.isNaN(Date.parse(query.dateFrom))) conditions.push(gte(cashMovements.createdAt, new Date(query.dateFrom)));
-    if (typeof query.dateTo === 'string' && !Number.isNaN(Date.parse(query.dateTo))) conditions.push(lte(cashMovements.createdAt, new Date(`${query.dateTo}T23:59:59.999Z`)));
+    const movementFrom = dateBoundary(query.dateFrom); const movementTo = dateBoundary(query.dateTo, true);
+    if (movementFrom) conditions.push(gte(cashMovements.createdAt, movementFrom));
+    if (movementTo) conditions.push(lte(cashMovements.createdAt, movementTo));
     const where = conditions.length ? and(...conditions) : undefined;
     const [rows, total] = await Promise.all([
       this.db.select({ movement: cashMovements, cashboxName: cashboxes.name, voucherNumber: vouchers.voucherNumber, actorName: users.fullName }).from(cashMovements).innerJoin(cashboxes, eq(cashboxes.id, cashMovements.cashboxId)).leftJoin(vouchers, eq(vouchers.id, cashMovements.voucherId)).innerJoin(users, eq(users.id, cashMovements.actorUserId)).where(where).orderBy(desc(cashMovements.createdAt), desc(cashMovements.id)).limit(limit).offset((page - 1) * limit),
@@ -305,8 +315,8 @@ export class FinanceService {
   }
 
   async daybook(user: AuthIdentity, query: Record<string, unknown>) {
-    const from = typeof query.dateFrom === 'string' && !Number.isNaN(Date.parse(query.dateFrom)) ? new Date(query.dateFrom) : undefined;
-    const to = typeof query.dateTo === 'string' && !Number.isNaN(Date.parse(query.dateTo)) ? new Date(`${query.dateTo}T23:59:59.999Z`) : undefined;
+    const from = dateBoundary(query.dateFrom);
+    const to = dateBoundary(query.dateTo, true);
     const scopedConditions = (warehouseColumn: any, createdColumn: any) => {
       const conditions: any[] = [];
       if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; conditions.push(ids.length ? inArray(warehouseColumn, ids) : sql`false`); }
@@ -319,18 +329,24 @@ export class FinanceService {
       this.db.select({ id: salesInvoices.id, createdAt: salesInvoices.createdAt, number: salesInvoices.invoiceNumber, partner: salesInvoices.customerNameSnapshot, status: salesInvoices.status, actor: users.fullName,
         goodsOut: sql<string>`coalesce((select sum(net_weight_grams) from sales_invoice_items where sales_invoice_id = ${salesInvoices.id}), 0)`,
         scrapIn: sql<string>`coalesce((select sum(weight_grams) from sales_gold_exchanges where sales_invoice_id = ${salesInvoices.id}), 0)`,
-      }).from(salesInvoices).innerJoin(users, eq(users.id, salesInvoices.createdByUserId)).where(scopedConditions(salesInvoices.warehouseId, salesInvoices.createdAt)).orderBy(desc(salesInvoices.createdAt)).limit(200),
+      }).from(salesInvoices).innerJoin(users, eq(users.id, salesInvoices.createdByUserId)).where(scopedConditions(salesInvoices.warehouseId, salesInvoices.createdAt)).orderBy(desc(salesInvoices.createdAt)),
       this.db.select({ id: purchaseInvoices.id, createdAt: purchaseInvoices.createdAt, number: purchaseInvoices.purchaseNumber, partner: purchaseInvoices.supplierNameSnapshot, status: purchaseInvoices.status, materialType: purchaseInvoices.materialType, actor: users.fullName,
         weight: sql<string>`coalesce((select sum(net_weight_grams) from purchase_invoice_items where purchase_invoice_id = ${purchaseInvoices.id}), 0)`,
-      }).from(purchaseInvoices).innerJoin(users, eq(users.id, purchaseInvoices.createdByUserId)).where(scopedConditions(purchaseInvoices.warehouseId, purchaseInvoices.createdAt)).orderBy(desc(purchaseInvoices.createdAt)).limit(200),
+      }).from(purchaseInvoices).innerJoin(users, eq(users.id, purchaseInvoices.createdByUserId)).where(scopedConditions(purchaseInvoices.warehouseId, purchaseInvoices.createdAt)).orderBy(desc(purchaseInvoices.createdAt)),
       this.listMovements(user, { dateFrom: query.dateFrom as string | undefined, dateTo: query.dateTo as string | undefined, page: 1, limit: 200 }),
       this.db.select({ grams: sql<string>`coalesce(sum(${inventoryItems.netWeightGrams}), 0)` }).from(inventoryItems).where(and(...inventoryConditions)),
     ]);
+    const movementItems = [...movementPage.items];
+    const movementPages = Math.ceil(movementPage.meta.total / 200);
+    if (movementPages > 1) {
+      const remaining = await Promise.all(Array.from({ length: movementPages - 1 }, (_, index) => this.listMovements(user, { dateFrom: query.dateFrom as string | undefined, dateTo: query.dateTo as string | undefined, page: index + 2, limit: 200 })));
+      for (const page of remaining) movementItems.push(...page.items);
+    }
     const blankMoney = { sypIn: 0, sypOut: 0, usdIn: 0, usdOut: 0 };
     const rows = [
       ...saleRows.map(row => ({ id: `sale-${row.id}`, occurredAt: row.createdAt.toISOString(), reference: row.number, goods: row.partner, goodsOut: row.status === 'posted' ? Number(row.goodsOut) : 0, goodsIn: 0, scrapIn: row.status === 'posted' ? Number(row.scrapIn) : 0, scrapOut: 0, description: `${row.status === 'cancelled' ? 'ملغاة — ' : ''}فاتورة بيع ${row.number} — ${row.partner}`, ...blankMoney, actor: row.actor })),
       ...purchaseRows.map(row => ({ id: `purchase-${row.id}`, occurredAt: row.createdAt.toISOString(), reference: row.number, goods: row.partner, goodsOut: 0, goodsIn: row.status === 'posted' && row.materialType === 'new' ? Number(row.weight) : 0, scrapIn: row.status === 'posted' && row.materialType === 'scrap' ? Number(row.weight) : 0, scrapOut: 0, description: `${row.status === 'cancelled' ? 'ملغاة — ' : ''}فاتورة شراء ${row.number} — ${row.partner}`, ...blankMoney, actor: row.actor })),
-      ...movementPage.items.map(row => ({ id: `cash-${row.id}`, occurredAt: row.createdAt, reference: row.voucherNumber || '', goods: row.cashboxName, goodsOut: 0, goodsIn: 0, scrapIn: 0, scrapOut: 0, description: row.description,
+      ...movementItems.map(row => ({ id: `cash-${row.id}`, occurredAt: row.createdAt, reference: row.voucherNumber || '', goods: row.cashboxName, goodsOut: 0, goodsIn: 0, scrapIn: 0, scrapOut: 0, description: row.description,
         sypIn: row.currency === 'SYP' && row.direction === 'inflow' ? row.amount : 0, sypOut: row.currency === 'SYP' && row.direction === 'outflow' ? row.amount : 0,
         usdIn: row.currency === 'USD' && row.direction === 'inflow' ? row.amount : 0, usdOut: row.currency === 'USD' && row.direction === 'outflow' ? row.amount : 0, actor: row.actor })),
     ].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));

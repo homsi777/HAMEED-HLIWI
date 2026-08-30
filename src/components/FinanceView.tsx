@@ -79,7 +79,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
         financeApi.vouchers({ page: 1, limit: 200 }),
         financeApi.movements({ page: 1, limit: 200 }),
         financeApi.partnerBalances({ limit: 200 }),
-        financeApi.daybook(),
+        financeApi.daybook(journalDateRange === 'date' ? { dateFrom: journalSelectedDate, dateTo: journalSelectedDate } : {}),
         goldApi.scrapHoldings().catch(() => ({ holdings: [] })),
       ]);
       setCashBoxes(boxes);
@@ -93,8 +93,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
       setFinanceError(reason?.message || 'تعذر تحميل بيانات المالية من الخادم.');
     }
   };
-  useEffect(() => { void refreshFinance(); }, []);
-
   // The cashbox pickers are seeded from the backend once, never from a hardcoded id.
   useEffect(() => {
     if (!cashBoxes.length) return;
@@ -126,7 +124,9 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   // ------------------ SEARCH & FILTERS ------------------
   const [searchQuery, setSearchQuery] = useState('');
   const [voucherTypeFilter, setVoucherTypeFilter] = useState<'all' | 'receipt' | 'payment' | 'expense'>('all');
-  const [journalDateRange, setJournalDateRange] = useState<'today' | 'week' | 'month' | 'all'>('today');
+  const [journalDateRange, setJournalDateRange] = useState<'date' | 'all'>('date');
+  const [journalSelectedDate, setJournalSelectedDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Damascus' }));
+  useEffect(() => { void refreshFinance(); }, [journalDateRange, journalSelectedDate]);
   const [journalShortcutSettingsOpen, setJournalShortcutSettingsOpen] = useState(false);
   const [journalShortcutIds, setJournalShortcutIds] = useState<JournalShortcut[]>(() => {
     try {
@@ -395,8 +395,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const journalEntries = generateJournalEntries().filter(entry => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (journalDateRange === 'today' && entry.date !== todayStr) return false;
+    if (journalDateRange === 'date' && entry.date !== journalSelectedDate) return false;
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
       return (
@@ -411,8 +410,6 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const totalJournalDebitUSD = journalEntries.reduce((sum, e) => sum + e.debitUSD, 0);
   const totalJournalCreditUSD = journalEntries.reduce((sum, e) => sum + e.creditUSD, 0);
   const filteredDaybookRows = daybookRows.filter(row => {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Damascus' });
-    if (journalDateRange === 'today' && row.occurredAt.slice(0, 10) !== today) return false;
     const query = searchQuery.trim().toLocaleLowerCase('ar');
     return !query || row.reference.toLocaleLowerCase('ar').includes(query) || row.goods.toLocaleLowerCase('ar').includes(query) || row.description.toLocaleLowerCase('ar').includes(query);
   });
@@ -1101,12 +1098,12 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
           <div className="bg-white p-2.5 sm:p-4 rounded-sm border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4 text-xs">
             <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-sm w-full sm:w-auto font-bold">
               <button
-                onClick={() => setJournalDateRange('today')}
+                onClick={() => setJournalDateRange('date')}
                 className={`px-3 py-1.5 rounded-sm transition text-[11px] sm:text-xs ${
-                  journalDateRange === 'today' ? 'bg-amber-400 text-slate-900 font-black' : 'text-slate-600 hover:text-slate-900'
+                  journalDateRange === 'date' ? 'bg-amber-400 text-slate-900 font-black' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                قيود اليوم
+                عرض حسب تاريخ
               </button>
               <button
                 onClick={() => setJournalDateRange('all')}
@@ -1114,8 +1111,17 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                   journalDateRange === 'all' ? 'bg-amber-400 text-slate-900 font-black' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                السجل الشامل
+                عرض الكل
               </button>
+              {journalDateRange === 'date' && (
+                <input
+                  type="date"
+                  aria-label="تاريخ دفتر اليومية"
+                  value={journalSelectedDate}
+                  onChange={event => setJournalSelectedDate(event.target.value)}
+                  className="h-8 min-w-0 flex-1 rounded-sm border border-amber-300 bg-white px-2 font-mono text-[11px] font-black text-slate-900 sm:w-36 sm:flex-none"
+                />
+              )}
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
