@@ -85,7 +85,9 @@ export class AuthorizationScopeService {
       warehouses: identity.warehouses,
       warehouseIds: identity.warehouses.map(warehouse => warehouse.id),
       managedWarehouseIds: this.managedWarehouseIds(identity),
-      modules: visibleModules(identity.permissions).filter(module => this.canAccessAll(identity) || !['accounting', 'reports', 'dashboard'].includes(module)),
+      // Accounting has one company-wide account tree, so it stays exclusive to global users.
+      // Reports and the dashboard are warehouse-scoped by their services and remain available.
+      modules: visibleModules(identity.permissions).filter(module => this.canAccessAll(identity) || module !== 'accounting'),
     };
   }
 }

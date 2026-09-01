@@ -1,188 +1,72 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useStore } from '../context/StoreContext';
+import { BarChart3, Building2, Boxes, Coins, FileDown, Receipt, Scale, Search, Share2, TrendingUp, Users, Wallet } from 'lucide-react';
 import { reportsApi, type ReportFilters } from '../services/reportsApi';
-import { BarChart3, Building2, PackageSearch, Printer, Search, TrendingUp, Users, Wallet, Scale, Coins, Receipt, ShieldCheck, Boxes, ClipboardCheck, FileDown, Share2 } from 'lucide-react';
 
-type ReportKey = 'overview' | 'sales' | 'salesByCustomer' | 'salesByKarat' | 'purchases' | 'profit' | 'inventory' | 'inventoryByKarat' | 'inventoryByWarehouse' | 'itemMovement' | 'partners' | 'debts' | 'cash' | 'expenses' | 'goldPrices' | 'audit' | 'stocktake';
-
-type ReportDefinition = { key: ReportKey; title: string; group: string; icon: React.ElementType; description: string };
-
-const reports: ReportDefinition[] = [
-  { key: 'overview', title: 'لوحة الإدارة', group: 'نظرة عامة', icon: BarChart3, description: 'ملخص السيولة والذهب والمبيعات والذمم' },
-  { key: 'sales', title: 'المبيعات والفواتير', group: 'المبيعات', icon: Receipt, description: 'كل فواتير البيع مع الوزن والقيمة' },
-  { key: 'salesByCustomer', title: 'المبيعات حسب العميل', group: 'المبيعات', icon: Users, description: 'إجمالي التعاملات لكل عميل' },
-  { key: 'salesByKarat', title: 'المبيعات حسب العيار', group: 'المبيعات', icon: Coins, description: 'عدد القطع والأوزان المباعة لكل عيار' },
-  { key: 'purchases', title: 'المشتريات والموردون', group: 'المشتريات', icon: Building2, description: 'فواتير الشراء والوزن والقيمة' },
-  { key: 'profit', title: 'إيراد المصنعية', group: 'الإيرادات', icon: TrendingUp, description: 'إيراد المصنعية المسجَّل — ليس ربحاً وليس هامشاً' },
-  { key: 'inventory', title: 'المخزون الحالي', group: 'المخزون', icon: Boxes, description: 'القطع المتاحة وقيمتها الحالية' },
-  { key: 'inventoryByKarat', title: 'المخزون حسب العيار', group: 'المخزون', icon: Scale, description: 'الوزن والذهب المكافئ والقيمة لكل عيار' },
-  { key: 'inventoryByWarehouse', title: 'المخزون حسب الفرع', group: 'المخزون', icon: Building2, description: 'توزيع القطع والأوزان بين المستودعات' },
-  { key: 'itemMovement', title: 'حركة القطعة', group: 'المخزون', icon: PackageSearch, description: 'البحث بكود القطعة أو اسمها' },
-  { key: 'stocktake', title: 'تقارير الجرد', group: 'المخزون', icon: ClipboardCheck, description: 'جرد النظام الحالي وفروقات الجرد المحفوظة' },
-  { key: 'partners', title: 'كشف العملاء والموردين', group: 'الذمم', icon: Users, description: 'الرصيد المالي والذهبي لكل جهة' },
-  { key: 'debts', title: 'أعمار الذمم', group: 'الذمم', icon: Wallet, description: 'المطلوب تحصيله ودفعه حسب الرصيد الحالي' },
-  { key: 'cash', title: 'الصناديق والسيولة', group: 'المالية', icon: Wallet, description: 'أرصدة الصناديق الحالية' },
-  { key: 'expenses', title: 'المصروفات والسندات', group: 'المالية', icon: Receipt, description: 'كل سندات المصروف المسجلة' },
-  { key: 'goldPrices', title: 'أسعار الذهب والعيارات', group: 'الذهب', icon: Coins, description: 'سعر الشراء والبيع الحالي لكل عيار' },
-  { key: 'audit', title: 'التدقيق والحركات', group: 'الرقابة', icon: ShieldCheck, description: 'سجل العمليات المسجلة في النظام' }
+// Do not use StoreContext here: its browser cache can outlive a login. Each row is fetched
+// from the server, which applies the authenticated user's warehouse scope.
+type ReportKey = 'overview' | 'sales' | 'salesByCustomer' | 'salesByKarat' | 'purchases' | 'workmanship' | 'inventory' | 'inventoryByKarat' | 'inventoryByWarehouse' | 'partners' | 'cash';
+type Definition = { key: ReportKey; title: string; group: string; icon: React.ElementType; description: string };
+const reports: Definition[] = [
+  { key: 'overview', title: 'لوحة الإدارة', group: 'نظرة عامة', icon: BarChart3, description: 'ملخص الحركات المسموحة لهذا الحساب' },
+  { key: 'sales', title: 'ملخص المبيعات', group: 'المبيعات', icon: Receipt, description: 'مبيعات المستودع خلال الفترة' },
+  { key: 'salesByCustomer', title: 'المبيعات حسب العميل', group: 'المبيعات', icon: Users, description: 'عملاء نطاق المستودع فقط' },
+  { key: 'salesByKarat', title: 'المبيعات حسب العيار', group: 'المبيعات', icon: Coins, description: 'الأوزان والقيم المسجلة ضمن النطاق' },
+  { key: 'purchases', title: 'ملخص المشتريات', group: 'المشتريات', icon: Building2, description: 'مشتريات الموردين التابعة للمستودع' },
+  { key: 'workmanship', title: 'إيراد المصنعية', group: 'الإيرادات', icon: TrendingUp, description: 'إيراد المصنعية وليس ربح الذهب' },
+  { key: 'inventory', title: 'ملخص المخزون', group: 'المخزون', icon: Boxes, description: 'أرصدة المخزون المحسوبة من الخادم' },
+  { key: 'inventoryByKarat', title: 'المخزون حسب العيار', group: 'المخزون', icon: Scale, description: 'الوزن لكل عيار' },
+  { key: 'inventoryByWarehouse', title: 'المخزون حسب المستودع', group: 'المخزون', icon: Building2, description: 'المستودعات المصرح بها للحساب فقط' },
+  { key: 'partners', title: 'كشف العملاء والموردين', group: 'الذمم', icon: Users, description: 'ذمم جهات المستودع فقط' },
+  { key: 'cash', title: 'الصناديق والسيولة', group: 'المالية', icon: Wallet, description: 'صناديق المستودع وحركاتها فقط' },
 ];
-
-const StocktakeSnapshots = () => {
-  try { return JSON.parse(localStorage.getItem('HAMEED_HLIWI_STOCKTAKES') || '[]') as Array<{ id: string; date: string; itemCount: number; netWeight: number }>; }
-  catch { return []; }
-};
+const n = (value: unknown) => Number(value ?? 0);
+const money = (value: unknown) => `$ ${n(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const Empty = () => <div className="p-8 text-center text-xs text-slate-400">لا توجد بيانات مسجلة ضمن الفترة الحالية.</div>;
 
 export const ReportsView: React.FC = () => {
-  const { inventory, invoices, partners, vouchers, cashBoxes, goldPrices, warehouses, activityLogs, formatMoney, settings } = useStore();
-  const [activeReport, setActiveReport] = useState<ReportKey>('overview');
-  const [query, setQuery] = useState('');
-  const [showCatalogue, setShowCatalogue] = useState(false);
-  const [dateRange, setDateRange] = useState<'all' | 'today' | 'week' | 'month'>('all');
-  const [warehouseId, setWarehouseId] = useState('all');
-  const reportContentRef = useRef<HTMLElement>(null);
-  // TASK 19: the figures come from the server, aggregated there from the authoritative records.
-  // Nothing on this screen is totalled in the browser — two managers must never see different
-  // numbers because one had a shorter page — and nothing carries cost, profit or valuation.
-  const [server, setServer] = useState<Record<string, any>>({});
+  const [active, setActive] = useState<ReportKey>('overview');
+  const [search, setSearch] = useState('');
+  const [catalogue, setCatalogue] = useState(false);
+  const [period, setPeriod] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [data, setData] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  // §26: presets rather than a two-date picker, which is painful on a phone and goes unused.
+  const content = useRef<HTMLElement>(null);
+  const definition = reports.find(report => report.key === active)!;
   const filters: ReportFilters = useMemo(() => {
-    const now = new Date();
-    const day = (date: Date) => date.toISOString().slice(0, 10);
-    const from = dateRange === 'today' ? day(now)
-      : dateRange === 'week' ? day(new Date(now.getTime() - 6 * 86400000))
-      : dateRange === 'month' ? `${day(now).slice(0, 8)}01`
-      : undefined;
-    return { from, to: from ? day(now) : undefined, warehouseId: warehouseId === 'all' ? undefined : warehouseId };
-  }, [dateRange, warehouseId]);
-
+    const now = new Date(); const day = (date: Date) => date.toISOString().slice(0, 10);
+    const from = period === 'today' ? day(now) : period === 'week' ? day(new Date(now.getTime() - 6 * 86400000)) : period === 'month' ? `${day(now).slice(0, 8)}01` : undefined;
+    return { from, to: from ? day(now) : undefined };
+  }, [period]);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true); setError('');
       try {
-        const [overview, sales, byCustomer, purchases, workmanship, inventoryReport, receivables, cash, gold] = await Promise.all([
-          reportsApi.overview(filters), reportsApi.sales(filters), reportsApi.salesByCustomer(filters),
-          reportsApi.purchases(filters), reportsApi.workmanship(filters), reportsApi.inventory(filters),
-          reportsApi.receivables(filters), reportsApi.cash(filters), reportsApi.gold(filters),
+        const [overview, sales, byCustomer, purchases, workmanship, inventory, receivables, cash] = await Promise.all([
+          reportsApi.overview(filters), reportsApi.sales(filters), reportsApi.salesByCustomer(filters), reportsApi.purchases(filters), reportsApi.workmanship(filters), reportsApi.inventory(filters), reportsApi.receivables(filters), reportsApi.cash(filters),
         ]);
-        if (!cancelled) setServer({ overview, sales, byCustomer, purchases, workmanship, inventoryReport, receivables, cash, gold });
-      } catch (reason: any) {
-        if (!cancelled) setError(reason?.status === 403 ? 'لا تملك صلاحية عرض التقارير.' : reason?.message || 'تعذر تحميل التقارير من الخادم.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+        if (!cancelled) setData({ overview, sales, byCustomer, purchases, workmanship, inventory, receivables, cash });
+      } catch (reason: any) { if (!cancelled) setError(reason?.status === 403 ? 'لا تملك صلاحية عرض التقارير.' : reason?.message || 'تعذر تحميل التقارير من الخادم.'); }
+      finally { if (!cancelled) setLoading(false); }
     };
-    void load();
-    return () => { cancelled = true; };
+    void load(); return () => { cancelled = true; };
   }, [filters]);
-
-  const sales = invoices.filter(invoice => invoice.type === 'sale');
-  const purchases = invoices.filter(invoice => invoice.type === 'purchase');
-  const stock = inventory.filter(item => item.status === 'in_stock' && (warehouseId === 'all' || item.warehouseId === warehouseId));
-  const definition = reports.find(report => report.key === activeReport)!;
-  const reportSnapshots = StocktakeSnapshots();
-
-  const totals = useMemo(() => {
-    const stockWeight = stock.reduce((sum, item) => sum + item.netWeightGrams, 0);
-    const stockValue = stock.reduce((sum, item) => sum + item.netWeightGrams * (goldPrices.find(price => price.karat === item.karat)?.sellPriceUSDPerGram || 0) + item.totalLaborFeeUSD, 0);
-    return {
-      stockWeight, stockValue,
-      sales: sales.reduce((sum, invoice) => sum + invoice.finalTotalUSD, 0),
-      labor: sales.reduce((sum, invoice) => sum + invoice.totalLaborUSD, 0),
-      receivables: partners.filter(partner => partner.balanceUSD < 0).reduce((sum, partner) => sum + Math.abs(partner.balanceUSD), 0),
-      payables: partners.filter(partner => partner.balanceUSD > 0).reduce((sum, partner) => sum + partner.balanceUSD, 0)
-    };
-  }, [stock, goldPrices, sales, partners]);
-
-  const filteredByQuery = (items: any[]): any[] => !query.trim() ? items : items.filter(item => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()));
-  const selectReport = (key: ReportKey) => { setActiveReport(key); setShowCatalogue(false); setQuery(''); };
-  const print = () => window.print();
-  const share = () => {
-    const displayedReport = reportContentRef.current?.innerText?.replace(/\n{3,}/g, '\n\n').trim();
-    const text = `${displayedReport || `تقرير ${definition.title}\n${definition.description}`}\n\nنظام حميد حليوي لتجارة وصياغة الذهب`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  const rows = (items: any[]) => !search.trim() ? items : items.filter(item => JSON.stringify(item).toLowerCase().includes(search.toLowerCase()));
+  const line = (title: string, subtitle: string, value: string, tone = 'text-slate-900') => <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-slate-100 py-3 last:border-0"><div className="min-w-0"><p className="truncate text-xs font-black text-slate-900">{title}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">{subtitle}</p></div><p className={`self-center whitespace-nowrap text-left font-mono text-xs font-black ${tone}`}>{value}</p></div>;
+  const card = (label: string, value: string, tone = 'amber') => <div className={`rounded-sm border border-slate-200 border-r-4 ${tone === 'rose' ? 'border-r-rose-500' : tone === 'emerald' ? 'border-r-emerald-500' : 'border-r-amber-400'} bg-white p-3`}><p className="text-[10px] font-bold text-slate-500">{label}</p><p className="mt-1 font-mono text-lg font-black text-slate-900">{value}</p></div>;
+  const body = () => {
+    if (active === 'overview') { const o = data.overview; return !o ? <Empty /> : <><div className="grid grid-cols-2 lg:grid-cols-5 gap-2">{card('مبيعات مسجلة', money(o.sales?.valueUSD), 'emerald')}{card('إيراد المصنعية', money(data.workmanship?.totalUSD))}{card('ذهب المخزون الصافي', `${n(o.inventory?.pureGoldGrams).toFixed(2)} غ`)}{card('لنا على العملاء', money(o.receivables?.owedToShopUSD), 'rose')}{card('علينا للموردين', money(o.receivables?.owedByShopUSD))}</div><div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">{(o.cash ?? []).map((box: any) => line(box.name, `عملة الصندوق: ${box.currency}`, box.currency === 'USD' ? money(box.closingBalance) : `${n(box.closingBalance).toLocaleString('ar-SY')} ل.س`, 'text-emerald-700'))}</div></>; }
+    if (active === 'sales') { const t = data.sales?.totals; return !t ? <Empty /> : <div>{line('إجمالي المبيعات', `${n(t.invoices)} فاتورة ضمن الفترة`, money(t.valueUSD), 'text-emerald-700')}{line('المدفوع', 'المبالغ المسددة', money(t.paidUSD), 'text-emerald-700')}{line('المتبقي', 'ذمم مبيعات المستودع', money(t.outstandingUSD), 'text-rose-700')}</div>; }
+    if (active === 'salesByCustomer') { const list = rows(data.byCustomer ?? []); return <>{list.map((x: any) => line(x.partnerName, `${n(x.invoices)} فاتورة • آخر تعامل: ${x.lastAt ? new Date(x.lastAt).toLocaleDateString('ar-EG') : '—'}`, `${money(x.valueUSD)}${n(x.outstandingUSD) > 0 ? ` • متبقٍ ${money(x.outstandingUSD)}` : ''}`, 'text-emerald-700'))}{!list.length && <Empty />}</>; }
+    if (active === 'salesByKarat') { const list = data.sales?.byKarat ?? []; return <>{list.map((x: any) => line(`عيار ${x.karat}`, `${n(x.lines)} سطر • صافي ${n(x.netWeightGrams).toFixed(2)} غ`, money(n(x.goldValueUSD) + n(x.workmanshipUSD)), 'text-amber-800'))}{!list.length && <Empty />}</>; }
+    if (active === 'purchases') { const p = data.purchases; const list = rows(p?.byPartner ?? []); return <>{p?.totals && line('إجمالي المشتريات', `${n(p.totals.invoices)} فاتورة ضمن الفترة`, money(p.totals.valueUSD), 'text-amber-800')}{list.map((x: any) => line(x.partnerName, `${n(x.invoices)} فاتورة`, money(x.valueUSD), 'text-amber-800'))}{!p?.totals && !list.length && <Empty />}</>; }
+    if (active === 'workmanship') { const w = data.workmanship; return !w ? <Empty /> : <>{(w.byKarat ?? []).map((x: any) => line(`عيار ${x.karat}`, `${n(x.weightGrams).toFixed(2)} غ مباعة`, money(x.workmanshipUSD), 'text-emerald-700'))}{line('الإجمالي', 'إيراد المصنعية خلال الفترة', money(w.totalUSD), 'text-emerald-700')}</>; }
+    if (active === 'inventory' || active === 'inventoryByKarat') { const i = data.inventory; const list = i?.byKarat ?? []; return <>{list.map((x: any) => line(`عيار ${x.karat}`, `${n(x.pieces)} قطعة • ذهب مكافئ 24: ${(n(x.weightGrams) * n(x.karat) / 24).toFixed(2)} غ`, `${n(x.weightGrams).toFixed(2)} غ`, 'text-amber-800'))}{list.length > 0 && <p className="mt-3 text-[11px] font-bold text-slate-600">إجمالي الذهب الصافي: {n(i.pureGoldGrams).toFixed(2)} غ</p>}{!list.length && <Empty />}</>; }
+    if (active === 'inventoryByWarehouse') { const list = data.inventory?.byWarehouse ?? []; return <>{list.map((x: any) => line(x.warehouseName, `${n(x.pieces)} قطعة متاحة`, `${n(x.weightGrams).toFixed(2)} غ`, 'text-amber-800'))}{!list.length && <Empty />}</>; }
+    if (active === 'partners') { const list = rows(data.receivables?.rows ?? []); return <>{list.map((x: any) => line(x.partnerName, `${x.partnerType === 'supplier' ? 'مورّد' : x.partnerType === 'both' ? 'عميل ومورّد' : 'عميل'} • أعمار الدين: ${n(x.aging?.currentUSD).toFixed(0)} / ${n(x.aging?.days30USD).toFixed(0)} / ${n(x.aging?.days60USD).toFixed(0)} / ${n(x.aging?.days90PlusUSD).toFixed(0)}`, n(x.balanceUSD) > 0 ? `لنا عليه ${money(x.balanceUSD)}` : `له علينا ${money(Math.abs(n(x.balanceUSD)))}`, n(x.balanceUSD) > 0 ? 'text-rose-700' : 'text-emerald-700'))}{!list.length && <Empty />}</>; }
+    const list = data.cash?.boxes ?? []; return <>{list.map((x: any) => line(x.name, `${x.currency} • وارد ${n(x.periodInflow).toFixed(2)} • صادر ${n(x.periodOutflow).toFixed(2)}`, x.currency === 'USD' ? money(x.closingBalance) : `${n(x.closingBalance).toLocaleString('ar-SY')} ل.س`, 'text-emerald-700'))}{!list.length && <Empty />}</>;
   };
-
-  const metric = (label: string, value: string, tone = 'amber') => <div className={`rounded-sm border border-slate-200 border-r-4 ${tone === 'rose' ? 'border-r-rose-500' : tone === 'emerald' ? 'border-r-emerald-500' : 'border-r-amber-400'} bg-white p-3`}><p className="text-[10px] font-bold text-slate-500">{label}</p><p className="mt-1 font-mono text-lg font-black text-slate-900">{value}</p></div>;
-  const line = (primary: string, secondary: string, right: string, tone = 'text-slate-900') => <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-slate-100 py-3 last:border-0"><div className="min-w-0"><p className="truncate text-xs font-black text-slate-900">{primary}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">{secondary}</p></div><p className={`self-center whitespace-nowrap text-left font-mono text-xs font-black ${tone}`}>{right}</p></div>;
-
-  const renderBody = () => {
-    if (activeReport === 'overview') {
-      const o = server.overview;
-      if (!o) return <Empty />;
-      return <><div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
-        {metric('مبيعات مسجلة', formatMoney(o.sales?.valueUSD ?? 0), 'emerald')}
-        {metric('إيراد المصنعية', formatMoney(server.workmanship?.totalUSD ?? 0))}
-        {metric('ذهب المخزون (صافٍ)', (o.inventory?.pureGoldGrams ?? 0).toFixed(2) + ' غ')}
-        {metric('لنا على العملاء', formatMoney(o.receivables?.owedToShopUSD ?? 0), 'rose')}
-        {metric('علينا للموردين', formatMoney(o.receivables?.owedByShopUSD ?? 0))}
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {(o.cash ?? []).map((box: any) => line(box.name, 'عملة الصندوق: ' + box.currency, box.currency === 'USD' ? formatMoney(box.closingBalance) : box.closingBalance.toLocaleString('ar-SY') + ' ل.س', 'text-emerald-700'))}
-      </div>
-      {o.salesCancelled?.count > 0 && <p className="mt-3 rounded-sm bg-slate-50 p-3 text-[11px] text-slate-600">فواتير ملغاة ضمن الفترة: {o.salesCancelled.count} بقيمة {formatMoney(o.salesCancelled.valueUSD)} — مستبعدة من المجاميع أعلاه.</p>}
-      <div className="mt-3 space-y-1">{(o.notes ?? []).map((note: string, index: number) => <p key={index} className="text-[10px] text-slate-400">{note}</p>)}</div>
-      </>;
-    }
-    if (activeReport === 'sales' || activeReport === 'purchases') { const source = activeReport === 'sales' ? sales : purchases; return <div>{filteredByQuery(source).map(invoice => line(invoice.customerOrSupplierName || 'جهة غير محددة', `${invoice.invoiceNumber} • ${invoice.date} • ${invoice.items.reduce((sum, item) => sum + item.netWeightGrams, 0).toFixed(2)} غ`, formatMoney(invoice.finalTotalUSD), activeReport === 'sales' ? 'text-emerald-700' : 'text-amber-800'))}{source.length === 0 && <Empty />}</div>; }
-    if (activeReport === 'salesByCustomer') {
-      const rows = filteredByQuery(server.byCustomer ?? []);
-      return <div>{rows.map((row: any) => line(row.partnerName, row.invoices + ' فاتورة • آخر تعامل: ' + (row.lastAt ? new Date(row.lastAt).toLocaleDateString('ar-EG') : '—'), formatMoney(row.valueUSD) + (row.outstandingUSD > 0 ? ' • متبقٍ ' + formatMoney(row.outstandingUSD) : ''), 'text-emerald-700'))}{rows.length === 0 && <Empty />}</div>;
-    }
-    if (activeReport === 'salesByKarat') {
-      const rows = server.sales?.byKarat ?? [];
-      return <div>{rows.map((row: any) => line('عيار ' + row.karat, row.lines + ' سطر • مرتجع ' + row.returnedWeightGrams.toFixed(2) + ' غ • ذهب مكافئ 24: ' + (row.netWeightGrams * Number(row.karat) / 24).toFixed(2) + ' غ', 'صافي ' + row.netWeightGrams.toFixed(2) + ' غ • ' + formatMoney(row.goldValueUSD + row.workmanshipUSD), 'text-amber-800'))}{rows.length === 0 && <Empty />}</div>;
-    }
-    if (activeReport === 'inventoryByKarat') {
-      const rows = server.inventoryReport?.byKarat ?? [];
-      return <div>{rows.map((row: any) => line('عيار ' + row.karat, row.pieces + ' قطعة • ذهب مكافئ 24: ' + (row.weightGrams * Number(row.karat) / 24).toFixed(2) + ' غ', row.weightGrams.toFixed(2) + ' غ', 'text-amber-800'))}
-        {rows.length > 0 && <p className="mt-3 text-[11px] font-bold text-slate-600">إجمالي الذهب الصافي: {(server.inventoryReport?.pureGoldGrams ?? 0).toFixed(2)} غ</p>}
-        {rows.length === 0 && <Empty />}</div>;
-    }
-    if (activeReport === 'profit') {
-      const w = server.workmanship;
-      if (!w) return <Empty />;
-      return <div>
-        {w.byKarat.map((row: any) => line('عيار ' + row.karat, row.weightGrams.toFixed(2) + ' غ مباعة', formatMoney(row.workmanshipUSD), 'text-emerald-700'))}
-        {line('الإجمالي', 'إيراد المصنعية خلال الفترة', formatMoney(w.totalUSD), 'text-emerald-700')}
-        <p className="mt-4 rounded-sm bg-amber-50 p-3 text-[11px] text-amber-950">{w.note}. الربح على الذهب نفسه يتطلب كلفة اقتناء مسجّلة لكل قطعة، وهي غير متوفرة بعد لمعظم المخزون.</p>
-      </div>;
-    }
-    if (activeReport === 'inventory' || activeReport === 'itemMovement') { const rows = filteredByQuery(stock); return <div>{rows.map(item => { const price = goldPrices.find(value => value.karat === item.karat)?.sellPriceUSDPerGram || 0; const warehouse = warehouses.find(value => value.id === item.warehouseId)?.name || 'مستودع'; return line(`${item.name} • ${item.code}`, `${warehouse} • عيار ${item.karat} • صافي ${item.netWeightGrams.toFixed(2)} غ`, formatMoney(item.netWeightGrams * price + item.totalLaborFeeUSD), 'text-amber-800'); })}{rows.length === 0 && <Empty />}</div>; }
-    if (activeReport === 'inventoryByWarehouse') {
-      const rows = server.inventoryReport?.byWarehouse ?? [];
-      return <div>{rows.map((row: any) => line(row.warehouseName, row.pieces + ' قطعة متاحة', row.weightGrams.toFixed(2) + ' غ', 'text-amber-800'))}{rows.length === 0 && <Empty />}</div>;
-    }
-    if (activeReport === 'stocktake') return <div className="space-y-2">{line('جرد النظام الحالي', `${stock.length} قطعة في نطاق الفلتر • دون فروقات مسجلة`, `${totals.stockWeight.toFixed(2)} غ`, 'text-amber-800')}{reportSnapshots.map(snapshot => line('جرد محفوظ', `بتاريخ ${snapshot.date} • ${snapshot.itemCount} قطعة`, `${snapshot.netWeight.toFixed(2)} غ`, 'text-emerald-700'))}{reportSnapshots.length === 0 && <p className="rounded-sm bg-slate-50 p-3 text-[11px] text-slate-500">لا يوجد جرد محفوظ بعد. استخدم زر «جرد» في المخزون لإنشاء تقرير جرد.</p>}</div>;
-    if (activeReport === 'partners' || activeReport === 'debts') {
-      const rows = filteredByQuery(server.receivables?.rows ?? []);
-      return <div>{rows.map((row: any) => line(row.partnerName,
-        (row.partnerType === 'supplier' ? 'مورّد' : row.partnerType === 'both' ? 'عميل ومورّد' : 'عميل') + ' • أعمار الدين: ' + row.aging.currentUSD.toFixed(0) + ' / ' + row.aging.days30USD.toFixed(0) + ' / ' + row.aging.days60USD.toFixed(0) + ' / ' + row.aging.days90PlusUSD.toFixed(0),
-        row.balanceUSD > 0 ? 'لنا عليه ' + formatMoney(row.balanceUSD) : 'له علينا ' + formatMoney(Math.abs(row.balanceUSD)),
-        row.balanceUSD > 0 ? 'text-rose-700' : 'text-emerald-700'))}{rows.length === 0 && <Empty />}</div>;
-    }
-    if (activeReport === 'cash') {
-      const boxes = server.cash?.boxes ?? [];
-      return <div>{boxes.map((box: any) => line(box.name, box.currency + ' • وارد ' + box.periodInflow.toFixed(2) + ' • صادر ' + box.periodOutflow.toFixed(2), box.currency === 'USD' ? formatMoney(box.closingBalance) : box.closingBalance.toLocaleString('ar-SY') + ' ل.س', 'text-emerald-700'))}
-        <p className="mt-3 text-[10px] text-slate-400">{server.cash?.note}</p>
-        {boxes.length === 0 && <Empty />}</div>;
-    }
-    if (activeReport === 'expenses') { const rows = vouchers.filter(voucher => voucher.type === 'expense'); return <div>{rows.map(voucher => line(voucher.category || 'مصروف', `${voucher.date} • ${voucher.statement}`, formatMoney(voucher.amountUSD), 'text-rose-700'))}{rows.length === 0 && <Empty />}</div>; }
-    if (activeReport === 'goldPrices') return <div>{goldPrices.map(price => line(`عيار ${price.karat}`, `شراء: $ ${price.buyPriceUSDPerGram.toFixed(2)} /غ`, `بيع: $ ${price.sellPriceUSDPerGram.toFixed(2)} /غ`, 'text-amber-800'))}</div>;
-    return <div>{activityLogs.slice(0, 100).map(log => line(log.action, `${log.timestamp} • ${log.userName} • ${log.details}`, log.type, 'text-slate-600'))}{activityLogs.length === 0 && <Empty />}</div>;
-  };
-
-  return <div className="space-y-3 sm:space-y-6" dir="rtl">
-    <header className="flex items-center justify-between gap-3 rounded-sm border border-slate-200 border-r-4 border-r-amber-400 bg-white p-3 sm:p-5 shadow-sm"><div><p className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700"><BarChart3 className="w-4 h-4" />مركز التقارير الإداري</p><h2 className="text-base sm:text-2xl font-black text-slate-900">التقارير والتحليلات</h2></div><div className="no-print flex items-center gap-1"><button onClick={print} title="تصدير PDF" className="rounded-sm bg-slate-900 p-2 text-amber-400"><FileDown className="w-4 h-4" /></button><button onClick={share} title="مشاركة عبر واتساب" className="rounded-sm border border-slate-200 bg-white p-2 text-slate-800"><Share2 className="w-4 h-4" /></button></div></header>
-    <div className="no-print grid grid-cols-[1fr_auto] gap-2"><div className="relative"><Search className="absolute right-3 top-2.5 w-4 h-4 text-slate-400" /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="ابحث داخل التقرير الحالي..." className="w-full rounded-sm border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs" /></div><button onClick={() => setShowCatalogue(value => !value)} className="rounded-sm bg-amber-400 px-3 text-xs font-black text-slate-900">التقارير ({reports.length})</button></div>
-    {showCatalogue && <div className="no-print rounded-sm border border-slate-200 bg-white p-2 shadow-sm"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">{reports.map(report => { const Icon = report.icon; return <button key={report.key} onClick={() => selectReport(report.key)} className={`flex items-center gap-2 rounded-sm p-2.5 text-right ${activeReport === report.key ? 'bg-slate-900 text-amber-400' : 'hover:bg-amber-50 text-slate-800'}`}><Icon className="w-4 h-4 shrink-0" /><span><b className="block text-xs">{report.title}</b><small className="block text-[10px] opacity-70">{report.group} — {report.description}</small></span></button>; })}</div></div>}
-    <div className="no-print grid grid-cols-2 gap-2"><select value={dateRange} onChange={event => setDateRange(event.target.value as typeof dateRange)} className="rounded-sm border border-slate-200 bg-white p-2 text-xs"><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="week">آخر 7 أيام</option><option value="month">هذا الشهر</option></select><select value={warehouseId} onChange={event => setWarehouseId(event.target.value)} className="rounded-sm border border-slate-200 bg-white p-2 text-xs"><option value="all">كل الفروع</option>{warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name}</option>)}</select></div>
-    {(loading || error) && <div className={`no-print rounded-sm border px-4 py-2.5 text-[11px] font-bold ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{error || 'جارٍ حساب التقارير على الخادم...'}</div>}
-    <main ref={reportContentRef} className="print-container rounded-sm border border-slate-200 bg-white shadow-sm"><div className="print-only print-brand-header"><div><b>{settings.storeName}</b><span>{settings.address}</span></div><div><b>{definition.title}</b><span>{new Date().toLocaleDateString('ar-SY')}</span></div></div><div className="border-b border-slate-100 p-3 sm:p-5"><p className="text-[10px] font-bold text-amber-700">{definition.group}</p><h3 className="text-base font-black text-slate-900">{definition.title}</h3><p className="mt-1 text-[11px] text-slate-500">{definition.description}</p><div className="no-print mt-3 flex gap-2"><button onClick={print} className="flex-1 rounded-sm bg-slate-900 py-2 text-xs font-black text-amber-400 flex items-center justify-center gap-1.5"><FileDown className="w-4 h-4" />تصدير PDF</button><button onClick={share} className="flex-1 rounded-sm border border-slate-200 bg-white py-2 text-xs font-black text-slate-800 flex items-center justify-center gap-1.5"><Share2 className="w-4 h-4" />مشاركة واتساب</button></div></div><div className="p-3 sm:p-5">{renderBody()}</div></main>
-  </div>;
+  const share = () => window.open(`https://wa.me/?text=${encodeURIComponent(`${content.current?.innerText || `تقرير ${definition.title}`}\n\nنظام حميد حليوي`)}`, '_blank', 'noopener,noreferrer');
+  return <div className="space-y-3 sm:space-y-6" dir="rtl"><header className="flex items-center justify-between gap-3 rounded-sm border border-slate-200 border-r-4 border-r-amber-400 bg-white p-3 sm:p-5 shadow-sm"><div><p className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700"><BarChart3 className="w-4 h-4" />مركز التقارير الإداري</p><h2 className="text-base sm:text-2xl font-black text-slate-900">التقارير والتحليلات</h2></div><div className="no-print flex gap-1"><button onClick={() => window.print()} className="rounded-sm bg-slate-900 p-2 text-amber-400"><FileDown className="w-4 h-4" /></button><button onClick={share} className="rounded-sm border border-slate-200 bg-white p-2"><Share2 className="w-4 h-4" /></button></div></header><div className="no-print grid grid-cols-[1fr_auto] gap-2"><div className="relative"><Search className="absolute right-3 top-2.5 w-4 h-4 text-slate-400" /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="ابحث داخل التقرير الحالي..." className="w-full rounded-sm border border-slate-200 bg-white py-2 pr-9 pl-3 text-xs" /></div><button onClick={() => setCatalogue(value => !value)} className="rounded-sm bg-amber-400 px-3 text-xs font-black text-slate-900">التقارير ({reports.length})</button></div>{catalogue && <div className="no-print rounded-sm border border-slate-200 bg-white p-2 shadow-sm"><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">{reports.map(report => { const Icon = report.icon; return <button key={report.key} onClick={() => { setActive(report.key); setCatalogue(false); setSearch(''); }} className={`flex items-center gap-2 rounded-sm p-2.5 text-right ${active === report.key ? 'bg-slate-900 text-amber-400' : 'hover:bg-amber-50 text-slate-800'}`}><Icon className="w-4 h-4 shrink-0" /><span><b className="block text-xs">{report.title}</b><small className="block text-[10px] opacity-70">{report.group} — {report.description}</small></span></button>; })}</div></div>}<select value={period} onChange={e => setPeriod(e.target.value as typeof period)} className="no-print w-full rounded-sm border border-slate-200 bg-white p-2 text-xs"><option value="all">كل الفترات</option><option value="today">اليوم</option><option value="week">آخر 7 أيام</option><option value="month">هذا الشهر</option></select>{(loading || error) && <div className={`no-print rounded-sm border px-4 py-2.5 text-[11px] font-bold ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>{error || 'جارٍ حساب التقارير على الخادم...'}</div>}<main ref={content} className="print-container rounded-sm border border-slate-200 bg-white shadow-sm"><div className="print-only print-brand-header"><div><b>نظام حميد حليوي</b><span>تقرير المستودع</span></div><div><b>{definition.title}</b><span>{new Date().toLocaleDateString('ar-SY')}</span></div></div><div className="border-b border-slate-100 p-3 sm:p-5"><p className="text-[10px] font-bold text-amber-700">{definition.group}</p><h3 className="text-base font-black text-slate-900">{definition.title}</h3><p className="mt-1 text-[11px] text-slate-500">{definition.description}</p></div><div className="p-3 sm:p-5">{body()}</div></main></div>;
 };
-
-const Empty = () => <div className="p-8 text-center text-xs text-slate-400">لا توجد بيانات مسجلة لهذا التقرير ضمن الفلاتر الحالية.</div>;
