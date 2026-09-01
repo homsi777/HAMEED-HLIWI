@@ -54,7 +54,6 @@ export const WAREHOUSE_MANAGER_PERMISSIONS = [
   'suppliers.view', 'suppliers.create', 'suppliers.update',
   'reports.view', 'users.view', 'users.manage', 'warehouses.view',
   'finance.view', 'finance.voucher.create',
-  'accounting.view',
   'gold_accounts.view', 'gold_accounts.transaction.create', 'gold_accounts.used_inventory.convert',
   'shifts.view', 'shifts.approve', 'shifts.manage',
   'employees.view', 'employees.manage', 'employees.payroll',

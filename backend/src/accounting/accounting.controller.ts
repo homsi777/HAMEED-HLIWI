@@ -4,8 +4,9 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { PermissionGuard } from '../permissions/permission.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
 import { AccountingService } from './accounting.service.js';
+import { CompanyAccountingGuard } from './company-accounting.guard.js';
 
-@Controller('accounting') @UseGuards(AuthGuard, PermissionGuard)
+@Controller('accounting') @UseGuards(AuthGuard, PermissionGuard, CompanyAccountingGuard)
 export class AccountingController {
   constructor(@Inject(AccountingService) private readonly accounting: AccountingService) {}
 

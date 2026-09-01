@@ -7,8 +7,9 @@ import { AccountingController } from './accounting.controller.js';
 import { AccountingDocumentsService } from './accounting-documents.service.js';
 import { AccountingPostingService } from './accounting-posting.service.js';
 import { AccountingService } from './accounting.service.js';
+import { CompanyAccountingGuard } from './company-accounting.guard.js';
 
 // The posting services are exported so Finance, Sales, Purchases and Returns can post
 // their accounting effect inside their own transaction.
-@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule], controllers: [AccountingController], providers: [AccountingService, AccountingPostingService, AccountingDocumentsService], exports: [AccountingPostingService, AccountingDocumentsService] })
+@Module({ imports: [AuthModule, PermissionsModule, WarehousesModule, AuditModule], controllers: [AccountingController], providers: [AccountingService, AccountingPostingService, AccountingDocumentsService, CompanyAccountingGuard], exports: [AccountingPostingService, AccountingDocumentsService] })
 export class AccountingModule {}
