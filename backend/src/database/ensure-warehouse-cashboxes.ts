@@ -17,7 +17,8 @@ async function main() {
     const fallbackUserId = fallbackUsers[0]?.id;
     if (!fallbackUserId && allWarehouses.length) throw new Error('Cannot create cashboxes because no user exists to own the audit fields.');
     for (const warehouse of allWarehouses) {
-      await db.transaction(tx => ensureWarehouseDefaultCashboxes(tx, warehouse.id, warehouse.managerUserId ?? fallbackUserId!));
+      const prepared = await db.transaction(tx => ensureWarehouseDefaultCashboxes(tx, warehouse.id, warehouse.managerUserId ?? fallbackUserId!));
+      if (prepared.size !== 2) throw new Error(`Default cashboxes could not be verified for warehouse ${warehouse.id}.`);
     }
     console.log(`Default USD and SYP cashboxes verified for ${allWarehouses.length} warehouse(s).`);
   } finally { await sql.end(); }
