@@ -342,33 +342,40 @@ export class ReportsService {
    * A positive balance means the partner owes the shop, which is the ledger's own convention.
    * Aging buckets the outstanding remainder of posted sales by invoice age.
    */
-  async receivables(user: AuthIdentity, _query: Record<string, unknown>) {
+  async receivables(user: AuthIdentity, query: Record<string, unknown>) {
     // The subledger is summed in its own grouped query and merged here. A correlated `sql`
     // expression mixed into a select alongside table columns does not map back reliably — the
     // same trap TASK 17 hit on this exact table, which is why it is not repeated.
-    const [partnerRows, ledgerRows] = await Promise.all([
-      this.db.select({ partnerId: partners.id, partnerName: partners.name, partnerType: partners.type, opening: partners.openingBalanceUsd }).from(partners),
+    const ids = this.warehouseIds(user, query);
+    if (ids && !ids.length) return { totalOwedToShopUSD: 0, totalOwedByShopUSD: 0, rows: [] };
+    const scoped = ids ? inArray(partnerLedgerEntries.warehouseId, ids) : undefined;
+    const [partnerRows, ledgerRows, invoiceRows] = await Promise.all([
+      // An opening balance belongs to the company, not to an arbitrary branch.  It is
+      // therefore shown only to global users until it has an explicit warehouse movement.
+      ids ? Promise.resolve([]) : this.db.select({ partnerId: partners.id, partnerName: partners.name, partnerType: partners.type, opening: partners.openingBalanceUsd }).from(partners),
       this.db.select({
         partnerId: partnerLedgerEntries.partnerId,
         net: sql<string>`coalesce(sum(${partnerLedgerEntries.debitUsd} - ${partnerLedgerEntries.creditUsd}), 0)`,
-      }).from(partnerLedgerEntries).groupBy(partnerLedgerEntries.partnerId),
+      }).from(partnerLedgerEntries).where(scoped).groupBy(partnerLedgerEntries.partnerId),
+      this.db.select({ partnerId: salesInvoices.customerPartnerId, remaining: salesInvoices.remainingDebtUsd, createdAt: salesInvoices.createdAt })
+        .from(salesInvoices).where(and(eq(salesInvoices.status, 'posted'), sql`${salesInvoices.remainingDebtUsd} > 0`, ids ? inArray(salesInvoices.warehouseId, ids) : undefined)),
     ]);
     const netByPartner = new Map(ledgerRows.map(row => [row.partnerId, Number(row.net)]));
-    const balances = partnerRows.map(row => ({ ...row, ledger: netByPartner.get(row.partnerId) ?? 0 }));
+    const names = new Map(partnerRows.map(row => [row.partnerId, row]));
+    if (ids && ledgerRows.length) {
+      const scopedPartners = await this.db.select({ partnerId: partners.id, partnerName: partners.name, partnerType: partners.type }).from(partners).where(inArray(partners.id, ledgerRows.map(row => row.partnerId)));
+      for (const partner of scopedPartners) names.set(partner.partnerId, { ...partner, opening: '0' });
+    }
+    const balances = [...names.values()].map(row => ({ ...row, ledger: netByPartner.get(row.partnerId) ?? 0 }));
 
-    const aging = await this.db.execute(sql`
-      select invoice.customer_partner_id as partner_id,
-             coalesce(sum(case when now() - invoice.created_at <= interval '30 days'  then invoice.remaining_debt_usd else 0 end), 0) as bucket_current,
-             coalesce(sum(case when now() - invoice.created_at >  interval '30 days'
-                                and now() - invoice.created_at <= interval '60 days'  then invoice.remaining_debt_usd else 0 end), 0) as bucket_30,
-             coalesce(sum(case when now() - invoice.created_at >  interval '60 days'
-                                and now() - invoice.created_at <= interval '90 days'  then invoice.remaining_debt_usd else 0 end), 0) as bucket_60,
-             coalesce(sum(case when now() - invoice.created_at >  interval '90 days'  then invoice.remaining_debt_usd else 0 end), 0) as bucket_90
-        from sales_invoices invoice
-       where invoice.status = 'posted' and invoice.remaining_debt_usd > 0
-       group by 1`);
     const byPartner = new Map<string, any>();
-    for (const row of aging as unknown as Array<Record<string, any>>) byPartner.set(row.partner_id, row);
+    for (const invoice of invoiceRows) {
+      const age = Date.now() - new Date(invoice.createdAt).getTime();
+      const key = age <= 30 * 86400000 ? 'bucket_current' : age <= 60 * 86400000 ? 'bucket_30' : age <= 90 * 86400000 ? 'bucket_60' : 'bucket_90';
+      const bucket = byPartner.get(invoice.partnerId) ?? { bucket_current: 0, bucket_30: 0, bucket_60: 0, bucket_90: 0 };
+      bucket[key] += Number(invoice.remaining);
+      byPartner.set(invoice.partnerId, bucket);
+    }
 
     const rows = balances.map(row => {
       const balance = money(Number(row.opening) + Number(row.ledger));
@@ -400,7 +407,7 @@ export class ReportsService {
     const ids = this.warehouseIds(user, query);
     const { from, to } = this.range(query);
     const boxes = await this.db.select().from(cashboxes).where(eq(cashboxes.isActive, true));
-    const visible = ids ? boxes.filter(box => !box.warehouseId || ids.includes(box.warehouseId)) : boxes;
+    const visible = ids ? boxes.filter(box => box.warehouseId && ids.includes(box.warehouseId)) : boxes;
 
     const movementConditions: any[] = [];
     if (from) movementConditions.push(gte(cashMovements.createdAt, from));
@@ -496,7 +503,7 @@ export class ReportsService {
     if (ids && !ids.length) return [];
     const rawLimit = Number(query.limit ?? 5);
     const limit = Number.isFinite(rawLimit) ? Math.min(20, Math.max(1, Math.floor(rawLimit))) : 5;
-    const scope = ids ? or(inArray(auditLogs.warehouseId, ids), isNull(auditLogs.warehouseId)) : undefined;
+    const scope = ids ? inArray(auditLogs.warehouseId, ids) : undefined;
     const rows = await this.db.select({
       id: auditLogs.id, action: auditLogs.action, module: auditLogs.module, createdAt: auditLogs.createdAt,
       actorName: users.fullName, warehouseName: warehouses.name,

@@ -5,6 +5,7 @@ import { DATABASE, type Database } from '../database/database.module.js';
 import { cashMovements, cashboxes, partnerLedgerEntries, voucherSequences, vouchers } from '../database/schema.js';
 import { AccountingDocumentsService } from '../accounting/accounting-documents.service.js';
 import { DocumentNumberService } from '../common/document-number.service.js';
+import { ensureWarehouseDefaultCashboxes } from './warehouse-default-cashboxes.js';
 
 export type CashCurrency = 'USD' | 'SYP';
 export type VoucherKind = 'receipt' | 'payment' | 'expense';
@@ -54,7 +55,7 @@ export class FinancePostingService {
 
   // A cash document without a cashbox is a lie, so posting fails loudly rather than
   // letting an invoice claim money moved into a box that was never configured.
-  async resolveCashbox(tx: any, currency: CashCurrency, warehouseId: string | null | undefined, explicitCashboxId?: string | null) {
+  async resolveCashbox(tx: any, user: AuthIdentity, currency: CashCurrency, warehouseId: string | null | undefined, explicitCashboxId?: string | null) {
     if (explicitCashboxId) {
       const chosen = (await tx.select().from(cashboxes).where(and(eq(cashboxes.id, explicitCashboxId), eq(cashboxes.isActive, true), isNull(cashboxes.archivedAt))).limit(1))[0];
       if (!chosen) throw new ConflictException('The selected cashbox is not available.');
@@ -62,17 +63,22 @@ export class FinancePostingService {
       if (chosen.warehouseId && warehouseId && chosen.warehouseId !== warehouseId) throw new ConflictException('The selected cashbox belongs to another warehouse.');
       return chosen;
     }
-    const scoped = warehouseId
+    let scoped = warehouseId
       ? (await tx.select().from(cashboxes).where(and(eq(cashboxes.warehouseId, warehouseId), eq(cashboxes.currency, currency), eq(cashboxes.isDefault, true), eq(cashboxes.isActive, true), isNull(cashboxes.archivedAt))).limit(1))[0]
       : undefined;
     if (scoped) return scoped;
+    if (warehouseId) {
+      scoped = (await ensureWarehouseDefaultCashboxes(tx, warehouseId, user.id, [currency])).get(currency);
+      if (scoped) return scoped;
+      throw new ConflictException(`A default ${currency} cashbox could not be prepared for this warehouse.`);
+    }
     const company = (await tx.select().from(cashboxes).where(and(isNull(cashboxes.warehouseId), eq(cashboxes.currency, currency), eq(cashboxes.isDefault, true), eq(cashboxes.isActive, true), isNull(cashboxes.archivedAt))).limit(1))[0];
     if (company) return company;
     throw new ConflictException(`No default ${currency} cashbox is configured for this warehouse. Create one in Finance before recording ${currency} cash.`);
   }
 
   async postVoucher(tx: any, user: AuthIdentity, input: PostVoucherInput) {
-    const cashbox = await this.resolveCashbox(tx, input.cashboxCurrency ?? input.currency, input.warehouseId, input.cashboxId);
+    const cashbox = await this.resolveCashbox(tx, user, input.cashboxCurrency ?? input.currency, input.warehouseId, input.cashboxId);
     const year = new Date().getUTCFullYear();
     // Receipts, payments and expenses all read `HH####`, so they share one counter: three
     // separate ones would eventually print the same voucher number on two documents.
