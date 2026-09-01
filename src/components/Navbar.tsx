@@ -123,7 +123,8 @@ export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) =
                     setEditingRate(true);
                   }}
                   title="تعديل سعر الصرف"
-                  className="hidden sm:block text-slate-400 hover:text-slate-900 p-0.5 transition"
+                  aria-label="تعديل سعر الصرف"
+                  className="text-slate-400 hover:text-slate-900 p-0.5 transition"
                 >
                   <Edit2 className="w-3 h-3" />
                 </button>
