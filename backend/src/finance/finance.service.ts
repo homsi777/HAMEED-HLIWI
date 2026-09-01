@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { AuthIdentity } from '../auth/auth.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -58,10 +58,25 @@ export class FinanceService {
     @Inject(DocumentNumberService) private readonly numbers: DocumentNumberService,
   ) {}
 
+  /** A branch account may never read or write company-level finance rows. */
+  private assertFinancialWarehouse(user: AuthIdentity, warehouseId: string | null | undefined) {
+    if (!warehouseId) {
+      if (!this.scope.canAccessAll(user)) throw new ForbiddenException('Company-level financial data is not available to a warehouse account.');
+      return;
+    }
+    this.scope.assertAccess(user, warehouseId);
+  }
+
+  private warehouseIds(user: AuthIdentity) {
+    const ids = this.scope.allowedWarehouseIds(user);
+    if (ids && !ids.length) return [];
+    return ids;
+  }
+
   // ---------------------------------------------------------------- cashboxes
   async listCashboxes(user: AuthIdentity, query: Record<string, unknown>) {
     const conditions: any[] = [isNull(cashboxes.archivedAt)];
-    if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; conditions.push(ids.length ? or(inArray(cashboxes.warehouseId, ids), isNull(cashboxes.warehouseId))! : isNull(cashboxes.warehouseId)); }
+    if (!this.scope.canAccessAll(user)) { const ids = this.warehouseIds(user)!; conditions.push(ids.length ? inArray(cashboxes.warehouseId, ids) : sql`false`); }
     if (query.warehouseId) { const warehouseId = uuid(query.warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); conditions.push(eq(cashboxes.warehouseId, warehouseId)); }
     if (query.currency && CURRENCIES.has(String(query.currency))) conditions.push(eq(cashboxes.currency, query.currency as CashCurrency));
     // Balances are aggregated straight from the movement ledger, so a cashbox can never
@@ -91,7 +106,7 @@ export class FinanceService {
     const name = this.text(input.name, 'name', 120);
     const currency = typeof input.currency === 'string' && CURRENCIES.has(input.currency) ? input.currency as CashCurrency : (() => { throw new ConflictException('currency is invalid.'); })();
     const warehouseId = input.warehouseId === undefined || input.warehouseId === null || input.warehouseId === '' ? null : uuid(input.warehouseId, 'warehouseId');
-    if (warehouseId) this.scope.assertAccess(user, warehouseId);
+    this.assertFinancialWarehouse(user, warehouseId);
     const openingBalance = number(input.openingBalance ?? '0', 'openingBalance');
     const isDefault = input.isDefault === true;
     const created = await this.db.transaction(async tx => {
@@ -111,7 +126,7 @@ export class FinanceService {
     const updated = await this.db.transaction(async tx => {
       const current = (await tx.select().from(cashboxes).where(and(eq(cashboxes.id, cashboxId), isNull(cashboxes.archivedAt))).limit(1))[0];
       if (!current) throw new NotFoundException('Cashbox not found.');
-      if (current.warehouseId) this.scope.assertAccess(user, current.warehouseId);
+      this.assertFinancialWarehouse(user, current.warehouseId);
       const isDefault = input.isDefault === undefined ? current.isDefault : input.isDefault === true;
       if (isDefault && !current.isDefault) await tx.update(cashboxes).set({ isDefault: false, updatedByUserId: user.id, updatedAt: new Date() }).where(and(current.warehouseId ? eq(cashboxes.warehouseId, current.warehouseId ?? undefined) : isNull(cashboxes.warehouseId), eq(cashboxes.currency, current.currency), eq(cashboxes.isDefault, true), isNull(cashboxes.archivedAt)));
       const row = (await tx.update(cashboxes).set({
@@ -130,7 +145,7 @@ export class FinanceService {
   // ---------------------------------------------------------------- vouchers
   async listVouchers(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit); const conditions: any[] = [];
-    if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; conditions.push(ids.length ? or(inArray(vouchers.warehouseId, ids), isNull(vouchers.warehouseId))! : isNull(vouchers.warehouseId)); }
+    if (!this.scope.canAccessAll(user)) { const ids = this.warehouseIds(user)!; conditions.push(ids.length ? inArray(vouchers.warehouseId, ids) : sql`false`); }
     if (query.warehouseId) { const warehouseId = uuid(query.warehouseId, 'warehouseId'); this.scope.assertAccess(user, warehouseId); conditions.push(eq(vouchers.warehouseId, warehouseId ?? undefined)); }
     if (query.type && VOUCHER_TYPES.has(String(query.type))) conditions.push(eq(vouchers.type, query.type as 'receipt'));
     if (query.status && ['posted', 'cancelled'].includes(String(query.status))) conditions.push(eq(vouchers.status, query.status as 'posted'));
@@ -153,7 +168,7 @@ export class FinanceService {
     voucherId = uuid(voucherId, 'id');
     const row = (await this.db.select({ voucher: vouchers, createdByName: users.fullName, cashboxName: cashboxes.name }).from(vouchers).innerJoin(users, eq(users.id, vouchers.createdByUserId)).innerJoin(cashboxes, eq(cashboxes.id, vouchers.cashboxId)).where(eq(vouchers.id, voucherId)).limit(1))[0];
     if (!row) throw new NotFoundException('Voucher not found.');
-    if (row.voucher.warehouseId) this.scope.assertAccess(user, row.voucher.warehouseId);
+    this.assertFinancialWarehouse(user, row.voucher.warehouseId);
     const [allocations, sourceNumbers] = await Promise.all([
       this.db.select().from(voucherAllocations).where(eq(voucherAllocations.voucherId, voucherId)),
       this.sourceNumbers(row.voucher),
@@ -179,7 +194,7 @@ export class FinanceService {
     const explicitCashboxId = cashboxId === undefined || cashboxId === null || cashboxId === '' ? null : uuid(cashboxId, 'cashboxId');
     const partnerId = input.partnerId === undefined || input.partnerId === null || input.partnerId === '' ? null : uuid(input.partnerId, 'partnerId');
     const warehouseId = input.warehouseId === undefined || input.warehouseId === null || input.warehouseId === '' ? null : uuid(input.warehouseId, 'warehouseId');
-    if (warehouseId) this.scope.assertAccess(user, warehouseId);
+    this.assertFinancialWarehouse(user, warehouseId);
     if (type === 'expense' && partnerId) throw new ConflictException('An expense voucher cannot be linked to a partner.');
     if (type !== 'expense' && !partnerId) throw new ConflictException('A receipt or payment voucher requires a partner.');
     const userNote = this.optional(input.userNote ?? input.statement, 1000);
@@ -231,7 +246,7 @@ export class FinanceService {
     await this.db.transaction(async tx => {
       const voucher = (await tx.select().from(vouchers).where(eq(vouchers.id, voucherId)).limit(1).for('update'))[0];
       if (!voucher) throw new NotFoundException('Voucher not found.');
-      if (voucher.warehouseId) this.scope.assertAccess(user, voucher.warehouseId);
+      this.assertFinancialWarehouse(user, voucher.warehouseId);
       if (voucher.status !== 'posted') throw new ConflictException('Voucher is already cancelled.');
       if (voucher.sourceType !== 'manual' && voucher.sourceType !== 'expense') throw new ConflictException('Automatic vouchers are reversed by cancelling their source document, not on their own.');
       const reversal = await this.posting.reverseVoucher(tx, user, voucher, reason);
@@ -248,8 +263,16 @@ export class FinanceService {
   // ---------------------------------------------------------------- transfers
   async listTransfers(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit);
-    const rows = await this.db.select({ transfer: cashboxTransfers, createdByName: users.fullName }).from(cashboxTransfers).innerJoin(users, eq(users.id, cashboxTransfers.createdByUserId)).orderBy(desc(cashboxTransfers.createdAt)).limit(limit).offset((page - 1) * limit);
-    const total = await this.db.select({ count: sql<number>`count(*)::int` }).from(cashboxTransfers);
+    const conditions: any[] = [];
+    if (!this.scope.canAccessAll(user)) {
+      const ids = this.warehouseIds(user)!;
+      const visibleBoxes = ids.length ? await this.db.select({ id: cashboxes.id }).from(cashboxes).where(and(inArray(cashboxes.warehouseId, ids), isNull(cashboxes.archivedAt))) : [];
+      const boxIds = visibleBoxes.map(box => box.id);
+      conditions.push(boxIds.length ? and(inArray(cashboxTransfers.fromCashboxId, boxIds), inArray(cashboxTransfers.toCashboxId, boxIds))! : sql`false`);
+    }
+    const where = conditions.length ? and(...conditions) : undefined;
+    const rows = await this.db.select({ transfer: cashboxTransfers, createdByName: users.fullName }).from(cashboxTransfers).innerJoin(users, eq(users.id, cashboxTransfers.createdByUserId)).where(where).orderBy(desc(cashboxTransfers.createdAt)).limit(limit).offset((page - 1) * limit);
+    const total = await this.db.select({ count: sql<number>`count(*)::int` }).from(cashboxTransfers).where(where);
     return { items: rows.map(row => ({ id: row.transfer.id, transferNumber: row.transfer.transferNumber, status: row.transfer.status, fromCashboxId: row.transfer.fromCashboxId, toCashboxId: row.transfer.toCashboxId, amountFrom: Number(row.transfer.amountFrom), amountTo: Number(row.transfer.amountTo), exchangeRate: row.transfer.exchangeRateSypPerUsd ? Number(row.transfer.exchangeRateSypPerUsd) : null, note: row.transfer.note ?? '', createdAt: row.transfer.createdAt.toISOString(), createdBy: row.createdByName })), meta: { page, limit, total: total[0]?.count ?? 0 } };
   }
 
@@ -270,8 +293,8 @@ export class FinanceService {
       const source = (await tx.select().from(cashboxes).where(and(eq(cashboxes.id, fromCashboxId), eq(cashboxes.isActive, true), isNull(cashboxes.archivedAt))).limit(1))[0];
       const target = (await tx.select().from(cashboxes).where(and(eq(cashboxes.id, toCashboxId), eq(cashboxes.isActive, true), isNull(cashboxes.archivedAt))).limit(1))[0];
       if (!source || !target) throw new ConflictException('One of the selected cashboxes is not available.');
-      if (source.warehouseId) this.scope.assertAccess(user, source.warehouseId);
-      if (target.warehouseId) this.scope.assertAccess(user, target.warehouseId);
+      this.assertFinancialWarehouse(user, source.warehouseId);
+      this.assertFinancialWarehouse(user, target.warehouseId);
       if (source.currency === target.currency && amountFrom !== amountTo) throw new ConflictException('A same-currency transfer must move an identical amount.');
       const available = await this.posting.cashboxBalance(fromCashboxId, tx);
       if (available === null || available < Number(amountFrom) - 0.0001) throw new ConflictException('The source cashbox does not hold enough cash for this transfer.');
@@ -293,13 +316,16 @@ export class FinanceService {
   async getTransfer(user: AuthIdentity, transferId: string) {
     const row = (await this.db.select({ transfer: cashboxTransfers, createdByName: users.fullName }).from(cashboxTransfers).innerJoin(users, eq(users.id, cashboxTransfers.createdByUserId)).where(eq(cashboxTransfers.id, uuid(transferId, 'id'))).limit(1))[0];
     if (!row) throw new NotFoundException('Transfer not found.');
+    const boxes = await this.db.select({ id: cashboxes.id, warehouseId: cashboxes.warehouseId }).from(cashboxes).where(inArray(cashboxes.id, [row.transfer.fromCashboxId, row.transfer.toCashboxId]));
+    if (boxes.length !== 2) throw new NotFoundException('Transfer cashboxes not found.');
+    for (const box of boxes) this.assertFinancialWarehouse(user, box.warehouseId);
     return { id: row.transfer.id, transferNumber: row.transfer.transferNumber, status: row.transfer.status, fromCashboxId: row.transfer.fromCashboxId, toCashboxId: row.transfer.toCashboxId, amountFrom: Number(row.transfer.amountFrom), amountTo: Number(row.transfer.amountTo), exchangeRate: row.transfer.exchangeRateSypPerUsd ? Number(row.transfer.exchangeRateSypPerUsd) : null, note: row.transfer.note ?? '', createdAt: row.transfer.createdAt.toISOString(), createdBy: row.createdByName };
   }
 
   // ---------------------------------------------------------------- movements and statements
   async listMovements(user: AuthIdentity, query: Record<string, unknown>) {
     const page = this.page(query.page); const limit = this.limit(query.limit); const conditions: any[] = [];
-    if (!this.scope.canAccessAll(user)) { const ids = this.scope.allowedWarehouseIds(user) ?? []; conditions.push(ids.length ? or(inArray(cashMovements.warehouseId, ids), isNull(cashMovements.warehouseId))! : isNull(cashMovements.warehouseId)); }
+    if (!this.scope.canAccessAll(user)) { const ids = this.warehouseIds(user)!; conditions.push(ids.length ? inArray(cashMovements.warehouseId, ids) : sql`false`); }
     if (query.cashboxId) conditions.push(eq(cashMovements.cashboxId, uuid(query.cashboxId, 'cashboxId')));
     if (query.partnerId) conditions.push(eq(cashMovements.partnerId, uuid(query.partnerId, 'partnerId')));
     if (query.direction && ['inflow', 'outflow'].includes(String(query.direction))) conditions.push(eq(cashMovements.direction, query.direction as 'inflow'));
@@ -359,10 +385,13 @@ export class FinanceService {
     const partner = (await this.db.select().from(partners).where(eq(partners.id, partnerId)).limit(1))[0];
     if (!partner) throw new NotFoundException('Partner not found.');
     const conditions: any[] = [eq(partnerLedgerEntries.partnerId, partnerId)];
+    const ids = this.warehouseIds(user);
+    if (ids) conditions.push(ids.length ? inArray(partnerLedgerEntries.warehouseId, ids) : sql`false`);
     if (typeof query.dateFrom === 'string' && !Number.isNaN(Date.parse(query.dateFrom))) conditions.push(gte(partnerLedgerEntries.occurredAt, new Date(query.dateFrom)));
     if (typeof query.dateTo === 'string' && !Number.isNaN(Date.parse(query.dateTo))) conditions.push(lte(partnerLedgerEntries.occurredAt, new Date(`${query.dateTo}T23:59:59.999Z`)));
     const entries = await this.db.select().from(partnerLedgerEntries).where(and(...conditions)).orderBy(asc(partnerLedgerEntries.occurredAt), asc(partnerLedgerEntries.createdAt), asc(partnerLedgerEntries.id));
-    const opening = Number(partner.openingBalanceUsd);
+    // Company opening balances have no branch attribution and must never be shown to a branch.
+    const opening = this.scope.canAccessAll(user) ? Number(partner.openingBalanceUsd) : 0;
     let running = opening;
     const rows = entries.map(entry => {
       running = Number((running + Number(entry.debitUsd) - Number(entry.creditUsd)).toFixed(4));
@@ -389,12 +418,16 @@ export class FinanceService {
 
   async partnerBalances(user: AuthIdentity, query: Record<string, unknown>) {
     const limit = this.limit(query.limit);
-    const [rows, totals] = await Promise.all([
-      this.db.select().from(partners).where(and(eq(partners.isActive, true), isNull(partners.archivedAt))).limit(limit),
-      this.db.select({ partnerId: partnerLedgerEntries.partnerId, net: sql<string>`coalesce(sum(${partnerLedgerEntries.debitUsd} - ${partnerLedgerEntries.creditUsd}), 0)` }).from(partnerLedgerEntries).groupBy(partnerLedgerEntries.partnerId),
-    ]);
+    const ids = this.warehouseIds(user);
+    if (ids && !ids.length) return [];
+    const totals = await this.db.select({ partnerId: partnerLedgerEntries.partnerId, net: sql<string>`coalesce(sum(${partnerLedgerEntries.debitUsd} - ${partnerLedgerEntries.creditUsd}), 0)` }).from(partnerLedgerEntries).where(ids ? inArray(partnerLedgerEntries.warehouseId, ids) : undefined).groupBy(partnerLedgerEntries.partnerId);
+    const partnerIds = totals.map(entry => entry.partnerId);
+    const rows = ids
+      ? (partnerIds.length ? await this.db.select().from(partners).where(and(eq(partners.isActive, true), isNull(partners.archivedAt), inArray(partners.id, partnerIds))).limit(limit) : [])
+      : await this.db.select().from(partners).where(and(eq(partners.isActive, true), isNull(partners.archivedAt))).limit(limit);
     return rows.map(partner => {
-      const net = Number((Number(partner.openingBalanceUsd) + Number(totals.find(entry => entry.partnerId === partner.id)?.net ?? 0)).toFixed(4));
+      const opening = this.scope.canAccessAll(user) ? Number(partner.openingBalanceUsd) : 0;
+      const net = Number((opening + Number(totals.find(entry => entry.partnerId === partner.id)?.net ?? 0)).toFixed(4));
       return { id: partner.id, name: partner.name, type: partner.type, phone: partner.phone ?? '', netUSD: net, receivableUSD: net > 0 ? net : 0, payableUSD: net < 0 ? Math.abs(net) : 0 };
     }).filter(row => query.onlyOutstanding !== 'true' || Math.abs(row.netUSD) > 0.0001);
   }
