@@ -85,7 +85,7 @@ export class AuthorizationScopeService {
       warehouses: identity.warehouses,
       warehouseIds: identity.warehouses.map(warehouse => warehouse.id),
       managedWarehouseIds: this.managedWarehouseIds(identity),
-      modules: visibleModules(identity.permissions).filter(module => this.canAccessAll(identity) || module !== 'accounting'),
+      modules: visibleModules(identity.permissions).filter(module => this.canAccessAll(identity) || !['accounting', 'reports', 'dashboard'].includes(module)),
     };
   }
 }

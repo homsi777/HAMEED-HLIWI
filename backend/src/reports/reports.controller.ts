@@ -4,12 +4,13 @@ import { AuthGuard } from '../auth/auth.guard.js';
 import { PermissionGuard } from '../permissions/permission.guard.js';
 import { RequirePermissions } from '../permissions/require-permissions.decorator.js';
 import { ReportsService } from './reports.service.js';
+import { CompanyReportsGuard } from './company-reports.guard.js';
 
 // `PermissionGuard` sits beside `AuthGuard` deliberately: without it `@RequirePermissions` is
 // decorative and silently does nothing, which is how TASK 18 briefly let a seller change the
 // shop's exchange rate. Every report here is manager-facing and must stay behind the guard.
 @Controller('reports')
-@UseGuards(AuthGuard, PermissionGuard)
+@UseGuards(AuthGuard, PermissionGuard, CompanyReportsGuard)
 export class ReportsController {
   constructor(@Inject(ReportsService) private readonly reports: ReportsService) {}
 
