@@ -126,6 +126,7 @@
 .invoice-paper-table td { height: 7.4mm; padding: 1mm 1.5mm; border-top: 1px dotted #917858; border-left: 1px solid #69563a; text-align: center; vertical-align: middle; }
 .invoice-paper-table td:first-child { text-align: right; }
 .invoice-paper-table td:last-child { border-left: none; }
+.invoice-line-total { position: relative; z-index: 2; display: inline-block; color: #5b482d; font-family: Arial, sans-serif; font-weight: 900; }
 .invoice-paper-table th:nth-child(1) { width: 26%; }
 .invoice-paper-table th:nth-child(2) { width: 11%; }
 .invoice-paper-table th:nth-child(3) { width: 7%; }
@@ -284,6 +285,11 @@
   .invoice-a5-print-active.invoice-a5-print-portrait .invoice-print-preview { width: 148mm !important; height: 210mm !important; }
   .invoice-a5-print-active .invoice-paper-disclaimer { position: absolute !important; right: 6mm !important; bottom: 5mm !important; left: 6mm !important; margin: 0 !important; }
   .invoice-a5-print-active .invoice-paper-notes { max-height: 6mm !important; overflow: hidden !important; line-height: 2.8mm !important; }
+  /* Canvas PDF renderers can omit separated-table edges. Make the invoice grid explicit. */
+  .invoice-a5-print-active .invoice-paper-table { border-collapse: collapse !important; border-radius: 0 !important; }
+  .invoice-a5-print-active .invoice-paper-table th,
+  .invoice-a5-print-active .invoice-paper-table td { border: 1px solid #69563a !important; }
+  .invoice-a5-print-active .invoice-paper-table td:last-child { border-left: 1px solid #69563a !important; }
 }
 .invoice-paper-remaining { margin-top: 4px; text-align: center; color: #9f2f23; font-weight: 900; font-size: 12px; }
 

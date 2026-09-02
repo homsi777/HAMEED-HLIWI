@@ -81,6 +81,9 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
             node.style.boxShadow = 'none';
             node.style.textShadow = 'none';
           });
+          const grid = clone.createElement('style');
+          grid.textContent = '.invoice-print-sheet .invoice-paper-table { border-collapse: collapse !important; border-radius: 0 !important; } .invoice-print-sheet .invoice-paper-table th, .invoice-print-sheet .invoice-paper-table td { border: 1px solid #69563a !important; } .invoice-print-sheet .invoice-line-total { position: relative !important; z-index: 5 !important; display: inline-block !important; color: #5b482d !important; font-weight: 900 !important; }';
+          clone.head.appendChild(grid);
         },
       });
       const width = isPortrait ? 148 : 210;
@@ -146,7 +149,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
             <tbody>
               {invoice.items.map((item, index) => (
                 <tr key={`${item.itemId || item.itemName}-${index}`}>
-                  <td>{item.itemName}</td><td>{item.netWeightGrams.toFixed(2)} غ</td><td>1</td><td>{item.karat}</td><td>$ {item.pricePerGramUSD.toFixed(2)}</td><td>$ {item.laborFeeUSDPerGram.toFixed(2)}</td><td>$ {item.totalPriceUSD.toFixed(2)}</td>
+                  <td>{item.itemName}</td><td>{item.netWeightGrams.toFixed(2)} غ</td><td>1</td><td>{item.karat}</td><td>$ {item.pricePerGramUSD.toFixed(2)}</td><td>$ {item.laborFeeUSDPerGram.toFixed(2)}</td><td><strong className="invoice-line-total">$ {item.totalPriceUSD.toFixed(2)}</strong></td>
                 </tr>
               ))}
               {Array.from({ length: blankRowCount }, (_, index) => <tr key={`blank-${index}`} className="invoice-paper-blank"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>)}
