@@ -32,6 +32,33 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
   const printAsPdf = async () => {
     const paper = paperRef.current;
     if (!paper || creatingPdf) return;
+    const sourceNodes = [paper, ...Array.from(paper.querySelectorAll<HTMLElement>('*'))];
+    const colourCanvas = document.createElement('canvas');
+    colourCanvas.width = colourCanvas.height = 1;
+    const colourContext = colourCanvas.getContext('2d');
+    // html2canvas 1.x cannot parse oklab(), while Safari can paint it. Let Safari paint each
+    // computed colour into one pixel, then give html2canvas the equivalent universally-readable
+    // rgba() value in the cloned invoice.
+    const rgba = (colour: string) => {
+      if (!colourContext || !colour || colour === 'transparent') return colour;
+      try {
+        colourContext.clearRect(0, 0, 1, 1);
+        colourContext.fillStyle = '#000';
+        colourContext.fillStyle = colour;
+        colourContext.fillRect(0, 0, 1, 1);
+        const [red, green, blue, alpha] = colourContext.getImageData(0, 0, 1, 1).data;
+        return `rgba(${red}, ${green}, ${blue}, ${(alpha / 255).toFixed(3)})`;
+      } catch { return colour; }
+    };
+    const nodeColours = sourceNodes.map(node => {
+      const style = window.getComputedStyle(node);
+      return {
+        color: rgba(style.color), backgroundColor: rgba(style.backgroundColor),
+        borderTopColor: rgba(style.borderTopColor), borderRightColor: rgba(style.borderRightColor),
+        borderBottomColor: rgba(style.borderBottomColor), borderLeftColor: rgba(style.borderLeftColor),
+        outlineColor: rgba(style.outlineColor), textDecorationColor: rgba(style.textDecorationColor),
+      };
+    });
     // Open synchronously with the tap so Safari does not classify the PDF as a blocked popup.
     const target = window.open('', '_blank');
     if (!target) { window.alert('تعذر فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.'); return; }
@@ -43,13 +70,17 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
       if ('fonts' in document) await document.fonts.ready;
       const canvas = await html2canvas(paper, {
         backgroundColor: '#fffdf7', scale: 2, useCORS: true, allowTaint: true, imageTimeout: 0, logging: false,
-        // Tailwind 4 emits modern colour functions that older html2canvas builds cannot parse.
-        // The invoice itself has fixed print colours, so this clone-only fallback is exact enough
-        // for the approved A5 layout and avoids Safari rejecting the capture.
+        // Tailwind 4 emits oklab() colours that html2canvas 1.x cannot parse.
         onclone: clone => {
-          const style = clone.createElement('style');
-          style.textContent = '.invoice-print-sheet, .invoice-print-sheet * { color: #5b482d !important; } .invoice-paper-table th { color: #4c3b27 !important; } .invoice-paper-table td { color: #5b482d !important; } .invoice-paper-remaining { color: #9f2f23 !important; }';
-          clone.head.appendChild(style);
+          const clonedPaper = clone.querySelector<HTMLElement>('.invoice-print-sheet');
+          const clonedNodes = clonedPaper ? [clonedPaper, ...Array.from(clonedPaper.querySelectorAll<HTMLElement>('*'))] : [];
+          clonedNodes.forEach((node, index) => {
+            const colors = nodeColours[index];
+            if (!colors) return;
+            Object.assign(node.style, colors);
+            node.style.boxShadow = 'none';
+            node.style.textShadow = 'none';
+          });
         },
       });
       const width = isPortrait ? 148 : 210;
