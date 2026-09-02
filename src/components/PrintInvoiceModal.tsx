@@ -1,4 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { Invoice } from '../types';
 import { useStore } from '../context/StoreContext';
 import { Printer, X } from 'lucide-react';
@@ -16,9 +18,42 @@ const invoiceTypeLabel = (type: Invoice['type']) => type === 'sale' ? 'فاتو�
 export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, onClose, financialTrail }) => {
   const { settings } = useStore();
   const isPurchaseInvoice = invoice.type === 'purchase';
-  const isPortrait = isPurchaseInvoice || Boolean(invoice.itemPhotoUrl);
+  // Paper direction follows the document content, not the invoice type: a photo needs the
+  // vertical A5 canvas; every invoice without one remains the approved horizontal A5 sheet.
+  const isPortrait = Boolean(invoice.itemPhotoUrl);
   const blankRowCount = Math.max(0, (isPurchaseInvoice ? 10 : 6) - invoice.items.length - (invoice.scrapGoldItems?.length || 0));
   const remainingDebtUSD = Math.max(0, invoice.remainingDebtUSD ?? (invoice.finalTotalUSD - invoice.paidUSD));
+  const paperRef = useRef<HTMLElement>(null);
+  const [creatingPdf, setCreatingPdf] = useState(false);
+
+  // Browser page headers, URLs and page numbers cannot be disabled by a web page.  Render the
+  // approved invoice surface into a one-page A5 PDF instead; the print dialog then receives a
+  // document, not an HTML page, on iOS, Safari and Chromium alike.
+  const printAsPdf = async () => {
+    const paper = paperRef.current;
+    if (!paper || creatingPdf) return;
+    // Open synchronously with the tap so Safari does not classify the PDF as a blocked popup.
+    const target = window.open('', '_blank');
+    if (!target) { window.alert('تعذر فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.'); return; }
+    target.document.title = `فاتورة-${invoice.invoiceNumber}`;
+    target.document.body.innerHTML = '<p style="font-family:system-ui;text-align:center;padding:2rem">جارٍ تجهيز الفاتورة للطباعة…</p>';
+    setCreatingPdf(true);
+    try {
+      await (document as Document & { fonts?: FontFaceSet }).fonts?.ready;
+      const canvas = await html2canvas(paper, { backgroundColor: '#fffdf7', scale: 2, useCORS: true, logging: false });
+      const width = isPortrait ? 148 : 210;
+      const height = isPortrait ? 210 : 148;
+      const pdf = new jsPDF({ orientation: isPortrait ? 'portrait' : 'landscape', unit: 'mm', format: 'a5', compress: true });
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, width, height, undefined, 'FAST');
+      const url = URL.createObjectURL(pdf.output('blob'));
+      target.location.replace(url);
+      target.addEventListener('load', () => { try { target.focus(); target.print(); } catch { /* iOS exposes the PDF print control instead. */ } }, { once: true });
+      window.setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } catch {
+      target.close();
+      window.alert('تعذر تجهيز ملف الطباعة. حاول مرة أخرى.');
+    } finally { setCreatingPdf(false); }
+  };
 
   useEffect(() => {
     const pageStyle = document.createElement('style');
@@ -42,10 +77,10 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
       <div className="invoice-print-preview my-3 w-full max-w-5xl bg-white p-2 shadow-2xl sm:my-6 sm:p-4">
         <div className="no-print mb-3 flex items-center justify-between gap-2 border-b border-slate-200 pb-3 sm:mb-4" dir="rtl">
           <div className="flex min-w-0 items-center gap-2"><Printer className="h-5 w-5 shrink-0 text-amber-600" /><h3 className="truncate text-xs font-bold text-slate-900 sm:text-base">معاينة {invoiceTypeLabel(invoice.type)} A5 {isPurchaseInvoice ? 'عامودي' : 'عرضي'}</h3></div>
-          <div className="flex shrink-0 items-center gap-2"><button onClick={() => window.print()} className="flex items-center gap-2 bg-amber-400 px-2 py-2 text-[11px] font-black text-slate-900 sm:px-4 sm:text-xs"><Printer className="h-4 w-4" /><span className="hidden sm:inline">طباعة أو تصدير PDF</span><span className="sm:hidden">طباعة</span></button><button onClick={onClose} aria-label="إغلاق" className="bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
+          <div className="flex shrink-0 items-center gap-2"><button disabled={creatingPdf} onClick={() => void printAsPdf()} className="flex items-center gap-2 bg-amber-400 px-2 py-2 text-[11px] font-black text-slate-900 disabled:opacity-60 sm:px-4 sm:text-xs"><Printer className="h-4 w-4" /><span className="hidden sm:inline">{creatingPdf ? 'جارٍ تجهيز الطباعة…' : 'طباعة فاتورة واحدة'}</span><span className="sm:hidden">{creatingPdf ? 'جارٍ…' : 'طباعة'}</span></button><button onClick={onClose} aria-label="إغلاق" className="bg-slate-100 p-2 text-slate-700"><X className="h-5 w-5" /></button></div>
         </div>
 
-        <section className={`invoice-print-sheet${isPortrait ? ' invoice-print-sheet-portrait' : ''}`} dir="rtl">
+        <section ref={paperRef} className={`invoice-print-sheet${isPortrait ? ' invoice-print-sheet-portrait' : ''}`} dir="rtl">
           <header className="invoice-paper-header">
             <div className="invoice-contact" dir="ltr">
               <b>{settings.phone1 || '021 263 6064'}</b>
