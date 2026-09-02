@@ -64,6 +64,7 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
   const [vouchers, setVouchers] = useState<ApiVoucher[]>([]);
   const [movements, setMovements] = useState<ApiCashMovement[]>([]);
   const [daybookRows, setDaybookRows] = useState<ApiDaybookRow[]>([]);
+  const [selectedDaybookEntry, setSelectedDaybookEntry] = useState<ApiDaybookRow | null>(null);
   const [inventoryAvailableGrams, setInventoryAvailableGrams] = useState(0);
   const [scrapAvailableGrams, setScrapAvailableGrams] = useState(0);
   const [partnerBalances, setPartnerBalances] = useState<ApiPartnerBalance[]>([]);
@@ -1156,7 +1157,19 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                 </div>
               ) : (
                 filteredDaybookRows.map(entry => (
-                  <div key={entry.id} className="p-3 space-y-2.5 bg-white hover:bg-amber-50/50 transition font-mono text-xs">
+                  <div
+                    key={entry.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedDaybookEntry(entry)}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedDaybookEntry(entry);
+                      }
+                    }}
+                    className="p-3 space-y-2.5 bg-white hover:bg-amber-50/50 transition font-mono text-xs cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-inset"
+                  >
                     <div className="flex items-start gap-1.5 min-w-0">
                       <span
                         className="px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 bg-amber-100 text-amber-900"
@@ -1208,7 +1221,19 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
                     </tr>
                   ) : (
                     filteredDaybookRows.map(entry => (
-                      <tr key={entry.id} className="hover:bg-amber-50/50 transition">
+                      <tr
+                        key={entry.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedDaybookEntry(entry)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedDaybookEntry(entry);
+                          }
+                        }}
+                        className="hover:bg-amber-50/50 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400"
+                      >
                         <td className="py-3 px-3 font-bold text-slate-900 font-sans"><div>{entry.goods || '-'}</div><div className="text-[10px] font-normal text-slate-500">{entry.reference} · {new Date(entry.occurredAt).toLocaleDateString('ar-SY')}</div></td>
                         <td className="py-3 px-3 text-rose-700">{entry.goodsOut ? entry.goodsOut.toFixed(3) : '-'}</td>
                         <td className="py-3 px-3 text-emerald-700">{entry.goodsIn ? entry.goodsIn.toFixed(3) : '-'}</td>
@@ -1226,6 +1251,51 @@ export const FinanceView: React.FC<FinanceViewProps> = ({ activeTab = 'finance-b
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {selectedDaybookEntry && (
+        <div className="fixed inset-0 z-[130] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-[1px] sm:items-center" onMouseDown={() => setSelectedDaybookEntry(null)}>
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="daybook-entry-title"
+            dir="rtl"
+            className="w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-lg border border-amber-200 bg-white shadow-2xl"
+            onMouseDown={event => event.stopPropagation()}
+          >
+            <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-amber-100 bg-amber-50 px-4 py-3 sm:px-5">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold tracking-wide text-amber-700">تفاصيل قيد دفتر اليومية</p>
+                <h3 id="daybook-entry-title" className="mt-0.5 truncate text-base font-black text-slate-900">{selectedDaybookEntry.reference || 'حركة مالية'}</h3>
+              </div>
+              <button type="button" onClick={() => setSelectedDaybookEntry(null)} className="shrink-0 rounded-md p-2 text-slate-500 transition hover:bg-white hover:text-slate-900" aria-label="إغلاق التفاصيل">
+                <X className="h-5 w-5" />
+              </button>
+            </header>
+
+            <div className="space-y-4 p-4 sm:p-5">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <div className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div><p className="text-[11px] font-bold text-slate-500">البيان</p><p className="mt-1 font-bold text-slate-900">{selectedDaybookEntry.description || '—'}</p></div>
+                  <div><p className="text-[11px] font-bold text-slate-500">البضاعة / الطرف</p><p className="mt-1 font-bold text-slate-900">{selectedDaybookEntry.goods || '—'}</p></div>
+                  <div><p className="text-[11px] font-bold text-slate-500">التاريخ والوقت</p><p className="mt-1 font-bold text-slate-900">{new Date(selectedDaybookEntry.occurredAt).toLocaleString('ar-SY')}</p></div>
+                  <div><p className="text-[11px] font-bold text-slate-500">مرجع الحركة</p><p className="mt-1 font-bold text-slate-900">{selectedDaybookEntry.reference || '—'}</p></div>
+                </div>
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                {(selectedDaybookEntry.usdIn > 0 || selectedDaybookEntry.usdOut > 0) && <div className="rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm"><p className="text-[11px] font-bold text-emerald-700">الدولار</p><p className="mt-1 font-black text-emerald-800">دخول: {selectedDaybookEntry.usdIn.toFixed(2)} $</p><p className="mt-1 font-bold text-rose-700">خروج: {selectedDaybookEntry.usdOut.toFixed(2)} $</p></div>}
+                {(selectedDaybookEntry.sypIn > 0 || selectedDaybookEntry.sypOut > 0) && <div className="rounded-md border border-blue-100 bg-blue-50 p-3 text-sm"><p className="text-[11px] font-bold text-blue-700">الليرة السورية</p><p className="mt-1 font-black text-blue-800">دخول: {selectedDaybookEntry.sypIn.toLocaleString()} ل.س</p><p className="mt-1 font-bold text-rose-700">خروج: {selectedDaybookEntry.sypOut.toLocaleString()} ل.س</p></div>}
+                {(selectedDaybookEntry.goodsIn > 0 || selectedDaybookEntry.goodsOut > 0) && <div className="rounded-md border border-amber-100 bg-amber-50 p-3 text-sm"><p className="text-[11px] font-bold text-amber-700">ذهب البضاعة</p><p className="mt-1 font-black text-emerald-700">دخول: {selectedDaybookEntry.goodsIn.toFixed(3)} غ</p><p className="mt-1 font-bold text-rose-700">خروج: {selectedDaybookEntry.goodsOut.toFixed(3)} غ</p></div>}
+                {(selectedDaybookEntry.scrapIn > 0 || selectedDaybookEntry.scrapOut > 0) && <div className="rounded-md border border-violet-100 bg-violet-50 p-3 text-sm"><p className="text-[11px] font-bold text-violet-700">الذهب الكاسر</p><p className="mt-1 font-black text-emerald-700">دخول: {selectedDaybookEntry.scrapIn.toFixed(3)} غ</p><p className="mt-1 font-bold text-rose-700">خروج: {selectedDaybookEntry.scrapOut.toFixed(3)} غ</p></div>}
+              </div>
+            </div>
+
+            <footer className="flex justify-end border-t border-slate-100 bg-slate-50 px-4 py-3 sm:px-5">
+              <button type="button" onClick={() => setSelectedDaybookEntry(null)} className="rounded-md bg-slate-900 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-700">إغلاق والعودة لدفتر اليومية</button>
+            </footer>
+          </section>
         </div>
       )}
 
