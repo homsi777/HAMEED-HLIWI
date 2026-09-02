@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
 import { Invoice } from '../types';
 import { useStore } from '../context/StoreContext';
