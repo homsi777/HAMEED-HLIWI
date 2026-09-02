@@ -87,7 +87,10 @@
   left: 50%;
   z-index: 0;
   transform: translate(-50%, -50%) rotate(-24deg);
-  color: rgba(161, 124, 65, .055);
+  /* Keep the watermark faint in both the live preview and the PDF renderer. Some PDF canvas
+     renderers lose the alpha embedded in rgba(), while element opacity is preserved. */
+  color: #a17c41;
+  opacity: .10;
   font-family: Georgia, serif;
   font-size: 48mm;
   font-weight: 700;
