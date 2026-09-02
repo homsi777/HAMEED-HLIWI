@@ -22,6 +22,14 @@ export const PrintAccountStatementModal: React.FC<PrintAccountStatementModalProp
     return () => { active = false; };
   }, [partner.id]);
 
+  useEffect(() => {
+    const activate = () => document.body.classList.add('generic-print-active');
+    const clear = () => document.body.classList.remove('generic-print-active');
+    window.addEventListener('beforeprint', activate);
+    window.addEventListener('afterprint', clear);
+    return () => { window.removeEventListener('beforeprint', activate); window.removeEventListener('afterprint', clear); clear(); };
+  }, []);
+
   const closing = statement?.closingBalanceUSD ?? 0;
   const balanceLabel = closing > 0 ? '(مطلوب منه)' : closing < 0 ? '(له عندنا)' : '(خالص)';
 

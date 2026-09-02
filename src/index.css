@@ -35,7 +35,9 @@
 /* Employee three-dot menus must layer over the next row, never be cut by the table frame. */
 .space-y-4 > div.overflow-hidden:has(> table) { overflow: visible !important; }
 .space-y-4 > div.overflow-hidden:has(> table) tbody tr:has(.z-20) { position: relative; z-index: 10; }
-@media print { body * { visibility:hidden !important; } .employee-print, .employee-print * { visibility:visible !important; } .employee-print { position:fixed; inset:0; padding:12mm; background:#fff; } }
+/* Print surfaces opt into isolation below. A global hidden blanket cannot be reliably
+   reversed by nested rules in mobile Chromium/WebKit and produced blank pages. */
+@media print { .employee-print, .employee-print * { visibility:visible !important; } .employee-print { position:fixed; inset:0; padding:12mm; background:#fff; } }
 
 .print-brand-header {
   background: #0f172a;
@@ -266,10 +268,10 @@
     border: none !important;
   }
 
-  .invoice-a5-print-active * { visibility: hidden; }
+  .invoice-a5-print-active * { visibility: hidden !important; }
   .invoice-a5-print-active .invoice-print-overlay,
   .invoice-a5-print-active .invoice-print-sheet,
-  .invoice-a5-print-active .invoice-print-sheet * { visibility: visible; }
+  .invoice-a5-print-active .invoice-print-sheet * { visibility: visible !important; }
   .invoice-a5-print-active .invoice-print-overlay { position: static !important; display: block !important; overflow: visible !important; padding: 0 !important; background: transparent !important; }
   .invoice-a5-print-active .invoice-print-preview { display: block !important; width: 210mm !important; max-width: none !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; }
   .invoice-a5-print-active .invoice-print-sheet { width: 210mm !important; height: 148mm !important; min-height: 148mm !important; max-height: 148mm !important; overflow: hidden !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
@@ -340,6 +342,25 @@ select,
 /* Printing must never inherit a selection restriction. */
 @media print {
   body, body * { -webkit-user-select: text; user-select: text; }
+
+  /* Reports and statements use a regular application surface rather than an A5 overlay. */
+  body.generic-print-active * { visibility: hidden !important; }
+  body.generic-print-active .print-container,
+  body.generic-print-active .print-container * { visibility: visible !important; }
+  body.generic-print-active .print-container {
+    position: fixed !important;
+    inset: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 8mm !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
 
   html:has(body.voucher-print-active),
   body.voucher-print-active {

@@ -52,6 +52,13 @@ export const ReportsView: React.FC = () => {
     };
     void load(); return () => { cancelled = true; };
   }, [filters]);
+  useEffect(() => {
+    const activate = () => { document.body.classList.add('generic-print-active'); };
+    const clear = () => document.body.classList.remove('generic-print-active');
+    window.addEventListener('beforeprint', activate);
+    window.addEventListener('afterprint', clear);
+    return () => { window.removeEventListener('beforeprint', activate); window.removeEventListener('afterprint', clear); clear(); };
+  }, []);
   const rows = (items: any[]) => !search.trim() ? items : items.filter(item => JSON.stringify(item).toLowerCase().includes(search.toLowerCase()));
   const line = (title: string, subtitle: string, value: string, tone = 'text-slate-900') => <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-slate-100 py-3 last:border-0"><div className="min-w-0"><p className="truncate text-xs font-black text-slate-900">{title}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">{subtitle}</p></div><p className={`self-center whitespace-nowrap text-left font-mono text-xs font-black ${tone}`}>{value}</p></div>;
   const card = (label: string, value: string, tone = 'amber') => <div className={`rounded-sm border border-slate-200 border-r-4 ${tone === 'rose' ? 'border-r-rose-500' : tone === 'emerald' ? 'border-r-emerald-500' : 'border-r-amber-400'} bg-white p-3`}><p className="text-[10px] font-bold text-slate-500">{label}</p><p className="mt-1 font-mono text-lg font-black text-slate-900">{value}</p></div>;
