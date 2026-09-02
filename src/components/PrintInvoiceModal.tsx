@@ -35,23 +35,35 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
     // Open synchronously with the tap so Safari does not classify the PDF as a blocked popup.
     const target = window.open('', '_blank');
     if (!target) { window.alert('تعذر فتح نافذة الطباعة. يرجى السماح بالنوافذ المنبثقة لهذا الموقع.'); return; }
-    target.document.title = `فاتورة-${invoice.invoiceNumber}`;
-    target.document.body.innerHTML = '<p style="font-family:system-ui;text-align:center;padding:2rem">جارٍ تجهيز الفاتورة للطباعة…</p>';
+    target.document.open();
+    target.document.write('<!doctype html><title>تجهيز الفاتورة</title><p style="font-family:system-ui;text-align:center;padding:2rem">جارٍ تجهيز الفاتورة للطباعة…</p>');
+    target.document.close();
     setCreatingPdf(true);
     try {
-      await (document as Document & { fonts?: FontFaceSet }).fonts?.ready;
-      const canvas = await html2canvas(paper, { backgroundColor: '#fffdf7', scale: 2, useCORS: true, logging: false });
+      if ('fonts' in document) await document.fonts.ready;
+      const canvas = await html2canvas(paper, {
+        backgroundColor: '#fffdf7', scale: 2, useCORS: true, allowTaint: true, imageTimeout: 0, logging: false,
+        // Tailwind 4 emits modern colour functions that older html2canvas builds cannot parse.
+        // The invoice itself has fixed print colours, so this clone-only fallback is exact enough
+        // for the approved A5 layout and avoids Safari rejecting the capture.
+        onclone: clone => {
+          const style = clone.createElement('style');
+          style.textContent = '.invoice-print-sheet, .invoice-print-sheet * { color: #5b482d !important; } .invoice-paper-table th { color: #4c3b27 !important; } .invoice-paper-table td { color: #5b482d !important; } .invoice-paper-remaining { color: #9f2f23 !important; }';
+          clone.head.appendChild(style);
+        },
+      });
       const width = isPortrait ? 148 : 210;
       const height = isPortrait ? 210 : 148;
       const pdf = new jsPDF({ orientation: isPortrait ? 'portrait' : 'landscape', unit: 'mm', format: 'a5', compress: true });
       pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, width, height, undefined, 'FAST');
       const url = URL.createObjectURL(pdf.output('blob'));
-      target.location.replace(url);
+      target.location.href = url;
       target.addEventListener('load', () => { try { target.focus(); target.print(); } catch { /* iOS exposes the PDF print control instead. */ } }, { once: true });
       window.setTimeout(() => URL.revokeObjectURL(url), 120000);
-    } catch {
+    } catch (reason) {
       target.close();
-      window.alert('تعذر تجهيز ملف الطباعة. حاول مرة أخرى.');
+      const detail = reason instanceof Error ? reason.message : '';
+      window.alert(`تعذر تجهيز ملف الطباعة${detail ? `: ${detail}` : ''}`);
     } finally { setCreatingPdf(false); }
   };
 
