@@ -273,9 +273,14 @@
   .invoice-a5-print-active .invoice-print-sheet,
   .invoice-a5-print-active .invoice-print-sheet * { visibility: visible !important; }
   .invoice-a5-print-active .invoice-print-overlay { position: static !important; display: block !important; overflow: visible !important; padding: 0 !important; background: transparent !important; }
-  .invoice-a5-print-active .invoice-print-preview { display: block !important; width: 210mm !important; max-width: none !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; }
-  .invoice-a5-print-active .invoice-print-sheet { width: 210mm !important; height: 148mm !important; min-height: 148mm !important; max-height: 148mm !important; overflow: hidden !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; }
-  .invoice-a5-print-active .invoice-print-sheet-portrait { width: 148mm !important; height: 210mm !important; min-height: 210mm !important; overflow: hidden !important; }
+  .invoice-a5-print-active .invoice-print-preview { display: block !important; width: 210mm !important; height: 148mm !important; max-width: none !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; box-shadow: none !important; }
+  /* Safari may retain the phone preview's flow layout while preparing print.  Pin the paper to
+     its physical page so a trailing note cannot create a second sheet. */
+  .invoice-a5-print-active .invoice-print-sheet { position: fixed !important; top: 0 !important; left: 0 !important; box-sizing: border-box !important; width: 210mm !important; height: 148mm !important; min-height: 148mm !important; max-height: 148mm !important; overflow: hidden !important; transform: none !important; break-inside: avoid !important; page-break-inside: avoid !important; page-break-after: avoid !important; }
+  .invoice-a5-print-active .invoice-print-sheet-portrait { width: 148mm !important; height: 210mm !important; min-height: 210mm !important; }
+  .invoice-a5-print-active.invoice-a5-print-portrait .invoice-print-preview { width: 148mm !important; height: 210mm !important; }
+  .invoice-a5-print-active .invoice-paper-disclaimer { position: absolute !important; right: 6mm !important; bottom: 5mm !important; left: 6mm !important; margin: 0 !important; }
+  .invoice-a5-print-active .invoice-paper-notes { max-height: 6mm !important; overflow: hidden !important; line-height: 2.8mm !important; }
 }
 .invoice-paper-remaining { margin-top: 4px; text-align: center; color: #9f2f23; font-weight: 900; font-size: 12px; }
 
