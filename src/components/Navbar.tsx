@@ -61,7 +61,9 @@ export const Navbar: React.FC<{ activeTab: string; setActiveTab: (tab: string) =
   // The header reflects the authenticated session only. Switching accounts means logging out
   // and logging in again, so a browser can never present itself as somebody else.
   const scopeLabel = scope.type === 'global' ? 'المدير العام — كل الفروع' : scope.type === 'own' ? 'بائع' : 'مدير مستودع';
-  const currentWh = warehouses.find(w => w.name === authenticatedUser?.warehouses[0]?.name) || warehouses[0];
+  // The visible branch must come from the authenticated session. Local warehouse fixtures can
+  // be stale, so they are only a last-resort fallback while the session is being restored.
+  const currentWh = authenticatedUser?.warehouses[0] || warehouses[0];
   const displayName = authenticatedUser?.fullName || '';
 
   return (
