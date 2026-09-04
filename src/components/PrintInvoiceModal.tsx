@@ -144,7 +144,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
               </a>
             </div>
             <div className="invoice-logo-mark"><img src="/logo-transparent.png" alt="شعار مجوهرات حليوي" /></div>
-            <div className="invoice-brand"><img src="/hliwi-wordmark.png" alt="حليوي" className="print-wordmark" /><small>مجوهرات</small><span>عبد الحميد معين</span></div>
+            <div className="invoice-brand"><img src="/hliwi-wordmark.png" alt="حليوي" className="print-wordmark" /><small>مجوهرات</small></div>
           </header>
 
           <div className="invoice-paper-meta">
@@ -185,7 +185,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
               {invoice.paidSYP > 0 && <span>مدفوع ل.س: {invoice.paidSYP.toLocaleString('ar-SY')}</span>}
             </div>
             <div className="invoice-paper-remaining">المتبقي على الحساب: $ {remainingDebtUSD.toFixed(2)}</div>
-            <div className="invoice-paper-footer"><span>مجوهرات حليوي</span><span>{settings.phone1} {settings.phone2 ? `- ${settings.phone2}` : ''} - 0934 033 272</span><span>شكراً لثقتكم بنا</span></div>
+            <div className="invoice-paper-footer"><span>مجوهرات حليوي</span><span className="invoice-footer-owner">عبد الحميد معين</span><span>شكراً لثقتكم بنا</span></div>
           </div>
           {invoice.itemPhotoUrl && <figure className="invoice-paper-photo"><img src={invoice.itemPhotoUrl} alt="صورة القطعة المرفقة بالفاتورة" /></figure>}
           <p className="invoice-paper-disclaimer">لسنا مسؤولين عن قياس الذهب بعد الاستعمال، تفقد القطعة صياغتها بعد الاستلام.</p>

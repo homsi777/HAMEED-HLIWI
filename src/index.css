@@ -149,6 +149,7 @@
 .invoice-paper-totals b { color: #a34132; font-size: 4mm; }
 .invoice-paper-totals .invoice-final-total { border-right: 1px solid #aa8b60; padding-right: 3mm; font-weight: 900; }
 .invoice-paper-footer { display: flex; justify-content: space-between; margin-top: 3mm; border-top: 1px solid #aa8b60; padding-top: 1.5mm; color: #81653d; font-family: Arial, sans-serif; font-size: 2.6mm; font-weight: 700; }
+.invoice-footer-owner { color: #5d472b; font-family: 'Cairo', sans-serif; }
 .invoice-paper-photo { display: none; }
 .invoice-print-sheet-portrait .invoice-paper-photo { display: flex; align-items: center; justify-content: center; height: 58mm; margin: 3mm auto 0; border: 1px solid #b79c75; background: #fffdfa; }
 .invoice-print-sheet-portrait .invoice-paper-photo img { max-width: 100%; max-height: 56mm; object-fit: contain; }
