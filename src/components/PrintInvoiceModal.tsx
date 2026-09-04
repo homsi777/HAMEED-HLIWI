@@ -137,7 +137,7 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
                 <b>{settings.phone1 || '021 263 6064'}</b>
                 <b>{settings.phone2 || '0944 866 362'}</b>
                 <b>0934 033 272</b>
-                <small>{settings.address || 'حلب - سوريا'}</small>
+                <small>الفرقان - إشارات الشرطة - سوق الذهب{`\n`}بعد مفرق مشفى الفرقان جانب مفروشات برلنت</small>
               </div>
               <a className="invoice-instagram-qr" href="https://www.instagram.com/hliwi.jewelry.aleppo/?hl=en" target="_blank" rel="noreferrer" aria-label="Instagram Hliwi Jewelry">
                 <QRCodeSVG value="https://www.instagram.com/hliwi.jewelry.aleppo/?hl=en" size={42} level="M" includeMargin={false} />
