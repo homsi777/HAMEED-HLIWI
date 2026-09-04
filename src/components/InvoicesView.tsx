@@ -393,8 +393,12 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   const [invPartnerName, setInvPartnerName] = useState('');
   const [invCustomerPhone, setInvCustomerPhone] = useState('');
   const [invWarehouseId, setInvWarehouseId] = useState('');
-  useEffect(() => { if (!invWarehouseId && warehouses[0]) setInvWarehouseId(warehouses[0].id); }, [invWarehouseId, warehouses]);
+  useEffect(() => {
+    const assignedWarehouseId = currentUser.assignedWarehouseId || warehouses[0]?.id;
+    if (!invWarehouseId && assignedWarehouseId) setInvWarehouseId(assignedWarehouseId);
+  }, [currentUser.assignedWarehouseId, invWarehouseId, warehouses]);
   const [invPaymentMethod, setInvPaymentMethod] = useState<PaymentMethod>('cash_usd');
+  const [showPaymentOptions, setShowPaymentOptions] = useState(false);
   const [invNotes, setInvNotes] = useState('');
   const [invDiscountUSD, setInvDiscountUSD] = useState('');
   const [purchaseMaterialType, setPurchaseMaterialType] = useState<'new' | 'scrap'>('new');
@@ -406,6 +410,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
   // Temp form for adding an item into invoice
   const [selectedStockItemId, setSelectedStockItemId] = useState('');
   const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [showStockPicker, setShowStockPicker] = useState(true);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const [barcodeScannerError, setBarcodeScannerError] = useState('');
   const barcodeVideoRef = useRef<HTMLVideoElement>(null);
@@ -577,8 +582,9 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     setInvPartnerId('');
     setInvPartnerName('');
     setInvCustomerPhone('');
-    setInvWarehouseId(warehouses[0]?.id || '');
+    setInvWarehouseId(currentUser.assignedWarehouseId || warehouses[0]?.id || '');
     setInvPaymentMethod('cash_usd');
+    setShowPaymentOptions(false);
     setInvNotes('');
     setInvDiscountUSD('');
     setPurchaseMaterialType('new');
@@ -589,6 +595,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     setPaidSYP('');
     setItemPhotoUrl('');
     setStockSearchQuery('');
+    setShowStockPicker(true);
     setSelectedStockItemId('');
     setStockSalePricePerGram('');
     setStockLaborFeeUSDPerGram('');
@@ -616,7 +623,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
       if (full.status !== 'posted' || (invoice.type === 'sale' && full.returnCount && full.returnCount > 0)) { alert('لا يمكن تصحيح فاتورة ملغاة أو مرتبطة بمرتجع.'); return; }
       handleOpenCreateModal(invoice.type);
       setInvWarehouseId(full.warehouseId); setInvPartnerId(full.customerOrSupplierId); setInvPartnerName(full.customerOrSupplierName); setInvCustomerPhone(full.customerPhone || '');
-      setInvItems(full.items.map(item => item.itemId && inventory.find(stock => stock.id === item.itemId)?.isManualSaleEntry ? { ...item, itemId: undefined } : item)); setScrapItems(full.scrapGoldItems || []); setInvDiscountUSD(full.discountUSD ? String(full.discountUSD) : ''); setPaidUSD(full.paidUSD ? String(full.paidUSD) : ''); setPaidSYP(full.paidSYP ? String(full.paidSYP) : ''); setInvPaymentMethod(full.paymentMethod); setInvNotes(full.notes || ''); setItemPhotoUrl(full.itemPhotoUrl || '');
+      setInvItems(full.items.map(item => item.itemId && inventory.find(stock => stock.id === item.itemId)?.isManualSaleEntry ? { ...item, itemId: undefined } : item)); setScrapItems(full.scrapGoldItems || []); setInvDiscountUSD(full.discountUSD ? String(full.discountUSD) : ''); setPaidUSD(full.paidUSD ? String(full.paidUSD) : ''); setPaidSYP(full.paidSYP ? String(full.paidSYP) : ''); setInvPaymentMethod(full.paymentMethod); setShowPaymentOptions(true); setInvNotes(full.notes || ''); setItemPhotoUrl(full.itemPhotoUrl || '');
       if (invoice.type === 'purchase') setPurchaseMaterialType(full.materialType || 'new');
       setCorrectionSource({ id: full.id, type: invoice.type, reason }); setActiveMenu(null);
     } catch (error: any) { alert(error?.message || 'تعذر تجهيز تصحيح الفاتورة.'); }
@@ -664,6 +671,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
     setInvItems(prev => [...prev, newItem]);
     setSelectedStockItemId('');
     setStockSearchQuery('');
+    setShowStockPicker(true);
     if (invType === 'sale') {
       setStockSalePricePerGram('');
       setStockLaborFeeUSDPerGram('');
@@ -767,8 +775,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
 
   const baseFinalTotalUSD = money(Math.max(0, totalInvoiceGrossUSD - scrapTotalValueUSD - discountUSD));
 
-  const numPaidUSD = parseFloat(paidUSD) || 0;
-  const numPaidSYP = parseFloat(paidSYP) || 0;
+  const enteredPaidUSD = parseFloat(paidUSD) || 0;
+  const enteredPaidSYP = parseFloat(paidSYP) || 0;
+  const useQuickSaleCollection = invType === 'sale' && !showPaymentOptions;
+  const numPaidUSD = useQuickSaleCollection && invPaymentMethod !== 'cash_syp' ? baseFinalTotalUSD : enteredPaidUSD;
+  const numPaidSYP = useQuickSaleCollection && invPaymentMethod === 'cash_syp' ? Math.round(baseFinalTotalUSD * settings.usdToSypRate) : enteredPaidSYP;
   const numPaidSYPInUSD = numPaidSYP / settings.usdToSypRate;
 
   const totalPaidInUSD = numPaidUSD + numPaidSYPInUSD;
@@ -1149,11 +1160,11 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
               </button>
             </div>
 
-            {/* Step 1: Customer & Warehouse Selection Header */}
+            {/* Step 1: Customer Header — warehouse is fixed from the signed-in account scope. */}
             {correctionSource && <div className="rounded-sm border-2 border-amber-400 bg-amber-50 p-2.5 text-xs font-bold text-amber-950">وضع تصحيح فاتورة: عند الحفظ ستُعكس الفاتورة الأصلية وقيودها، ثم تُنشأ فاتورة مصححة جديدة.</div>}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 bg-slate-50 p-2.5 sm:p-4 rounded-sm border border-slate-200 text-xs">
+            <div className="grid grid-cols-1 gap-2 sm:gap-4 bg-slate-50 p-2.5 sm:p-4 rounded-sm border border-slate-200 text-xs">
               <div>
-                <label className="block font-bold text-slate-700 mb-0.5 sm:mb-1">اسم الزبون / المورد *</label>
+                <label className="block font-bold text-slate-700 mb-0.5 sm:mb-1">اسم السيد/ة المحترم *</label>
                 <div className="flex gap-1.5">
                   <input
                     type="text"
@@ -1175,31 +1186,6 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                 </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-0.5 sm:mb-1">رقم الهاتف (اختياري)</label>
-                <input
-                  type="text"
-                  placeholder="+963..."
-                  value={invCustomerPhone}
-                  onChange={e => setInvCustomerPhone(e.target.value)}
-                  className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-sm font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-0.5 sm:mb-1">المستودع / الفرع *</label>
-                <select
-                  value={invWarehouseId}
-                  onChange={e => setInvWarehouseId(e.target.value)}
-                  className="w-full p-1.5 sm:p-2 bg-white border border-slate-200 rounded-sm font-medium"
-                >
-                  {warehouses.map(w => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
             {invType === 'purchase' && <div className="rounded-sm border border-violet-200 bg-violet-50 p-2.5 sm:p-3">
@@ -1218,9 +1204,14 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                 <span>إضافة قطع الذهب إلى الفاتورة:</span>
               </h4>
 
+              <button type="button" onClick={() => setShowStockPicker(previous => !previous)} className="flex w-full items-center justify-between rounded-sm border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-black text-amber-950 transition hover:bg-amber-100">
+                <span>البيع من المخزون</span>
+                <span>{showStockPicker ? 'إخفاء ▲' : 'إظهار ▼'}</span>
+              </button>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 text-xs">
                 {/* Option A: Predictive Search & Select from Existing Inventory */}
-                <div className="bg-amber-50/90 p-2.5 sm:p-3.5 rounded-sm border border-amber-200 space-y-1.5 sm:space-y-2 relative">
+                {showStockPicker && <div className="bg-amber-50/90 p-2.5 sm:p-3.5 rounded-sm border border-amber-200 space-y-1.5 sm:space-y-2 relative">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-900 block text-[11px] sm:text-xs">اختيار قطعة من المخزون:</span>
                     <span className="text-[10px] text-amber-900 font-bold bg-amber-200/80 px-1.5 py-0.5 rounded-sm">
@@ -1410,7 +1401,7 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
                       إضافة
                     </button>
                   </div>
-                </div>
+                </div>}
 
                 {/* Option B: Enter Custom Item on the fly */}
                 <div className="bg-slate-50 p-2.5 sm:p-3.5 rounded-sm border border-slate-200 space-y-1.5">
@@ -1666,45 +1657,36 @@ export const InvoicesView: React.FC<InvoicesViewProps> = ({ initialType, initial
             {/* Step 4: Payments & Totals */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-4 text-xs pt-2 border-t border-slate-200">
               <div className="space-y-2 sm:space-y-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-0.5">طريقة السداد الرئيسة</label>
-                  <select
-                    value={invPaymentMethod}
-                    onChange={e => setInvPaymentMethod(e.target.value as PaymentMethod)}
-                    className="w-full p-1.5 sm:p-2 bg-slate-50 border border-slate-200 rounded-sm font-bold text-xs"
-                  >
-                    <option value="cash_usd">دفع كاش بالدولار ($)</option>
-                    <option value="cash_syp">دفع كاش بالليرة السورية (ل.س)</option>
-                    <option value="gold_exchange">مقايضة ذهب بالكامل</option>
-                    <option value="debt">آجل / تسجيل ذمة مالية</option>
-                    <option value="mixed">دفع مشترك ($ + ليرة سورية + كسر)</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-0.5">المدفوع ($)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={paidUSD}
-                      onChange={e => setPaidUSD(e.target.value)}
-                      className="w-full p-1.5 sm:p-2 bg-slate-50 border border-slate-200 rounded-sm font-mono font-black text-slate-900 text-xs"
-                    />
+                {invType === 'sale' && !showPaymentOptions ? (
+                  <div className="rounded-sm border border-emerald-200 bg-emerald-50 p-3 text-emerald-950">
+                    <p className="font-black">بيع سريع</p>
+                    <p className="mt-1 text-[11px] font-medium">سيُسجل كامل مبلغ الفاتورة كاش بالدولار تلقائياً عند الحفظ، دون إدخال مبلغ مستلم.</p>
+                    <button type="button" onClick={() => setShowPaymentOptions(true)} className="mt-2 rounded-sm border border-emerald-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100">خيارات تحصيل متنوعة</button>
                   </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-0.5">طريقة السداد الرئيسة</label>
+                      <select
+                        value={invPaymentMethod}
+                        onChange={e => setInvPaymentMethod(e.target.value as PaymentMethod)}
+                        className="w-full p-1.5 sm:p-2 bg-slate-50 border border-slate-200 rounded-sm font-bold text-xs"
+                      >
+                        <option value="cash_usd">دفع كاش بالدولار ($)</option>
+                        <option value="cash_syp">دفع كاش بالليرة السورية (ل.س)</option>
+                        <option value="gold_exchange">مقايضة ذهب بالكامل</option>
+                        <option value="debt">آجل / تسجيل ذمة مالية</option>
+                        <option value="mixed">دفع مشترك ($ + ليرة سورية + كسر)</option>
+                      </select>
+                    </div>
 
-                  <div>
-                    <label className="block font-bold text-slate-700 mb-0.5">المدفوع (ل.س)</label>
-                    <input
-                      type="number"
-                      placeholder="0 ل.س"
-                      value={paidSYP}
-                      onChange={e => setPaidSYP(e.target.value)}
-                      className="w-full p-1.5 sm:p-2 bg-slate-50 border border-slate-200 rounded-sm font-mono font-black text-slate-800 text-xs"
-                    />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div><label className="block font-bold text-slate-700 mb-0.5">المدفوع ($)</label><input type="number" step="0.01" placeholder="0.00" value={paidUSD} onChange={e => setPaidUSD(e.target.value)} className="w-full p-1.5 sm:p-2 bg-slate-50 border border-slate-200 rounded-sm font-mono font-black text-slate-900 text-xs" /></div>
+                      <div><label className="block font-bold text-slate-700 mb-0.5">المدفوع (ل.س)</label><input type="number" placeholder="0 ل.س" value={paidSYP} onChange={e => setPaidSYP(e.target.value)} className="w-full p-1.5 sm:p-2 bg-slate-50 border border-slate-200 rounded-sm font-mono font-black text-slate-800 text-xs" /></div>
+                    </div>
+                    {invType === 'sale' && <button type="button" onClick={() => setShowPaymentOptions(false)} className="text-right text-[11px] font-bold text-slate-500 underline hover:text-slate-900">العودة إلى البيع السريع</button>}
+                  </>
+                )}
 
                 <div>
                   <label className="block font-bold text-slate-700 mb-0.5">ملاحظات الفاتورة</label>
