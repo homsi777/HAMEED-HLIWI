@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import html2canvas from 'html2canvas-pro';
 import { jsPDF } from 'jspdf';
+import { QRCodeSVG } from 'qrcode.react';
 import { Invoice } from '../types';
 import { useStore } from '../context/StoreContext';
 import { Printer, X } from 'lucide-react';
@@ -23,6 +24,9 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
   const isPortrait = Boolean(invoice.itemPhotoUrl);
   const blankRowCount = Math.max(0, (isPurchaseInvoice ? 10 : 6) - invoice.items.length - (invoice.scrapGoldItems?.length || 0));
   const remainingDebtUSD = Math.max(0, invoice.remainingDebtUSD ?? (invoice.finalTotalUSD - invoice.paidUSD));
+  const totalGoldValueUSD = invoice.items.reduce((sum, item) => sum + item.netWeightGrams * item.pricePerGramUSD, 0);
+  const totalLaborUSD = invoice.items.reduce((sum, item) => sum + item.netWeightGrams * item.laborFeeUSDPerGram, 0);
+  const preliminaryTotalUSD = totalGoldValueUSD + totalLaborUSD;
   const paperRef = useRef<HTMLElement>(null);
   const [creatingPdf, setCreatingPdf] = useState(false);
 
@@ -129,9 +133,15 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
         <section ref={paperRef} className={`invoice-print-sheet${isPortrait ? ' invoice-print-sheet-portrait' : ''}`} dir="rtl">
           <header className="invoice-paper-header">
             <div className="invoice-contact" dir="ltr">
-              <b>{settings.phone1 || '021 263 6064'}</b>
-              <b>{settings.phone2 || '0944 866 362'}</b>
-              <small>{settings.address || 'حلب - سوريا'}</small>
+              <div className="invoice-phone-list">
+                <b>{settings.phone1 || '021 263 6064'}</b>
+                <b>{settings.phone2 || '0944 866 362'}</b>
+                <b>0934 033 272</b>
+                <small>{settings.address || 'حلب - سوريا'}</small>
+              </div>
+              <a className="invoice-instagram-qr" href="https://www.instagram.com/hliwi.jewelry.aleppo/?hl=en" target="_blank" rel="noreferrer" aria-label="Instagram Hliwi Jewelry">
+                <QRCodeSVG value="https://www.instagram.com/hliwi.jewelry.aleppo/?hl=en" size={42} level="M" includeMargin={false} />
+              </a>
             </div>
             <div className="invoice-logo-mark"><img src="/logo-transparent.png" alt="شعار مجوهرات حليوي" /></div>
             <div className="invoice-brand"><img src="/hliwi-wordmark.png" alt="حليوي" className="print-wordmark" /><small>مجوهرات</small><span>عبد الحميد معين</span></div>
@@ -164,9 +174,18 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
           <div className="invoice-paper-bottom">
             {invoice.notes && <p className="invoice-paper-notes">{invoice.notes}</p>}
             {invoice.scrapGoldItems && invoice.scrapGoldItems.length > 0 && <p className="invoice-paper-tradein-note">ملاحظة مقايضة: تم استلام ذهب كسر {invoice.scrapGoldItems.map(item => `عيار ${item.karat} بوزن ${item.weightGrams.toFixed(2)} غ`).join('، ')}، وخصم قيمته من الحساب.</p>}
-            <div className="invoice-paper-totals"><span>المجموع: <b>$ {invoice.finalTotalUSD.toFixed(2)}</b></span>{invoice.scrapTotalValueUSD > 0 && <span>مقايضة كسر: -$ {invoice.scrapTotalValueUSD.toFixed(2)}</span>}{invoice.discountUSD > 0 && <span>الحسم: $ {invoice.discountUSD.toFixed(2)}</span>}<span>المدفوع: $ {invoice.paidUSD.toFixed(2)}</span>{invoice.paidSYP > 0 && <span>مدفوع ل.س: {invoice.paidSYP.toLocaleString('ar-SY')}</span>}</div>
+            <div className="invoice-paper-totals">
+              <span>إجمالي قيمة الذهب: <b>$ {totalGoldValueUSD.toFixed(2)}</b></span>
+              <span>إجمالي الأجور: <b>$ {totalLaborUSD.toFixed(2)}</b></span>
+              <span>المجموع الأولي: <b>$ {preliminaryTotalUSD.toFixed(2)}</b></span>
+              {invoice.scrapTotalValueUSD > 0 && <span>مقايضة كسر: -$ {invoice.scrapTotalValueUSD.toFixed(2)}</span>}
+              {invoice.discountUSD > 0 && <span>الحسم: -$ {invoice.discountUSD.toFixed(2)}</span>}
+              <span className="invoice-final-total">الصافي النهائي: <b>$ {invoice.finalTotalUSD.toFixed(2)}</b></span>
+              <span>المدفوع: $ {invoice.paidUSD.toFixed(2)}</span>
+              {invoice.paidSYP > 0 && <span>مدفوع ل.س: {invoice.paidSYP.toLocaleString('ar-SY')}</span>}
+            </div>
             <div className="invoice-paper-remaining">المتبقي على الحساب: $ {remainingDebtUSD.toFixed(2)}</div>
-            <div className="invoice-paper-footer"><span>مجوهرات حليوي</span><span>{settings.phone1} {settings.phone2 ? `- ${settings.phone2}` : ''}</span><span>شكراً لثقتكم بنا</span></div>
+            <div className="invoice-paper-footer"><span>مجوهرات حليوي</span><span>{settings.phone1} {settings.phone2 ? `- ${settings.phone2}` : ''} - 0934 033 272</span><span>شكراً لثقتكم بنا</span></div>
           </div>
           {invoice.itemPhotoUrl && <figure className="invoice-paper-photo"><img src={invoice.itemPhotoUrl} alt="صورة القطعة المرفقة بالفاتورة" /></figure>}
           <p className="invoice-paper-disclaimer">لسنا مسؤولين عن قياس الذهب بعد الاستعمال، تفقد القطعة صياغتها بعد الاستلام.</p>

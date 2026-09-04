@@ -103,8 +103,11 @@
 .invoice-paper-bottom { position: relative; z-index: 1; }
 
 .invoice-paper-header { display: grid; grid-template-columns: 1fr .75fr 1.15fr; min-height: 26mm; align-items: center; gap: 8mm; border-bottom: 1.2px solid #806846; padding: 1.5mm 0 2.5mm; direction: ltr; }
-.invoice-contact { display: grid; gap: .6mm; color: #62543e; font-family: Arial, sans-serif; font-size: 3.8mm; line-height: 1; text-align: left; }
+.invoice-contact { display: flex; align-items: flex-start; gap: 2mm; color: #62543e; font-family: Arial, sans-serif; font-size: 3.8mm; line-height: 1; text-align: left; }
+.invoice-phone-list { display: grid; gap: .6mm; }
 .invoice-contact small { margin-top: 1.8mm; font-family: 'Cairo', sans-serif; font-size: 2.1mm; direction: rtl; text-align: right; }
+.invoice-instagram-qr { display: grid; flex: 0 0 auto; place-items: center; width: 11mm; height: 11mm; border: .4mm solid #b39870; background: #fffdf7; padding: .4mm; color: #4c3b27; }
+.invoice-instagram-qr svg { display: block; width: 10mm; height: 10mm; }
 .invoice-logo-mark { grid-column: 2; display: flex; width: 30mm; height: 20mm; align-items: center; justify-content: center; overflow: hidden; }
 /* The supplied transparent logo includes generous blank margins; enlarge it inside a clipped frame so the actual mark remains clear on A5. */
 .invoice-logo-mark img { display: block; width: 38mm; max-width: none; height: auto; }
@@ -142,8 +145,9 @@
 .invoice-paper-bottom > p { margin: 0; color: #59482f; font-size: 2.8mm; font-weight: 700; }
 .invoice-paper-bottom .invoice-paper-notes { margin-bottom: 1mm; }
 .invoice-paper-bottom .invoice-paper-tradein-note { margin-top: 1mm; color: #7c4f22; }
-.invoice-paper-totals { display: flex; justify-content: flex-start; gap: 7mm; margin-top: 2mm; color: #5d472b; font-size: 3mm; }
+.invoice-paper-totals { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 1.5mm 7mm; margin-top: 2mm; color: #5d472b; font-size: 3mm; }
 .invoice-paper-totals b { color: #a34132; font-size: 4mm; }
+.invoice-paper-totals .invoice-final-total { border-right: 1px solid #aa8b60; padding-right: 3mm; font-weight: 900; }
 .invoice-paper-footer { display: flex; justify-content: space-between; margin-top: 3mm; border-top: 1px solid #aa8b60; padding-top: 1.5mm; color: #81653d; font-family: Arial, sans-serif; font-size: 2.6mm; font-weight: 700; }
 .invoice-paper-photo { display: none; }
 .invoice-print-sheet-portrait .invoice-paper-photo { display: flex; align-items: center; justify-content: center; height: 58mm; margin: 3mm auto 0; border: 1px solid #b79c75; background: #fffdfa; }
@@ -157,6 +161,8 @@
 .invoice-print-sheet-portrait .invoice-paper-header { min-height: 20mm; gap: 3mm; padding-bottom: 3mm; }
 .invoice-print-sheet-portrait .invoice-contact { font-size: 3.3mm; }
 .invoice-print-sheet-portrait .invoice-contact small { font-size: 2mm; }
+.invoice-print-sheet-portrait .invoice-instagram-qr { width: 9mm; height: 9mm; padding: .3mm; }
+.invoice-print-sheet-portrait .invoice-instagram-qr svg { width: 8.2mm; height: 8.2mm; }
 .invoice-print-sheet-portrait .invoice-logo-mark { width: 25mm; height: 16mm; }
 .invoice-print-sheet-portrait .invoice-logo-mark img { width: 31mm; }
 .invoice-print-sheet-portrait .invoice-brand small { font-size: 3mm; }
