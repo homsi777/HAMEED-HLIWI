@@ -27,6 +27,8 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
   const totalGoldValueUSD = invoice.items.reduce((sum, item) => sum + item.netWeightGrams * item.pricePerGramUSD, 0);
   const totalLaborUSD = invoice.items.reduce((sum, item) => sum + item.netWeightGrams * item.laborFeeUSDPerGram, 0);
   const preliminaryTotalUSD = totalGoldValueUSD + totalLaborUSD;
+  const hasInvoiceAdjustment = invoice.scrapTotalValueUSD > 0 || invoice.discountUSD > 0;
+  const isPaidInFullUsd = invoice.paidSYP === 0 && Math.abs(invoice.paidUSD - invoice.finalTotalUSD) < 0.01;
   const paperRef = useRef<HTMLElement>(null);
   const [creatingPdf, setCreatingPdf] = useState(false);
 
@@ -177,14 +179,14 @@ export const PrintInvoiceModal: React.FC<PrintInvoiceModalProps> = ({ invoice, o
             <div className="invoice-paper-totals">
               <span>إجمالي قيمة الذهب: <b>$ {totalGoldValueUSD.toFixed(2)}</b></span>
               <span>إجمالي الأجور: <b>$ {totalLaborUSD.toFixed(2)}</b></span>
-              <span>المجموع الأولي: <b>$ {preliminaryTotalUSD.toFixed(2)}</b></span>
+              {hasInvoiceAdjustment && <span>المجموع الأولي: <b>$ {preliminaryTotalUSD.toFixed(2)}</b></span>}
               {invoice.scrapTotalValueUSD > 0 && <span>مقايضة كسر: -$ {invoice.scrapTotalValueUSD.toFixed(2)}</span>}
               {invoice.discountUSD > 0 && <span>الحسم: -$ {invoice.discountUSD.toFixed(2)}</span>}
               <span className="invoice-final-total">الصافي النهائي: <b>$ {invoice.finalTotalUSD.toFixed(2)}</b></span>
-              <span>المدفوع: $ {invoice.paidUSD.toFixed(2)}</span>
+              {!isPaidInFullUsd && <span>المدفوع: $ {invoice.paidUSD.toFixed(2)}</span>}
               {invoice.paidSYP > 0 && <span>مدفوع ل.س: {invoice.paidSYP.toLocaleString('ar-SY')}</span>}
             </div>
-            <div className="invoice-paper-remaining">المتبقي على الحساب: $ {remainingDebtUSD.toFixed(2)}</div>
+            {remainingDebtUSD > 0 && <div className="invoice-paper-remaining">المتبقي على الحساب: $ {remainingDebtUSD.toFixed(2)}</div>}
             <div className="invoice-paper-footer"><span>مجوهرات حليوي</span><span className="invoice-footer-owner">عبد الحميد معين</span><span>شكراً لثقتكم بنا</span></div>
           </div>
           {invoice.itemPhotoUrl && <figure className="invoice-paper-photo"><img src={invoice.itemPhotoUrl} alt="صورة القطعة المرفقة بالفاتورة" /></figure>}
